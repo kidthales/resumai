@@ -68,7 +68,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
       - name: Install node_modules
-        run: docker compose run node npm ci
+        run: npm ci
       - name: Prettier
-        run: docker compose run node npx prettier --check .
+        run: npx prettier --check .
