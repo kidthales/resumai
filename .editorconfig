@@ -20,3 +20,7 @@ indent_size = 2
 [**.md]
 indent_size = unset
 indent_style = unset
+
+[Makefile]
+indent_size = 8
+indent_style = tab
