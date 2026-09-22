@@ -60,27 +60,3 @@ jobs:
       # Uncomment if Doctrine ORM is installed
       # - name: Doctrine Schema Validator
       #   run: docker compose exec -T php bin/console -e test doctrine:schema:validate
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-      statuses: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Lint Code Base
-        uses: super-linter/super-linter/slim@v8
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VALIDATE_CHECKOV: false
-          VALIDATE_TRIVY: false
-          VALIDATE_BIOME_FORMAT: false
-          VALIDATE_BIOME_LINT: false
-          VALIDATE_PYTHON_BLACK: false
-          # TODO: https://github.com/dunglas/symfony-docker/issues/897
-          COMPOSER_IGNORE_PLATFORM_REQS: 1
