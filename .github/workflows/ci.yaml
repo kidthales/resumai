@@ -82,4 +82,7 @@ jobs:
           VALIDATE_BIOME_FORMAT: false
           VALIDATE_BIOME_LINT: false
           VALIDATE_PYTHON_BLACK: false
-          PHP_VERSION: "8.5"
+          # TODO: PHP 8.4 / 8.5 mismatch, keep these disabled until compatible again...
+          VALIDATE_PHP_PHPCS: false
+          VALIDATE_PHP_PHPSTAN: false
+          VALIDATE_PHP_PSALM: false
