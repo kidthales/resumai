@@ -69,6 +69,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Install node_modules
-        run: docker composer run --rm node npm ci
+        run: docker compose run --rm node npm ci
       - name: Prettier
-        run: docker composer run --rm node npx prettier --check .
+        run: docker compose run --rm node npx prettier --check .
