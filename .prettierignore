@@ -1,0 +1,8 @@
+.idea
+.vscode
+docs
+composer.json
+composer.lock
+package-lock.json
+package.json
+

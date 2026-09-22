@@ -60,3 +60,15 @@ jobs:
       # Uncomment if Doctrine ORM is installed
       # - name: Doctrine Schema Validator
       #   run: docker compose exec -T php bin/console -e test doctrine:schema:validate
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install node_modules
+        run: docker compose run node npm ci
+      - name: Prettier
+        run: docker compose run node npx prettier --check .

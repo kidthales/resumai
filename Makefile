@@ -2,16 +2,24 @@
 DOCKER_COMP = docker compose
 
 # Docker containers
-PHP_CONT = $(DOCKER_COMP) exec php
+PHP_CONT  = $(DOCKER_COMP) exec php
+NODE_CONT = $(DOCKER_COMP) exec node
 
 # Executables
 PHP      = $(PHP_CONT) php
 COMPOSER = $(PHP_CONT) composer
 SYMFONY  = $(PHP) bin/console
+NPM      = $(NODE_CONT) npm
+NPX      = $(NODE_CONT) npx
 
 # Misc
 .DEFAULT_GOAL = help
-.PHONY        : help build up start down logs sh composer vendor sf cc test
+.PHONY        : help \
+                build up start down logs sh bash test \
+                composer vendor \
+                sf cc \
+                npm node_modules \
+                own
 
 ## —— 🎵 🐳 The Symfony Docker Makefile 🐳 🎵 ——————————————————————————————————
 help: ## Outputs this help screen
@@ -42,7 +50,6 @@ test: ## Start tests with phpunit, pass the parameter "c=" to add options to php
 	@$(eval c ?=)
 	@$(DOCKER_COMP) exec -e APP_ENV=test php bin/phpunit $(c)
 
-
 ## —— Composer 🧙 ——————————————————————————————————————————————————————————————
 composer: ## Run composer, pass the parameter "c=" to run a given command, example: make composer c='req symfony/orm-pack'
 	@$(eval c ?=)
@@ -59,6 +66,20 @@ sf: ## List all Symfony commands or pass the parameter "c=" to run a given comma
 
 cc: c=c:c ## Clear the cache
 cc: sf
+
+## —— NPM 📦️ ——————————————————————————————————————————————————————————————————
+npm: ## Run npm, pass the parameter "c=" to run a given command, example: make npm c='i -D prettier'
+	@$(eval c ?=)
+	@$(NPM) $(c)
+
+node_modules: ## Install node_modules according to the current package-lock.json file
+node_modules: c=ci
+node_modules: npm
+
+## —— NPX ❌️ ——————————————————————————————————————————————————————————————————
+npx: ## Run npx, pass the parameter "c=" to run a given command, example: make npx c='prettier --check .'
+	@$(eval c ?=)
+	@$(NPX) $(c)
 
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker container
