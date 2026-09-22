@@ -81,6 +81,23 @@ npx: ## Run npx, pass the parameter "c=" to run a given command, example: make n
 	@$(eval c ?=)
 	@$(NPX) $(c)
 
+## —— Lint 🧹 —————————————————————————————————————————————————————————————————
+lint: ## Check files for lint errors
+	-@$(NPX) prettier --check .
+	-@$(PHP) vendor/bin/php-cs-fixer check
+
+lint-fix: ## Fix files with lint errors
+	-@$(NPX) prettier --write .
+	-@$(PHP) vendor/bin/php-cs-fixer fix
+
+prettier:  ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
+	@$(eval c ?=)
+	@$(NPX) prettier $(c)
+
+php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given command, example: make php-cs-fixer c='check'
+	@$(eval c ?=)
+	@$(PHP) vendor/bin/php-cs-fixer $(c)
+
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker container
 	$(DOCKER_COMP) run --rm php chown -R $$(id -u):$$(id -g) .
