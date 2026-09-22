@@ -1,10 +1,6 @@
 {
     "name": "Symfony Docker",
-    "dockerComposeFile": [
-        "../compose.yaml",
-        "../compose.override.yaml",
-        "compose.devcontainer.yaml"
-    ],
+    "dockerComposeFile": ["../compose.yaml", "../compose.override.yaml", "compose.devcontainer.yaml"],
     "service": "php",
     "workspaceFolder": "/app",
     "features": {
@@ -14,10 +10,7 @@
     "postCreateCommand": "npm install -g intelephense",
     "customizations": {
         "vscode": {
-            "extensions": [
-                "bmewburn.vscode-intelephense-client",
-                "xdebug.php-debug"
-            ],
+            "extensions": ["bmewburn.vscode-intelephense-client", "xdebug.php-debug"],
             "settings": {
                 "launch": {
                     "version": "0.2.0",

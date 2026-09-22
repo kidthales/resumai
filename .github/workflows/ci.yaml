@@ -63,22 +63,16 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-      statuses: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Lint Code Base
-        uses: super-linter/super-linter/slim@v8
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VALIDATE_CHECKOV: false
-          VALIDATE_TRIVY: false
-          VALIDATE_BIOME_FORMAT: false
-          VALIDATE_BIOME_LINT: false
-          VALIDATE_PYTHON_BLACK: false
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+      - name: Install node_modules
+        run: npm ci
+      - name: Prettier
+        run: npx prettier --check .
