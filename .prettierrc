@@ -1,0 +1,17 @@
+{
+    "semi": true,
+    "trailingComma": "none",
+    "singleQuote": true,
+    "endOfLine": "lf",
+    "printWidth": 120,
+    "tabWidth": 4,
+    "useTabs": false,
+    "overrides": [
+        {
+            "files": "{compose.*yaml,.devcontainer/compose.*yaml,.github/**/*.yaml}",
+            "options": {
+                "tabWidth": 2
+            }
+        }
+    ]
+}

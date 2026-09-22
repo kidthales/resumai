@@ -20,11 +20,21 @@ services:
       FRANKENPHP_SITE_CONFIG: hot_reload
       MERCURE_EXTRA_DIRECTIVES: demo
       # See https://xdebug.org/docs/all_settings#mode
-      XDEBUG_MODE: "${XDEBUG_MODE:-develop}"
-      APP_ENV: "${APP_ENV:-dev}"
+      XDEBUG_MODE: '${XDEBUG_MODE:-develop}'
+      APP_ENV: '${APP_ENV:-dev}'
     extra_hosts:
       # Ensure that host.docker.internal is correctly defined on Linux
       - host.docker.internal:host-gateway
     tty: true
-###> symfony/mercure-bundle ###
-###< symfony/mercure-bundle ###
+  ###> symfony/mercure-bundle ###
+  ###< symfony/mercure-bundle ###
+  node:
+    image: node:lts-alpine
+    volumes:
+      - ./:/app
+    environment:
+      NODE_ENV: development
+    working_dir: /app
+    depends_on:
+      - php
+    tty: true

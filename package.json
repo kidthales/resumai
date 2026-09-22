@@ -1,0 +1,12 @@
+{
+  "name": "@kidthales/resumai",
+  "version": "0.1.0",
+  "description": "A resume and job application engineering system",
+  "license": "MIT",
+  "author": "Tristan Bonsor <tristan@agogpixel.com>",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "prettier": "^3.9.8"
+  }
+}
