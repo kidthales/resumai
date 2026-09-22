@@ -82,3 +82,5 @@ jobs:
           VALIDATE_BIOME_FORMAT: false
           VALIDATE_BIOME_LINT: false
           VALIDATE_PYTHON_BLACK: false
+          # TODO: https://github.com/dunglas/symfony-docker/issues/897
+          COMPOSER_IGNORE_PLATFORM_REQS: 1
