@@ -82,9 +82,3 @@ jobs:
           VALIDATE_BIOME_FORMAT: false
           VALIDATE_BIOME_LINT: false
           VALIDATE_PYTHON_BLACK: false
-          # TODO: PHP 8.4 / 8.5 mismatch, keep these disabled until compatible again...
-          # https://github.com/dunglas/symfony-docker/issues/897
-          VALIDATE_PHP: false
-          VALIDATE_PHP_PHPCS: false
-          VALIDATE_PHP_PHPSTAN: false
-          VALIDATE_PHP_PSALM: false
