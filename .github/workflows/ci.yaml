@@ -58,8 +58,8 @@ jobs:
       # - name: Run migrations
       #   run: docker compose exec -T php bin/console -e test doctrine:migrations:migrate --no-interaction
       # Uncomment if PHPUnit is installed
-      # - name: Run PHPUnit
-      #   run: docker compose exec -T php bin/phpunit
+      - name: Run PHPUnit
+        run: docker compose exec -T php bin/phpunit
       # Uncomment if Doctrine ORM is installed
       # - name: Doctrine Schema Validator
       #   run: docker compose exec -T php bin/console -e test doctrine:schema:validate
