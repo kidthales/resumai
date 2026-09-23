@@ -10,8 +10,8 @@ This project also uses Node.js for development support. Check `package.json` and
 
 This project uses `docker compose` managed services for development and application execution.
 The project filesystem is volume mounted with the running containers, and cli tools such as
-`composer`, `npm`, `bin/console`, Etc. **Must** be run from a container. Check the `Makefile` for
-targets that correspond to the appropriate cli task, for example:
+`composer`, `npm`, `bin/console`, Etc. **Must** be run from a container. Check the `Makefile` and the
+output of `make help` for targets that correspond to the appropriate cli task, for example:
 
 - `composer require <package>` would be `make composer c='require <package>'` (`docker compose exec php composer require <package>`).
 - `npm install --save-dev <package>` would be `make npm c='install --save-dev <package>'` (`docker compose exec node npm install --save-dev <package>`).
@@ -105,8 +105,11 @@ a controller or a service call for a service, not just "it didn't throw."
 ## Code style
 
 Symfony's coding standard, the `@Symfony` php-cs-fixer ruleset (a PSR-12-derived
-superset). Run `vendor/bin/php-cs-fixer fix` if `friendsofphp/php-cs-fixer` is
-installed; it isn't part of the skeleton by default.
+superset). Run `make php-cs-fixer c='<command>'`.
+
+All other files will use Prettier-defined rules. Run `make prettier c='<command>'`.
+
+To fix the formatting of all files, run `make lint-fix`.
 
 ## Discover, don't guess
 
