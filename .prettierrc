@@ -8,9 +8,22 @@
     "useTabs": false,
     "overrides": [
         {
+            "files": "**/{Dockerfile,Caddyfile,*.sh}",
+            "options": {
+                "useTabs": true
+            }
+        },
+        {
             "files": "{compose.*yaml,.devcontainer/compose.*yaml,.github/**/*.yaml}",
             "options": {
                 "tabWidth": 2
+            }
+        },
+        {
+            "files": "Makefile",
+            "options": {
+                "tabWidth": 8,
+                "useTabs": true
             }
         }
     ]

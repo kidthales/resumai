@@ -1,0 +1,28 @@
+ai:
+    platform:
+        # Inference Platform configuration
+        # see https://github.com/symfony/ai/tree/main/src/platform#platform-bridges
+
+        ollama:
+            http_client: ollama.client
+
+    agent:
+        # Agent configuration
+        # see https://symfony.com/doc/current/ai/bundles/ai-bundle.html
+
+        resume_drafter:
+            platform: ai.platform.ollama
+            model: qwen3:14b
+            prompt: |
+                This document establishes the operational rules, candidate background references,
+                engineering archetypes, document generation workflows, and quality standards for
+                AI agents assisting **%env(default::APPLICANT_NAME)%** in generating resumes, cover letters,
+                and application materials for **%env(default::APPLICANT_ROLE)%** roles.
+
+    store:
+        # Store configuration
+
+        # chromadb:
+        #    default:
+        #        client: 'client.service.id'
+        #        collection: 'my_collection'
