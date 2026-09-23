@@ -98,6 +98,11 @@ php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given comman
 	@$(eval c ?=)
 	@$(PHP) vendor/bin/php-cs-fixer $(c)
 
+## —— AI 🤖 ————————————————————————————————————————————————————————————————————
+skills: ## Run skills cli. Pass the parameter "c=" to run a given command; example: make skills c='add phaserjs/phaser'
+	@$(eval c ?=)
+	@$(NPX) skills $(c)
+
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker container
-	$(DOCKER_COMP) run --rm php chown -R $$(id -u):$$(id -g) .
+	@$(DOCKER_COMP) run --rm php chown -R $$(id -u):$$(id -g) .
