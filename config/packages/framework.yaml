@@ -8,6 +8,12 @@ framework:
     #esi: true
     #fragments: true
 
+    http_client:
+        scoped_clients:
+            ollama.client:
+                base_uri: '%env(OLLAMA_CLIENT_BASE_URI)%'
+                timeout: 172800 # 2 days
+
 when@test:
     framework:
         test: true

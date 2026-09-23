@@ -2,15 +2,17 @@
 DOCKER_COMP = docker compose
 
 # Docker containers
-PHP_CONT  = $(DOCKER_COMP) exec php
-NODE_CONT = $(DOCKER_COMP) exec node
+PHP_CONT    := $(DOCKER_COMP) exec php
+NODE_CONT   := $(DOCKER_COMP) exec node
+OLLAMA_CONT := $(DOCKER_COMP) exec ollama
 
 # Executables
-PHP      = $(PHP_CONT) php
-COMPOSER = $(PHP_CONT) composer
-SYMFONY  = $(PHP) bin/console
-NPM      = $(NODE_CONT) npm
-NPX      = $(NODE_CONT) npx
+PHP      := $(PHP_CONT) php
+COMPOSER := $(PHP_CONT) composer
+SYMFONY  := $(PHP) bin/console
+NPM      := $(NODE_CONT) npm
+NPX      := $(NODE_CONT) npx
+OLLAMA   := $(OLLAMA_CONT) ollama
 
 # Misc
 .DEFAULT_GOAL = help
@@ -19,6 +21,9 @@ NPX      = $(NODE_CONT) npx
                 composer vendor \
                 sf cc \
                 npm node_modules \
+                npx \
+                lint lint-fix prettier php-cs-fixer \
+                pull-models pull-skills ollama skills \
                 own
 
 ## —— 🎵 🐳 The Symfony Docker Makefile 🐳 🎵 ——————————————————————————————————
@@ -81,6 +86,46 @@ npx: ## Run npx, pass the parameter "c=" to run a given command, example: make n
 	@$(eval c ?=)
 	@$(NPX) $(c)
 
+## —— Lint 🧹 —————————————————————————————————————————————————————————————————
+lint: ## Check files for lint errors
+	-@$(NPX) prettier --check .
+	-@$(PHP) vendor/bin/php-cs-fixer check
+
+lint-fix: ## Fix files with lint errors
+	-@$(NPX) prettier --write .
+	-@$(PHP) vendor/bin/php-cs-fixer fix
+
+prettier:  ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
+	@$(eval c ?=)
+	@$(NPX) prettier $(c)
+
+php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given command, example: make php-cs-fixer c='check'
+	@$(eval c ?=)
+	@$(PHP) vendor/bin/php-cs-fixer $(c)
+
+## —— AI 🤖 ————————————————————————————————————————————————————————————————————
+REQUIRED_MODELS = qwen3:14b
+
+pull-models: ## Pull required models for use with ollama
+	@$(OLLAMA) list > /dev/null 2>&1 || (echo "❌ Error: Ollama service is not running. Please start Ollama first." && exit 1)
+	@for model in $(REQUIRED_MODELS); do \
+		echo "📥 Pulling model: $$model..."; \
+		$(OLLAMA) pull $$model; \
+	done
+	@echo "✅ All models successfully installed!"
+
+pull-skills: ## Pull required skills for use with agents
+pull-skills: c=experimental_install
+pull-skills: skills
+
+ollama: ## Run ollama cli, pass the parameter "c=" to run a given command; example: make ollama c='pull qwen3:14b'
+	@$(eval c ?=)
+	@$(OLLAMA) $(c)
+
+skills: ## Run skills cli. Pass the parameter "c=" to run a given command; example: make skills c='add phaserjs/phaser'
+	@$(eval c ?=)
+	@$(NPX) skills $(c)
+
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker container
-	$(DOCKER_COMP) run --rm php chown -R $$(id -u):$$(id -g) .
+	@$(DOCKER_COMP) run --quiet --rm php chown -R $$(id -u):$$(id -g) .

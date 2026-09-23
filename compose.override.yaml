@@ -11,7 +11,7 @@ services:
       - ./frankenphp/Caddyfile:/etc/frankenphp/Caddyfile:ro
       - ./frankenphp/conf.d/20-app.dev.ini:/usr/local/etc/php/app.conf.d/20-app.dev.ini:ro
       # Keep var/ off the bind-mount for faster I/O on Mac/Windows; comment to inspect from the host.
-      - /app/var
+      #- /app/var
       # If you develop on Mac or Windows you can remove the vendor/ directory
       #  from the bind-mount for better performance by enabling the next line:
       #- /app/vendor
@@ -26,13 +26,21 @@ services:
       # Ensure that host.docker.internal is correctly defined on Linux
       - host.docker.internal:host-gateway
     tty: true
-  ###> symfony/mercure-bundle ###
-  ###< symfony/mercure-bundle ###
+
   node:
-    image: node:lts-alpine
+    image: timbru31/node-alpine-git:24
     volumes:
       - ./:/app
     environment:
       NODE_ENV: development
     working_dir: /app
     tty: true
+
+  ollama:
+    volumes:
+      - ./var/ollama:/root/.ollama
+      - ./config/ollama:/ollama:ro
+    tty: true
+
+  ###> symfony/mercure-bundle ###
+  ###< symfony/mercure-bundle ###

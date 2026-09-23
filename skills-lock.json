@@ -1,0 +1,269 @@
+{
+  "version": 1,
+  "skills": {
+    "api-platform-dto-resources": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-dto-resources/SKILL.md",
+      "computedHash": "cbecc74286e4750ae1de384fb11788d6f34683fe0a580d4d42ad5f467bdd6394"
+    },
+    "api-platform-filters": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-filters/SKILL.md",
+      "computedHash": "d89f39cccf862e3eb555c4e82ece8d5e40824b5efc239115941066197b91439c"
+    },
+    "api-platform-resources": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-resources/SKILL.md",
+      "computedHash": "957af29d5f8670d0fd2dee5b09bc346e341f839be8cd4e01dd6766bd468e5aa3"
+    },
+    "api-platform-security": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-security/SKILL.md",
+      "computedHash": "0eb5522a9b677d1493b2986112a7decf521ebcd999665b463846f86d6fe432c0"
+    },
+    "api-platform-serialization": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-serialization/SKILL.md",
+      "computedHash": "fd5122f05038a73741dded56b4df30df4502f2697ccf89fc9773da230f1d1e1e"
+    },
+    "api-platform-state-providers": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-state-providers/SKILL.md",
+      "computedHash": "5e91ae34d6dd1f3690500c2bcb787dda676135ef17821562d947c301d5e60182"
+    },
+    "api-platform-tests": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-tests/SKILL.md",
+      "computedHash": "0fdc2e7a93f6d4f51ff3979e858a47b116e4774a243c838ebd3392c5a3f9f3b1"
+    },
+    "api-platform-versioning": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/api-platform-versioning/SKILL.md",
+      "computedHash": "edf934f5e44b4a382d33731241aaae16a1a7f3dc3a4c4c6feac0c6e461e130f7"
+    },
+    "bootstrap-check": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/bootstrap-check/SKILL.md",
+      "computedHash": "642938d3a590392692810e26e246fd1e4faaafca6b3b499fa2a1dbbf3779ed03"
+    },
+    "brainstorming": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/brainstorming/SKILL.md",
+      "computedHash": "6f32613abcf35432863b40148a9f999e74f8f3af8f7005969e0c117ef0852e36"
+    },
+    "config-env-parameters": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/config-env-parameters/SKILL.md",
+      "computedHash": "d05f768b20f166438ac1647c08d72f3b791afb7e03889d5e73ee87343bdc9b7c"
+    },
+    "controller-cleanup": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/controller-cleanup/SKILL.md",
+      "computedHash": "21bfca3d743343ac81ea446f484d611bbc0d7acf289244688d7eefa1cee5ae64"
+    },
+    "cqrs-and-handlers": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/cqrs-and-handlers/SKILL.md",
+      "computedHash": "40ee7719faf3921f8152ccc60a35c636953f8e2389f82edf63c805c0990a16da"
+    },
+    "daily-workflow": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/daily-workflow/SKILL.md",
+      "computedHash": "94a05916f4cc52ea3cf3b7284791a7791f493f2ff6ff2c56ed0a6b7d38422fa0"
+    },
+    "doctrine-batch-processing": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/doctrine-batch-processing/SKILL.md",
+      "computedHash": "d8413644248ba76af6be508959896e9311caa469c838b27b8fb311665541eaee"
+    },
+    "doctrine-events": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/doctrine-events/SKILL.md",
+      "computedHash": "9c9ff024a7e4c957ac26a05695a8f809adf1cca3308e7850d2efb5b05fb4aad2"
+    },
+    "doctrine-fetch-modes": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/doctrine-fetch-modes/SKILL.md",
+      "computedHash": "a1cf3a3406fa7a4e9b31f4d416e46ecb6fa3f742a1168b1de393619de9eb9119"
+    },
+    "doctrine-fixtures-foundry": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/doctrine-fixtures-foundry/SKILL.md",
+      "computedHash": "e47fbd8fc268c14f4ca5f5837278addbc6221adea6d84747615172820811a024"
+    },
+    "doctrine-migrations": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/doctrine-migrations/SKILL.md",
+      "computedHash": "c99ce479a619c3de4d8533da6b80daa47edfbb086dd6e9e84650a13e1e653f93"
+    },
+    "doctrine-relations": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/doctrine-relations/SKILL.md",
+      "computedHash": "320ef6b0a1ca8ac43d06bb0233132915ced995289038bf25056f22be1a64c995"
+    },
+    "doctrine-transactions": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/doctrine-transactions/SKILL.md",
+      "computedHash": "ca40cf899bac656ab426df4522079d88cce5bd4cf219bad75229ac16cc87bedc"
+    },
+    "e2e-panther-playwright": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/e2e-panther-playwright/SKILL.md",
+      "computedHash": "cd2950cab41c5daa94daeecd4cebf651da3f73b08d132569d9598e33414742e0"
+    },
+    "effective-context": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/effective-context/SKILL.md",
+      "computedHash": "097e752582982c6bbb11aaaebbc3aa24d0efe84da93c52dad75f2998dc31e53d"
+    },
+    "executing-plans": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/executing-plans/SKILL.md",
+      "computedHash": "09c49eed43a4f59bca7c1fb137735ee896e36f54bffd883b1ccfcfd178a90b28"
+    },
+    "form-types-validation": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/form-types-validation/SKILL.md",
+      "computedHash": "686f7590b86f6ed4e04f6e9a861979415b2041f91d900ae46a52a6832f72f460"
+    },
+    "functional-tests": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/functional-tests/SKILL.md",
+      "computedHash": "8f370b203e365298bbde57e7781d4319102dbce6e91661749b0a777d31e2803f"
+    },
+    "interfaces-and-autowiring": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/interfaces-and-autowiring/SKILL.md",
+      "computedHash": "be8a54684c3a3de92433bad04bb87495bff6c166c7c425ccefb1ac98bf803e9c"
+    },
+    "messenger-retry-failures": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/messenger-retry-failures/SKILL.md",
+      "computedHash": "1688b070ad6dc05c870ee9d1d6faa3ea7736dad6db5085fab17bac6653bf9eb9"
+    },
+    "ports-and-adapters": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/ports-and-adapters/SKILL.md",
+      "computedHash": "deafac958fa6d7b801527ae6353d7446f493e473ad075b37d0ce5b3c80e2dd8c"
+    },
+    "quality-checks": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/quality-checks/SKILL.md",
+      "computedHash": "a835315f6caa371487933ba17d8b9d82dec92941c05bb8a53eb2215e0f501431"
+    },
+    "rate-limiting": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/rate-limiting/SKILL.md",
+      "computedHash": "51629981c245575030eba0be3da2c9ead047d63495a946c523e0b165311e9371"
+    },
+    "runner-selection": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/runner-selection/SKILL.md",
+      "computedHash": "ea52940402ea48c7ff81e332603b7b911de122adadb9a3f4592b40a1fe89ce6d"
+    },
+    "strategy-pattern": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/strategy-pattern/SKILL.md",
+      "computedHash": "7911eb2f00b9bf26a6d7309e059e4fc1f159ad3ea4a0e6ae1ad841199d18a118"
+    },
+    "symfony-cache": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/symfony-cache/SKILL.md",
+      "computedHash": "3ffeb8ba35ce46bef35cd3241f39c809bdda11d68aaf77a2d2e4b354eca86607"
+    },
+    "symfony-messenger": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/symfony-messenger/SKILL.md",
+      "computedHash": "b555ab8e28e4b615c5ff9bb2ac41f5114c6661dbe21af795b6f9c576bc513960"
+    },
+    "symfony-scheduler": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/symfony-scheduler/SKILL.md",
+      "computedHash": "0d5957a0534a363282a04f9ffd3f9d87a71a3319e3603c5343eb92f712206fef"
+    },
+    "symfony-voters": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/symfony-voters/SKILL.md",
+      "computedHash": "5cc6baf49ec202f4c9987e5fc70e5485c8b3041166b3acbb6799c714bdb1c12d"
+    },
+    "tdd-with-pest": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/tdd-with-pest/SKILL.md",
+      "computedHash": "a5148c995ef56eeb9a80946b1cdc197a73645e3b3406898c60b602b7e356fd80"
+    },
+    "tdd-with-phpunit": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/tdd-with-phpunit/SKILL.md",
+      "computedHash": "c5c19e8dd81c299405dae57045912e1aa08ea267d56fc3969c203ad5bf90c64e"
+    },
+    "test-doubles-mocking": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/test-doubles-mocking/SKILL.md",
+      "computedHash": "089d14935850ead3a5abb0c3d7cbbe5c4b73880089a5e3368b5f905f6719a54f"
+    },
+    "twig-components": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/twig-components/SKILL.md",
+      "computedHash": "75382efb94f42690c230d8ab8e29af11ef96bcc946a6f3cdf572b9d5bc4d2984"
+    },
+    "using-symfony-superpowers": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/using-symfony-superpowers/SKILL.md",
+      "computedHash": "a1dfa0b7b33976f743d97ae838e452f20a87c5aa732d296e5e529730f54e599e"
+    },
+    "value-objects-and-dtos": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/value-objects-and-dtos/SKILL.md",
+      "computedHash": "414c2c5bee2788f7918b452b65d2a4bcbf0ea16942c55ace788cbe3713268209"
+    },
+    "writing-plans": {
+      "source": "dev-toolings/superpowers-symfony",
+      "sourceType": "github",
+      "skillPath": "content/skills/writing-plans/SKILL.md",
+      "computedHash": "559514d442b74d8fab8a18f33ff8e3586112315af89c4c75328e99c7379714f6"
+    }
+  }
+}
