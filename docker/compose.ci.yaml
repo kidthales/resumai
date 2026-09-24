@@ -1,0 +1,7 @@
+services:
+  php:
+    image: ${IMAGES_PREFIX:-resumai}:dev-php-${IMAGES_TAG:-latest}
+    hostname: resumai-test-php
+    volumes:
+      - ../:/app
+    tty: true

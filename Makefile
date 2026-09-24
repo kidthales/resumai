@@ -1,10 +1,12 @@
 # Executables (local)
-DOCKER_COMP = docker compose
+CD_DOCKER       = cd docker
+DOCKER_COMP     = docker compose
+CD_DOCKER_COMP := $(CD_DOCKER) && $(DOCKER_COMP)
 
 # Docker containers
-PHP_CONT    := $(DOCKER_COMP) exec php
-NODE_CONT   := $(DOCKER_COMP) exec node
-OLLAMA_CONT := $(DOCKER_COMP) exec ollama
+PHP_CONT    := $(CD_DOCKER_COMP) exec php
+NODE_CONT   := $(CD_DOCKER_COMP) exec node
+OLLAMA_CONT := $(CD_DOCKER_COMP) exec ollama
 
 # Executables
 PHP      := $(PHP_CONT) php
@@ -16,44 +18,46 @@ OLLAMA   := $(OLLAMA_CONT) ollama
 
 # Misc
 .DEFAULT_GOAL = help
-.PHONY        : help \
-                build up start down logs sh bash test \
+.PHONY        : help start fresh-start stop \
+                bake up down logs \
+                test \
                 composer vendor \
                 sf cc \
                 npm node_modules \
                 npx \
                 lint lint-fix prettier php-cs-fixer \
-                pull-models pull-skills ollama skills \
+                ollama skills \
                 own
 
-## —— 🎵 🐳 The Symfony Docker Makefile 🐳 🎵 ——————————————————————————————————
+## —— 📄 🤖 The ResumAI Makefile 🤖 📄 —————————————————————————————————————————
 help: ## Outputs this help screen
 	@grep -E '(^[a-zA-Z0-9\./_-]+:.*?##.*$$)|(^##)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}{printf "\033[32m%-30s\033[0m %s\n", $$1, $$2}' | sed -e 's/\[32m##/[33m/'
 
+start: bake up logs ## Start local development
+
+fresh-start: ## Start local development with fresh images
+	@$(MAKE) bake c='--pull --no-cache' up logs
+
+stop: down ## Stop local development
+
 ## —— Docker 🐳 ————————————————————————————————————————————————————————————————
-build: ## Builds the Docker images
-	@$(DOCKER_COMP) build --pull --no-cache
+bake: ## Bakes the Docker images, pass the parameter "c=" to specify options and targets, example: make bake c='--pull --no-cache php node'
+	@$(eval c ?=)
+	@$(CD_DOCKER) && touch -a .env && docker buildx bake --allow=fs.read=.. -f .env -f docker-bake.hcl $(c)
 
 up: ## Start the docker hub in detached mode (no logs)
-	@$(DOCKER_COMP) up --detach
-
-start: build up ## Build and start the containers
+	@$(CD_DOCKER_COMP) up --detach
 
 down: ## Stop the docker hub
-	@$(DOCKER_COMP) down --remove-orphans
+	@$(CD_DOCKER_COMP) down --remove-orphans
 
 logs: ## Show live logs
-	@$(DOCKER_COMP) logs --tail=0 --follow
+	@$(CD_DOCKER_COMP) logs --tail=0 --follow
 
-sh: ## Connect to the FrankenPHP container
-	@$(PHP_CONT) sh
-
-bash: ## Connect to the FrankenPHP container via bash so up and down arrows go to previous commands
-	@$(PHP_CONT) bash
-
+## —— Tests 🧪 —————————————————————————————————————————————————————————————————
 test: ## Start tests with phpunit, pass the parameter "c=" to add options to phpunit, example: make test c="--group e2e --stop-on-failure"
 	@$(eval c ?=)
-	@$(DOCKER_COMP) exec -e APP_ENV=test php bin/phpunit $(c)
+	@$(CD_DOCKER_COMP) exec -e APP_ENV=test php bin/phpunit $(c)
 
 ## —— Composer 🧙 ——————————————————————————————————————————————————————————————
 composer: ## Run composer, pass the parameter "c=" to run a given command, example: make composer c='req symfony/orm-pack'
@@ -86,7 +90,7 @@ npx: ## Run npx, pass the parameter "c=" to run a given command, example: make n
 	@$(eval c ?=)
 	@$(NPX) $(c)
 
-## —— Lint 🧹 —————————————————————————————————————————————————————————————————
+## —— Lint 🧹 ——————————————————————————————————————————————————————————————————
 lint: ## Check files for lint errors
 	-@$(NPX) prettier --check .
 	-@$(PHP) vendor/bin/php-cs-fixer check
@@ -95,7 +99,7 @@ lint-fix: ## Fix files with lint errors
 	-@$(NPX) prettier --write .
 	-@$(PHP) vendor/bin/php-cs-fixer fix
 
-prettier:  ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
+prettier: ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
 	@$(eval c ?=)
 	@$(NPX) prettier $(c)
 
@@ -104,20 +108,6 @@ php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given comman
 	@$(PHP) vendor/bin/php-cs-fixer $(c)
 
 ## —— AI 🤖 ————————————————————————————————————————————————————————————————————
-REQUIRED_MODELS = qwen3:14b
-
-pull-models: ## Pull required models for use with ollama
-	@$(OLLAMA) list > /dev/null 2>&1 || (echo "❌ Error: Ollama service is not running. Please start Ollama first." && exit 1)
-	@for model in $(REQUIRED_MODELS); do \
-		echo "📥 Pulling model: $$model..."; \
-		$(OLLAMA) pull $$model; \
-	done
-	@echo "✅ All models successfully installed!"
-
-pull-skills: ## Pull required skills for use with agents
-pull-skills: c=experimental_install
-pull-skills: skills
-
 ollama: ## Run ollama cli, pass the parameter "c=" to run a given command; example: make ollama c='pull qwen3:14b'
 	@$(eval c ?=)
 	@$(OLLAMA) $(c)
@@ -128,4 +118,4 @@ skills: ## Run skills cli. Pass the parameter "c=" to run a given command; examp
 
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker container
-	@$(DOCKER_COMP) run --quiet --rm php chown -R $$(id -u):$$(id -g) .
+	@$(CD_DOCKER_COMP) run --quiet --rm php chown -R $$(id -u):$$(id -g) .

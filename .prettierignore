@@ -1,5 +1,5 @@
-.idea
-.vscode
+.agents/skills
+bin
 composer.json
 composer.lock
 package-lock.json

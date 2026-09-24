@@ -4,6 +4,14 @@
 
 A résumé and job application engineering system.
 
-1. `make start`
-2. `make node_modules`
-3. `make pull-models pull-skills`
+## Requirements
+
+- [Docker Compose](https://docs.docker.com/compose/install/) (v2.10+)
+- GNU Make and GNU Bash
+- [Git](https://git-scm.com/install/)
+
+## Getting Started
+
+1. `git clone https://github.com/kidthales/resumai.git`
+2. `cd resumai`
+3. `make start`
