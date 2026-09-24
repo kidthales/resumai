@@ -14,10 +14,32 @@ ai:
             platform: ai.platform.ollama
             model: precision-qwen25-14b
             prompt: |
-                This document establishes the operational rules, candidate background references,
-                engineering archetypes, document generation workflows, and quality standards for
-                AI agents assisting **%env(default::APPLICANT_NAME)%** in generating resumes, cover letters,
-                and application materials for **%env(default::APPLICANT_ROLE)%** roles.
+                # Resume Drafter Instructions
+
+                This document establishes the operational rules, candidate background references, and quality standards
+                for synthesizing resumes.
+
+                ## Operational Rules
+
+                TODO
+
+                ## Candidate Background References
+
+                ### Personal Information
+
+                %personal_info%
+
+                ### Education History
+
+                %education_history%
+
+                ### Work History
+
+                %work_history%
+
+                ## Quality Standards
+
+                TODO
 
     store:
         # Store configuration

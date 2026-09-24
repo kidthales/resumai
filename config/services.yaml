@@ -7,6 +7,23 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    content_path: '%kernel.project_dir%/content'
+    content_not_found: 'Not Found'
+
+    env(SAMPLE_PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.sample.md'
+    env(PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.md'
+    sample_personal_info: '%env(default:content_not_found:file:SAMPLE_PERSONAL_INFO_PATH)%'
+    personal_info: '%env(default:sample_personal_info:file:PERSONAL_INFO_PATH)%'
+
+    env(SAMPLE_EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.sample.md'
+    env(EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.md'
+    sample_education_history: '%env(default:content_not_found:file:SAMPLE_EDUCATION_HISTORY_PATH)%'
+    education_history: '%env(default:sample_education_history:file:EDUCATION_HISTORY_PATH)%'
+
+    env(SAMPLE_WORK_HISTORY_PATH): '%content_path%/pii/work_history.sample.md'
+    env(WORK_HISTORY_PATH): '%content_path%/pii/work_history.md'
+    sample_work_history: '%env(default:content_not_found:file:SAMPLE_WORK_HISTORY_PATH)%'
+    work_history: '%env(default:sample_work_history:file:WORK_HISTORY_PATH)%'
 
 services:
     # default configuration for services in *this* file

@@ -1,0 +1,55 @@
+- **Krakoan Habitat & Gateway Systems**
+    - **Role:** Principal Architect – Bio-Organic Infrastructures
+        - Spearhead development and maintenance of island-wide bio-technological networks and Krakoan Gateway transit relays.
+        - Design fault-tolerant psionic interface protocols enabling seamless transit and telemetry sync across global mutant habitats.
+        - Monitor bio-dome environmental equilibrium and interface neural feedback circuits with organic computational nodes.
+        - Coordinate cross-functional crisis engineering teams during high-level planetary and orbital defense incidents.
+        - **Technology stack:** Krakoan Gateways, Bio-Organic Telemetry, Psionic Mesh Networks, Telepathic Security Protocols, Python, Rust, Linux.
+    - **Location:** Krakoa (On-site)
+    - **Duration:** Oct 2019 to Sep 2026 (7 years)
+
+- **Wakandan International Outreach – Science Division**
+    - **Role:** Senior Defense Systems & Anomaly Specialist
+        - Researched energy-dispersion harmonics and advanced vibranium weave integration for protective mutant field equipment.
+        - Architected automated anomaly containment systems and perimeter defensive grids for global outreach centers.
+        - Collaborated with international scientific working groups on kinetic dissipation modeling and non-lethal neutralizing tech.
+        - **Technology stack:** Vibranium Matrix Drivers, Holographic Diagnostic Arrays, Kinetic Dissipation Frameworks, C++, Python, Embedded Systems.
+    - **Location:** Birnin Zana, Wakanda (On-site)
+    - **Duration:** Jan 2012 to Sep 2019 (7 years, 9 months)
+
+- **X-Corporation (X-Corp)**
+    - **Role:** Director of Mutant Tech Integration
+        - Directed technical strategy and commercialization of mutant-developed assistive devices and sustainable clean-energy solutions.
+        - Managed distributed engineering teams building secure enterprise communications protected by telepathic cryptography.
+        - Built automated real-time compliance and telemetry monitoring pipelines for global corporate operations.
+        - **Technology stack:** Cerebro-Link v2, Telepathic Encryption, Distributed Grid Computing, C++, Python, Unix/Linux.
+    - **Location:** New York, New York, USA (Hybrid)
+    - **Duration:** Sep 2000 to Dec 2011 (11 years, 4 months)
+
+- **Xavier Institute for Higher Learning**
+    - **Role:** Lead Danger Room Instructor & Systems Engineer
+        - Architect and maintain holographic combat simulations and safety override protocols for student training.
+        - Interface with Cerebro systems to identify and respond to emerging mutant distress signals globally.
+        - Oversee daily operations, threat assessments, and tactical readiness drills for junior mutant teams.
+        - Implement real-time biometric telemetry monitoring for mutant power output calibration and containment.
+        - **Technology stack:** Cerebro Interface, Danger Room Holo-Matrix, SR-71 Blackbird Avionics, Mutant Power Dampeners, C++, Python, Linux, Telepathic Encryption Protocols.
+    - **Location:** Westchester County, New York, USA (On-site)
+    - **Duration:** Jun 1994 to Aug 2000 (6 years, 3 months)
+
+- **Muir Island Mutant Research Centre**
+    - **Role:** Senior Genetic Systems Researcher
+        - Conducted gene-sequencing analysis on the X-Gene to understand mutant physiological anomalies and ability manifestation.
+        - Maintained advanced laboratory diagnostic equipment and automated containment field arrays.
+        - Collaborated with international mutant research institutions on ethical mutant integration and technology standards.
+        - **Technology stack:** Gene-Sequencing Hardware, Bio-Telemetry Systems, Containment Force-Field Drivers, Unix, Fortran, C.
+    - **Location:** Muir Island, Scotland, UK (On-site)
+    - **Duration:** Jul 1990 to May 1994 (3 years, 11 months)
+
+- **Stark Enterprises**
+    - **Role:** Research & Development Specialist – Advanced Bio-Mechanics
+        - Developed assistive exoskeleton prototypes and bio-feedback sensors tailored for individuals with superhuman physiology.
+        - Analyzed structural integrity and thermal resistance of advanced alloys under extreme kinetic conditions.
+        - Authored comprehensive technical documentation and safety compliance guidelines for experimental lab equipment.
+        - **Technology stack:** CAD/CAM, Bio-Mechanical Sensors, Kinetic Analysis Frameworks, C, Assembly, VMS.
+    - **Location:** New York, New York, USA (On-site)
+    - **Duration:** Sep 1988 to Jun 1990 (1 year, 10 months)
