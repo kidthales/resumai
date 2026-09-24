@@ -32,6 +32,7 @@ jobs:
         with:
           pull: true
           load: true
+          targets: php
           files: |
             docker/docker-bake.hcl
           set: |
