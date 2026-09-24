@@ -14,7 +14,7 @@
             }
         },
         {
-            "files": "{compose.*yaml,.devcontainer/compose.*yaml,.github/**/*.yaml}",
+            "files": "{docker/compose.*yaml,.github/**/*.yaml}",
             "options": {
                 "tabWidth": 2
             }

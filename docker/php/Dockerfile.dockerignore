@@ -1,0 +1,11 @@
+*
+!bin/
+!config/
+!docker/php/frankenphp
+!public/
+!src/
+!.env
+!.env.dev
+!composer.json
+!composer.lock
+!symfony.lock

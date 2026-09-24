@@ -1,10 +1,12 @@
 # Executables (local)
-DOCKER_COMP = docker compose
+CD_DOCKER       = cd docker
+DOCKER_COMP     = docker compose
+CD_DOCKER_COMP := $(CD_DOCKER) && $(DOCKER_COMP)
 
 # Docker containers
-PHP_CONT    := $(DOCKER_COMP) exec php
-NODE_CONT   := $(DOCKER_COMP) exec node
-OLLAMA_CONT := $(DOCKER_COMP) exec ollama
+PHP_CONT    := $(CD_DOCKER_COMP) exec php
+NODE_CONT   := $(CD_DOCKER_COMP) exec node
+OLLAMA_CONT := $(CD_DOCKER_COMP) exec ollama
 
 # Executables
 PHP      := $(PHP_CONT) php
@@ -32,18 +34,18 @@ help: ## Outputs this help screen
 
 ## —— Docker 🐳 ————————————————————————————————————————————————————————————————
 build: ## Builds the Docker images
-	@$(DOCKER_COMP) build --pull --no-cache
+	@$(CD_DOCKER) && touch -a .env && docker buildx bake --allow=fs.read=.. -f .env -f docker-bake.hcl --pull --no-cache
 
 up: ## Start the docker hub in detached mode (no logs)
-	@$(DOCKER_COMP) up --detach
+	@$(CD_DOCKER_COMP) up --detach
 
 start: build up ## Build and start the containers
 
 down: ## Stop the docker hub
-	@$(DOCKER_COMP) down --remove-orphans
+	@$(CD_DOCKER_COMP) down --remove-orphans
 
 logs: ## Show live logs
-	@$(DOCKER_COMP) logs --tail=0 --follow
+	@$(CD_DOCKER_COMP) logs --tail=0 --follow
 
 sh: ## Connect to the FrankenPHP container
 	@$(PHP_CONT) sh
@@ -53,7 +55,7 @@ bash: ## Connect to the FrankenPHP container via bash so up and down arrows go t
 
 test: ## Start tests with phpunit, pass the parameter "c=" to add options to phpunit, example: make test c="--group e2e --stop-on-failure"
 	@$(eval c ?=)
-	@$(DOCKER_COMP) exec -e APP_ENV=test php bin/phpunit $(c)
+	@$(CD_DOCKER_COMP) exec -e APP_ENV=test php bin/phpunit $(c)
 
 ## —— Composer 🧙 ——————————————————————————————————————————————————————————————
 composer: ## Run composer, pass the parameter "c=" to run a given command, example: make composer c='req symfony/orm-pack'
@@ -128,4 +130,4 @@ skills: ## Run skills cli. Pass the parameter "c=" to run a given command; examp
 
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker container
-	@$(DOCKER_COMP) run --quiet --rm php chown -R $$(id -u):$$(id -g) .
+	@$(CD_DOCKER_COMP) run --quiet --rm php chown -R $$(id -u):$$(id -g) .
