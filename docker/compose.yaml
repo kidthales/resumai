@@ -30,16 +30,6 @@ services:
         published: ${HTTP3_PORT:-443}
         protocol: udp
 
-  node:
-    restart: unless-stopped
-    environment:
-      TZ: ${APP_TIMEZONE:-UTC}
-
-  ollama:
-    restart: unless-stopped
-    environment:
-      TZ: ${APP_TIMEZONE:-UTC}
-
 volumes:
   caddy_data:
   caddy_config:

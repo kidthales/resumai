@@ -19,14 +19,20 @@ services:
 
   node:
     image: ${IMAGES_PREFIX:-resumai}:dev-node-${IMAGES_TAG:-latest}
+    restart: unless-stopped
     hostname: resumai-dev-node
+    environment:
+      TZ: ${APP_TIMEZONE:-UTC}
     volumes:
       - ../:/app
     tty: true
 
   ollama:
     image: ${IMAGES_PREFIX:-resumai}:dev-ollama-${IMAGES_TAG:-latest}
+    restart: unless-stopped
     hostname: resumai-dev-ollama
+    environment:
+      TZ: ${APP_TIMEZONE:-UTC}
     volumes:
       - ../var/.ollama:/root/.ollama
       - ../ollama:/ollama:ro
