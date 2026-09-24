@@ -19,13 +19,14 @@ OLLAMA   := $(OLLAMA_CONT) ollama
 # Misc
 .DEFAULT_GOAL = help
 .PHONY        : help start fresh-start stop \
-                bake up down logs test \
+                bake up down logs \
+                test \
                 composer vendor \
                 sf cc \
                 npm node_modules \
                 npx \
                 lint lint-fix prettier php-cs-fixer \
-                pull-models pull-skills ollama skills \
+                ollama skills \
                 own
 
 ## —— 📄 🤖 The ResumAI Makefile 🤖 📄 —————————————————————————————————————————
@@ -107,20 +108,6 @@ php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given comman
 	@$(PHP) vendor/bin/php-cs-fixer $(c)
 
 ## —— AI 🤖 ————————————————————————————————————————————————————————————————————
-REQUIRED_MODELS = qwen3:14b
-
-pull-models: ## Pull required models for use with ollama
-	@$(OLLAMA) list > /dev/null 2>&1 || (echo "❌ Error: Ollama service is not running. Please start Ollama first." && exit 1)
-	@for model in $(REQUIRED_MODELS); do \
-		echo "📥 Pulling model: $$model..."; \
-		$(OLLAMA) pull $$model; \
-	done
-	@echo "✅ All models successfully installed!"
-
-pull-skills: ## Pull required skills for use with agents
-pull-skills: c=experimental_install
-pull-skills: skills
-
 ollama: ## Run ollama cli, pass the parameter "c=" to run a given command; example: make ollama c='pull qwen3:14b'
 	@$(eval c ?=)
 	@$(OLLAMA) $(c)

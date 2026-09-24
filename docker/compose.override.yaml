@@ -34,6 +34,9 @@ services:
     environment:
       TZ: ${APP_TIMEZONE:-UTC}
     volumes:
-      - ../var/.ollama:/root/.ollama
-      - ../ollama:/ollama:ro
+      - ollama_storage:/root/.ollama
+      - ../modelfiles:/modelfiles:ro
     tty: true
+
+volumes:
+  ollama_storage:
