@@ -18,8 +18,8 @@ OLLAMA   := $(OLLAMA_CONT) ollama
 
 # Misc
 .DEFAULT_GOAL = help
-.PHONY        : help \
-                build up start down logs sh bash test \
+.PHONY        : help start fresh-start stop \
+                bake up down logs test \
                 composer vendor \
                 sf cc \
                 npm node_modules \
@@ -28,18 +28,24 @@ OLLAMA   := $(OLLAMA_CONT) ollama
                 pull-models pull-skills ollama skills \
                 own
 
-## —— 🎵 🐳 The Symfony Docker Makefile 🐳 🎵 ——————————————————————————————————
+## —— 📄 🤖 The ResumAI Makefile 🤖 📄 —————————————————————————————————————————
 help: ## Outputs this help screen
 	@grep -E '(^[a-zA-Z0-9\./_-]+:.*?##.*$$)|(^##)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}{printf "\033[32m%-30s\033[0m %s\n", $$1, $$2}' | sed -e 's/\[32m##/[33m/'
 
+start: bake up logs ## Start local development
+
+fresh-start: ## Start local development with fresh images
+	@$(MAKE) bake c='--pull --no-cache' up logs
+
+stop: down ## Stop local development
+
 ## —— Docker 🐳 ————————————————————————————————————————————————————————————————
-build: ## Builds the Docker images
-	@$(CD_DOCKER) && touch -a .env && docker buildx bake --allow=fs.read=.. -f .env -f docker-bake.hcl --pull --no-cache
+bake: ## Bakes the Docker images, pass the parameter "c=" to specify options and targets, example: make bake c='--pull --no-cache php node'
+	@$(eval c ?=)
+	@$(CD_DOCKER) && touch -a .env && docker buildx bake --allow=fs.read=.. -f .env -f docker-bake.hcl $(c)
 
 up: ## Start the docker hub in detached mode (no logs)
 	@$(CD_DOCKER_COMP) up --detach
-
-start: build up ## Build and start the containers
 
 down: ## Stop the docker hub
 	@$(CD_DOCKER_COMP) down --remove-orphans
@@ -47,12 +53,7 @@ down: ## Stop the docker hub
 logs: ## Show live logs
 	@$(CD_DOCKER_COMP) logs --tail=0 --follow
 
-sh: ## Connect to the FrankenPHP container
-	@$(PHP_CONT) sh
-
-bash: ## Connect to the FrankenPHP container via bash so up and down arrows go to previous commands
-	@$(PHP_CONT) bash
-
+## —— Tests 🧪 —————————————————————————————————————————————————————————————————
 test: ## Start tests with phpunit, pass the parameter "c=" to add options to phpunit, example: make test c="--group e2e --stop-on-failure"
 	@$(eval c ?=)
 	@$(CD_DOCKER_COMP) exec -e APP_ENV=test php bin/phpunit $(c)
@@ -88,7 +89,7 @@ npx: ## Run npx, pass the parameter "c=" to run a given command, example: make n
 	@$(eval c ?=)
 	@$(NPX) $(c)
 
-## —— Lint 🧹 —————————————————————————————————————————————————————————————————
+## —— Lint 🧹 ——————————————————————————————————————————————————————————————————
 lint: ## Check files for lint errors
 	-@$(NPX) prettier --check .
 	-@$(PHP) vendor/bin/php-cs-fixer check
@@ -97,7 +98,7 @@ lint-fix: ## Fix files with lint errors
 	-@$(NPX) prettier --write .
 	-@$(PHP) vendor/bin/php-cs-fixer fix
 
-prettier:  ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
+prettier: ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
 	@$(eval c ?=)
 	@$(NPX) prettier $(c)
 

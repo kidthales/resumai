@@ -27,11 +27,11 @@ ENV COMPOSER_ALLOW_SUPERUSER=1
 
 ENV PHP_INI_SCAN_DIR=":$PHP_INI_DIR/app.conf.d"
 
-COPY --link docker/php/frankenphp/conf.d/10-app.ini $PHP_INI_DIR/app.conf.d/
-COPY --link --chmod=755 docker/php/frankenphp/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
-COPY --link docker/php/frankenphp/Caddyfile /etc/frankenphp/Caddyfile
+COPY --link docker/php/conf.d/10-app.ini $PHP_INI_DIR/app.conf.d/
+COPY --link --chmod=755 docker/php/docker-resumai-entrypoint.sh /usr/local/bin/docker-resumai-entrypoint
+COPY --link docker/php/Caddyfile /etc/frankenphp/Caddyfile
 
-ENTRYPOINT ["docker-entrypoint"]
+ENTRYPOINT ["docker-resumai-entrypoint"]
 
 HEALTHCHECK --start-period=60s CMD php -r 'exit(false === @file_get_contents("http://localhost:2019/metrics", context: stream_context_create(["http" => ["timeout" => 5]])) ? 1 : 0);'
 CMD [ "frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile" ]
@@ -50,7 +50,7 @@ RUN <<-EOF
 	git config --system --add safe.directory /app
 EOF
 
-COPY --link docker/php/frankenphp/conf.d/20-app.dev.ini $PHP_INI_DIR/app.conf.d/
+COPY --link docker/php/conf.d/20-app.dev.ini $PHP_INI_DIR/app.conf.d/
 
 CMD [ "frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile", "--watch" ]
 
@@ -61,14 +61,14 @@ ENV APP_ENV=prod
 
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
-COPY --link docker/php/frankenphp/conf.d/20-app.prod.ini $PHP_INI_DIR/app.conf.d/
+COPY --link docker/php/conf.d/20-app.prod.ini $PHP_INI_DIR/app.conf.d/
 
 # prevent the reinstallation of vendors at every changes in the source code
 COPY --link composer.* symfony.* ./
 RUN composer install --no-cache --prefer-dist --no-dev --no-autoloader --no-scripts --no-progress
 
 # copy sources
-COPY --link --exclude=docker/php/frankenphp/ . ./
+COPY --link --exclude=docker/php/ . ./
 
 RUN <<-EOF
 	mkdir -p var/cache var/log var/share
@@ -139,13 +139,13 @@ COPY --link --exclude=var --from=app_prod_builder /app /app
 COPY --chown=www-data:0 --from=app_prod_builder /app/var /app/var
 RUN chmod g=u /app/var
 
-COPY --link --chmod=755 docker/php/frankenphp/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+COPY --link --chmod=755 docker/php/docker-resumai-entrypoint.sh /usr/local/bin/docker-resumai-entrypoint
 
 USER www-data
 
 WORKDIR /app
 
-ENTRYPOINT ["docker-entrypoint"]
+ENTRYPOINT ["docker-resumai-entrypoint"]
 
 HEALTHCHECK --start-period=60s CMD php -r 'exit(false === @file_get_contents("http://localhost:2019/metrics", context: stream_context_create(["http" => ["timeout" => 5]])) ? 1 : 0);'
 CMD [ "frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile" ]
