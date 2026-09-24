@@ -15,7 +15,7 @@ trim_trailing_whitespace = true
 [**/{Dockerfile,Caddyfile,*.sh}]
 indent_style = tab
 
-[{compose.*yaml,.devcontainer/compose.*yaml,.github/**/*.yaml}]
+[{docker/compose.*yaml,.github/**/*.yaml}]
 indent_size = 2
 
 [**.md]
