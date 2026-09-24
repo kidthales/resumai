@@ -12,7 +12,7 @@ ai:
 
         resume_drafter:
             platform: ai.platform.ollama
-            model: precision-qwen25-14
+            model: precision-qwen25-14b
             prompt: |
                 This document establishes the operational rules, candidate background references,
                 engineering archetypes, document generation workflows, and quality standards for
