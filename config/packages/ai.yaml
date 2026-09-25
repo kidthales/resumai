@@ -15,6 +15,15 @@ ai:
             model: resume-drafter
             prompt: '%prompts.resume_drafter%'
 
+        archetype_selector:
+            platform: ai.platform.ollama
+            model: archetype-selector
+            prompt: '%prompts.archetype_selector%'
+            tools:
+                enabled: true
+                services:
+                    - service: App\AI\Tool\ArchetypeDirectoryTool
+
     store:
         # Store configuration
 

@@ -25,8 +25,14 @@ parameters:
     pii.sample_work_history: '%env(default:content_not_found:file:SAMPLE_WORK_HISTORY_PATH)%'
     pii.work_history: '%env(default:pii.sample_work_history:file:WORK_HISTORY_PATH)%'
 
+    env(ARCHETYPE_SELECTOR_PROMPT_PATH): '%content_path%/prompts/archetype_selector.md'
+    prompts.archetype_selector: '%env(resolve:default:content_not_found:file:ARCHETYPE_SELECTOR_PROMPT_PATH)%'
+
     env(RESUME_DRAFTER_PROMPT_PATH): '%content_path%/prompts/resume_drafter.md'
     prompts.resume_drafter: '%env(resolve:default:content_not_found:file:RESUME_DRAFTER_PROMPT_PATH)%'
+
+    env(ARCHETYPES_PATH): '%content_path%/archetypes'
+    archetypes_path: '%env(resolve:ARCHETYPES_PATH)%'
 
 services:
     # default configuration for services in *this* file
