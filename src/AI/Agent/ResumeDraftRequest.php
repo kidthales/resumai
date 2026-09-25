@@ -22,14 +22,23 @@ declare(strict_types=1);
 
 namespace App\AI\Agent;
 
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
+
 /**
  * @author Tristan Bonsor <kidthales@agogpixel.com>
  */
 final readonly class ResumeDraftRequest
 {
+    /**
+     * @param (callable(ThinkingDelta):void)|null $thinkingDeltaProcessor
+     * @param (callable(TextDelta):void)|null     $textDeltaProcessor
+     */
     public function __construct(
         public ?string $jobDescription = null,
         public ?string $candidateArchetype = null,
+        public mixed $thinkingDeltaProcessor = null,
+        public mixed $textDeltaProcessor = null,
     ) {
     }
 }

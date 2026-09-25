@@ -22,7 +22,11 @@ declare(strict_types=1);
 
 namespace App\AI\Agent;
 
+use App\AI\Platform\Result\Processor;
 use Symfony\AI\Agent\AgentInterface;
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
+use Symfony\AI\Platform\Result\TextResult;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
 /**
@@ -33,20 +37,52 @@ final readonly class ResumeDrafter implements ResumeDrafterInterface
     public function __construct(
         #[Target('resume_drafter')]
         private AgentInterface $agent,
+        private Processor $resultProcessor,
     ) {
     }
 
-    public function draft(?string $jobDescription = null, ?string $candidateArchetype = null): string
-    {
+    public function draft(
+        ?string $jobDescription = null,
+        ?string $candidateArchetype = null,
+        ?callable $thinkingDeltaProcessor = null,
+        ?callable $textDeltaProcessor = null,
+    ): string {
         $prompt = $this->buildPrompt($jobDescription, $candidateArchetype);
         $execution = $this->agent->call($prompt);
 
-        return $this->sanitizeOutput((string) $execution->getContent());
+        $resumeText = '';
+        $thinkingText = '';
+
+        $this->resultProcessor->process(
+            $execution->getResult(),
+            textResultProcessor: static function (TextResult $result) use (&$resumeText): void {
+                $resumeText .= (string) $result->getContent();
+            },
+            textDeltaProcessor: static function (TextDelta $delta) use (&$resumeText, $textDeltaProcessor): void {
+                $resumeText .= $delta->getText();
+                if (null !== $textDeltaProcessor) {
+                    $textDeltaProcessor($delta);
+                }
+            },
+            thinkingDeltaProcessor: static function (ThinkingDelta $delta) use (&$thinkingText, $thinkingDeltaProcessor): void {
+                $thinkingText .= $delta->getThinking();
+                if (null !== $thinkingDeltaProcessor) {
+                    $thinkingDeltaProcessor($delta);
+                }
+            },
+        );
+
+        return $this->sanitizeOutput($resumeText);
     }
 
     public function draftFromRequest(ResumeDraftRequest $request): string
     {
-        return $this->draft($request->jobDescription, $request->candidateArchetype);
+        return $this->draft(
+            $request->jobDescription,
+            $request->candidateArchetype,
+            $request->thinkingDeltaProcessor,
+            $request->textDeltaProcessor,
+        );
     }
 
     private function buildPrompt(?string $jobDescription, ?string $candidateArchetype): string

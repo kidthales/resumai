@@ -24,6 +24,8 @@ namespace App\Tests\AI\Agent;
 
 use App\AI\Agent\ResumeDrafter;
 use App\AI\Agent\ResumeDraftRequest;
+use App\AI\Platform\Result\Processor;
+use App\AI\Platform\Result\Stream\Processor as StreamProcessor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -32,6 +34,9 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Execution;
 use Symfony\AI\Agent\Execution\Update\Result;
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
+use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\TextResult;
 
 /**
@@ -58,7 +63,7 @@ final class ResumeDrafterTest extends TestCase
                 return $this->createExecution($expectedOutput);
             });
 
-        $drafter = new ResumeDrafter($agent);
+        $drafter = $this->createResumeDrafter($agent);
         $result = $drafter->draft($jobDescription, $candidateArchetype);
 
         $this->assertSame($expectedOutput, $result);
@@ -85,7 +90,7 @@ final class ResumeDrafterTest extends TestCase
                 return $this->createExecution($expectedOutput);
             });
 
-        $drafter = new ResumeDrafter($agent);
+        $drafter = $this->createResumeDrafter($agent);
         $result = $drafter->draft($jobDescription);
 
         $this->assertSame($expectedOutput, $result);
@@ -110,7 +115,7 @@ final class ResumeDrafterTest extends TestCase
                 return $this->createExecution($expectedOutput);
             });
 
-        $drafter = new ResumeDrafter($agent);
+        $drafter = $this->createResumeDrafter($agent);
         $result = $drafter->draft(null, $candidateArchetype);
 
         $this->assertSame($expectedOutput, $result);
@@ -134,7 +139,7 @@ final class ResumeDrafterTest extends TestCase
                 return $this->createExecution($expectedOutput);
             });
 
-        $drafter = new ResumeDrafter($agent);
+        $drafter = $this->createResumeDrafter($agent);
         $result = $drafter->draft();
 
         $this->assertSame($expectedOutput, $result);
@@ -163,7 +168,7 @@ final class ResumeDrafterTest extends TestCase
                 return $this->createExecution($expectedOutput);
             });
 
-        $drafter = new ResumeDrafter($agent);
+        $drafter = $this->createResumeDrafter($agent);
         $result = $drafter->draftFromRequest($request);
 
         $this->assertSame($expectedOutput, $result);
@@ -185,7 +190,7 @@ final class ResumeDrafterTest extends TestCase
                 return $this->createExecution('# Resume');
             });
 
-        $drafter = new ResumeDrafter($agent);
+        $drafter = $this->createResumeDrafter($agent);
         $drafter->draft('   ', '');
 
         $this->assertNotNull($capturedPrompt);
@@ -202,7 +207,7 @@ final class ResumeDrafterTest extends TestCase
             ->method('call')
             ->willReturn($this->createExecution($rawOutput));
 
-        $drafter = new ResumeDrafter($agent);
+        $drafter = $this->createResumeDrafter($agent);
         $result = $drafter->draft();
 
         $this->assertSame($expectedCleanOutput, $result);
@@ -239,10 +244,145 @@ final class ResumeDrafterTest extends TestCase
         ];
     }
 
+    #[Test]
+    public function itDraftsResumeFromStreamResultWithTextDeltas(): void
+    {
+        $deltas = [
+            new TextDelta("```markdown\n"),
+            new TextDelta("# Jane Doe\n\n"),
+            new TextDelta("Principal Engineer\n"),
+            new TextDelta('```'),
+        ];
+
+        $agent = $this->createMock(AgentInterface::class);
+        $agent->expects($this->once())
+            ->method('call')
+            ->willReturn($this->createStreamExecution($deltas));
+
+        $drafter = $this->createResumeDrafter($agent);
+        $result = $drafter->draft();
+
+        $this->assertSame("# Jane Doe\n\nPrincipal Engineer", $result);
+    }
+
+    #[Test]
+    public function itDraftsResumeFromStreamResultSeparatingThinkingDeltasFromResumeText(): void
+    {
+        $deltas = [
+            new ThinkingDelta('First I will analyze the candidate background...'),
+            new ThinkingDelta('Now I will formulate the ATS resume structure.'),
+            new TextDelta("# Jane Doe\n\n"),
+            new TextDelta('Staff Engineer'),
+        ];
+
+        $agent = $this->createMock(AgentInterface::class);
+        $agent->expects($this->once())
+            ->method('call')
+            ->willReturn($this->createStreamExecution($deltas));
+
+        $drafter = $this->createResumeDrafter($agent);
+        $result = $drafter->draft();
+
+        $this->assertSame("# Jane Doe\n\nStaff Engineer", $result);
+        $this->assertStringNotContainsString('analyze the candidate', $result);
+        $this->assertStringNotContainsString('formulate the ATS', $result);
+    }
+
+    #[Test]
+    public function itInvokesThinkingAndTextDeltaCallbacksWhenProvided(): void
+    {
+        $deltas = [
+            new ThinkingDelta('Analyzing requirements...'),
+            new TextDelta('# Jane Doe'),
+            new TextDelta("\n\nSoftware Engineer"),
+        ];
+
+        $capturedThinking = [];
+        $capturedText = [];
+
+        $agent = $this->createMock(AgentInterface::class);
+        $agent->expects($this->once())
+            ->method('call')
+            ->willReturn($this->createStreamExecution($deltas));
+
+        $drafter = $this->createResumeDrafter($agent);
+        $result = $drafter->draft(
+            thinkingDeltaProcessor: function (ThinkingDelta $delta) use (&$capturedThinking): void {
+                $capturedThinking[] = $delta->getThinking();
+            },
+            textDeltaProcessor: function (TextDelta $delta) use (&$capturedText): void {
+                $capturedText[] = $delta->getText();
+            },
+        );
+
+        $this->assertSame("# Jane Doe\n\nSoftware Engineer", $result);
+        $this->assertSame(['Analyzing requirements...'], $capturedThinking);
+        $this->assertSame(['# Jane Doe', "\n\nSoftware Engineer"], $capturedText);
+    }
+
+    #[Test]
+    public function itInvokesThinkingAndTextDeltaCallbacksFromRequestObject(): void
+    {
+        $deltas = [
+            new ThinkingDelta('Thinking about leadership persona...'),
+            new TextDelta('# Jane Doe - Tech Lead'),
+        ];
+
+        $capturedThinking = [];
+        $capturedText = [];
+
+        $request = new ResumeDraftRequest(
+            jobDescription: 'Lead Engineer',
+            candidateArchetype: 'Tech Lead',
+            thinkingDeltaProcessor: function (ThinkingDelta $delta) use (&$capturedThinking): void {
+                $capturedThinking[] = $delta->getThinking();
+            },
+            textDeltaProcessor: function (TextDelta $delta) use (&$capturedText): void {
+                $capturedText[] = $delta->getText();
+            },
+        );
+
+        $agent = $this->createMock(AgentInterface::class);
+        $agent->expects($this->once())
+            ->method('call')
+            ->willReturn($this->createStreamExecution($deltas));
+
+        $drafter = $this->createResumeDrafter($agent);
+        $result = $drafter->draftFromRequest($request);
+
+        $this->assertSame('# Jane Doe - Tech Lead', $result);
+        $this->assertSame(['Thinking about leadership persona...'], $capturedThinking);
+        $this->assertSame(['# Jane Doe - Tech Lead'], $capturedText);
+    }
+
+    private function createResumeDrafter(AgentInterface $agent, ?Processor $processor = null): ResumeDrafter
+    {
+        return new ResumeDrafter(
+            $agent,
+            $processor ?? new Processor(new StreamProcessor()),
+        );
+    }
+
     private function createExecution(string $output): Execution
     {
         return new Execution(static function () use ($output): \Generator {
             yield new Result(new TextResult($output));
+        });
+    }
+
+    /**
+     * @param list<TextDelta|ThinkingDelta> $deltas
+     */
+    private function createStreamExecution(array $deltas): Execution
+    {
+        return new Execution(static function () use ($deltas): \Generator {
+            $gen = static function () use ($deltas): \Generator {
+                foreach ($deltas as $delta) {
+                    yield $delta;
+                }
+            };
+
+            yield new Result(new StreamResult($gen()));
         });
     }
 }

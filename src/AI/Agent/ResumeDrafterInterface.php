@@ -22,6 +22,9 @@ declare(strict_types=1);
 
 namespace App\AI\Agent;
 
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
+
 /**
  * @author Tristan Bonsor <kidthales@agogpixel.com>
  */
@@ -30,14 +33,18 @@ interface ResumeDrafterInterface
     /**
      * Synthesizes an ATS-optimized resume in Markdown format.
      *
-     * @param string|null $jobDescription     Optional target job description
-     * @param string|null $candidateArchetype Optional candidate positioning archetype
+     * @param string|null                         $jobDescription         Optional target job description
+     * @param string|null                         $candidateArchetype     Optional candidate positioning archetype
+     * @param (callable(ThinkingDelta):void)|null $thinkingDeltaProcessor Optional callback for thinking deltas
+     * @param (callable(TextDelta):void)|null     $textDeltaProcessor     Optional callback for text deltas
      *
      * @return string Raw Markdown resume content
      */
     public function draft(
         ?string $jobDescription = null,
         ?string $candidateArchetype = null,
+        ?callable $thinkingDeltaProcessor = null,
+        ?callable $textDeltaProcessor = null,
     ): string;
 
     /**
