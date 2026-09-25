@@ -12,34 +12,8 @@ ai:
 
         resume_drafter:
             platform: ai.platform.ollama
-            model: precision-qwen25-14b
-            prompt: |
-                # Resume Drafter Instructions
-
-                This document establishes the operational rules, candidate background references, and quality standards
-                for synthesizing resumes.
-
-                ## Operational Rules
-
-                TODO
-
-                ## Candidate Background References
-
-                ### Personal Information
-
-                %personal_info%
-
-                ### Education History
-
-                %education_history%
-
-                ### Work History
-
-                %work_history%
-
-                ## Quality Standards
-
-                TODO
+            model: resume-drafter
+            prompt: '%prompts.resume_drafter%'
 
     store:
         # Store configuration
