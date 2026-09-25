@@ -24,11 +24,17 @@ A résumé and job application engineering system.
 ```
 resumai/
 └── content/
+    ├── archetypes/                      # Candidate archetypes
+    │   ├── .gitignore                   # Ignores all non-sample files
+    │   └── *.sample.md                  # Sample archetype files
+    │
     ├── pii/                             # Personally Identifiable Information
     │   ├── .gitignore                   # Ignores all non-sample files
     │   ├── education_history.sample.md  # Sample education history file
     │   ├── personal_info.sample.md      # Sample personal information file
     │   └── work_history.sample.md       # Sample work history file
-    └── prompts/
+    │
+    └── prompts/                         # Agent prompts
+        ├── archetype_selector.md        # Archetype selector agent prompt
         └── resume_drafter.md            # Resume drafter agent prompt
 ```
