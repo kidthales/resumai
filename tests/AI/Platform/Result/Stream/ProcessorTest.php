@@ -58,16 +58,11 @@ final class ProcessorTest extends TestCase
     #[Test]
     public function itInvokesOnStartCallback(): void
     {
-        $gen = function () {
-            yield new ThinkingDelta('Hello');
-            yield new TextDelta('World');
-        };
-
         $isCalled = false;
         $capturedResult = null;
 
         new Processor()->process(
-            new StreamResult($gen()),
+            $this->createStreamResult(),
             onStreamResultStart: function ($result) use (&$isCalled, &$capturedResult) {
                 $isCalled = true;
                 $capturedResult = $result;
@@ -81,16 +76,11 @@ final class ProcessorTest extends TestCase
     #[Test]
     public function itInvokesOnFinishCallback(): void
     {
-        $gen = function () {
-            yield new ThinkingDelta('Hello');
-            yield new TextDelta('World');
-        };
-
         $isCalled = false;
         $capturedResult = null;
 
         new Processor()->process(
-            new StreamResult($gen()),
+            $this->createStreamResult(),
             onStreamResultFinish: function ($result) use (&$isCalled, &$capturedResult) {
                 $isCalled = true;
                 $capturedResult = $result;
@@ -104,16 +94,11 @@ final class ProcessorTest extends TestCase
     #[Test]
     public function itInvokesThinkingDeltaProcessorCallback(): void
     {
-        $gen = function () {
-            yield new ThinkingDelta('Hello');
-            yield new TextDelta('World');
-        };
-
         $isCalled = false;
         $capturedDelta = null;
 
         new Processor()->process(
-            new StreamResult($gen()),
+            $this->createStreamResult(),
             thinkingDeltaProcessor: function ($delta) use (&$isCalled, &$capturedDelta) {
                 $isCalled = true;
                 $capturedDelta = $delta;
@@ -128,16 +113,11 @@ final class ProcessorTest extends TestCase
     #[Test]
     public function itInvokesTextDeltaProcessorCallback(): void
     {
-        $gen = function () {
-            yield new ThinkingDelta('Hello');
-            yield new TextDelta('World');
-        };
-
         $isCalled = false;
         $capturedDelta = null;
 
         new Processor()->process(
-            new StreamResult($gen()),
+            $this->createStreamResult(),
             textDeltaProcessor: function ($delta) use (&$isCalled, &$capturedDelta) {
                 $isCalled = true;
                 $capturedDelta = $delta;
@@ -188,5 +168,15 @@ final class ProcessorTest extends TestCase
         );
 
         $this->assertTrue($isCalled);
+    }
+
+    private function createStreamResult(): StreamResult
+    {
+        $gen = function () {
+            yield new ThinkingDelta('Hello');
+            yield new TextDelta('World');
+        };
+
+        return new StreamResult($gen());
     }
 }
