@@ -34,7 +34,7 @@ full stack nobody asked for.
 
 ## Adding features: Flex, not hand-wiring
 
-Install new capabilities with `composer require <package>` (e.g. `symfony/lock`,
+Install new capabilities with `make composer c='require <package>'` (e.g. `symfony/lock`,
 `symfony/messenger`, `orm-pack`) and let the Flex recipe register the bundle and
 generate its config. Don't hand-edit `config/bundles.php` or hand-write a bundle's
 base config; that's what the recipe is for. Don't skip a good-fit component just
@@ -69,8 +69,8 @@ Three specifics worth spelling out, because they are easy to get wrong:
 - Bind request data with `#[MapRequestPayload]` / `#[MapQueryString]` on action
   arguments, which wires up Serializer and Validator for you, instead of calling
   `json_decode()` or `SerializerInterface` by hand. If neither package is
-  installed yet, `composer require` them rather than falling back to manual
-  parsing.
+  installed yet, `make composer c='require <package>'` them rather than falling
+  back to manual parsing.
 - Use constructor property promotion, and `readonly` for DTOs and value objects.
   Don't mark a service `readonly` if it might become `lazy: true`: a lazy proxy
   can't extend a `readonly` class.
@@ -80,27 +80,26 @@ Three specifics worth spelling out, because they are easy to get wrong:
 ## Everyday workflow
 
 - Use the `Makefile`. The containers must be built and running for development and application execution to occur.
-  But always perform a check that the containers are already built and running to avoid duplicate services and errors.
 - When something fails, read `var/log/dev.log` and the web profiler
   (`/_profiler`) before changing code.
-- If `maker-bundle` is installed, prefer `bin/console make:*` with every argument
+- If `maker-bundle` is installed, prefer `make sf c='make:*'` with every argument
   passed up front and `--no-interaction` where supported: makers prompt on a
   terminal by default, which hangs a non-interactive shell. If a maker still
   needs interactive input, hand-write the code instead.
 - If Doctrine ORM is installed, schema changes go through migrations
-  (`bin/console make:migration`, then `doctrine:migrations:migrate`), never
-  `doctrine:schema:update` or hand-written SQL.
+  (`make sf c='make:migration'`, then `make sf c='doctrine:migrations:migrate'`), never
+  `make sf c='doctrine:schema:update'` or hand-written SQL.
 - `.env` is committed and holds defaults only. Real secrets belong in `.env.local`
-  (git-ignored) or the secrets vault (`bin/console secrets:set`), read via
+  (git-ignored) or the secrets vault (`make sf c='secrets:set ...'`), read via
   `%env(...)%`.
+- Personally identifiable information located in `content/pii` (git-ignored) is **sensitive** and **secret**.
 
 ## Testing
 
-Install `symfony/test-pack` if it isn't already. Functional/HTTP tests extend
-`WebTestCase`; service-level tests extend `KernelTestCase`. Run
-`php bin/phpunit` (falls back to `vendor/bin/phpunit`). A feature isn't done
-until it has a test that exercises it the way a caller would, an HTTP request for
-a controller or a service call for a service, not just "it didn't throw."
+Functional/HTTP tests extend `WebTestCase`; service-level tests extend `KernelTestCase`.
+Run `make test c='<phpunit options>'`. A feature isn't done until it has a test that exercises
+it the way a caller would, an HTTP request for a controller or a service call for a service,
+not just "it didn't throw."
 
 ## Code style
 
@@ -116,12 +115,12 @@ To fix the formatting of all files, run `make lint-fix`.
 Framework APIs change between versions and your training data may be stale. Look
 things up in the project instead of relying on memory:
 
-- `bin/console about`: versions, environment, paths.
-- `bin/console debug:router`, `debug:container`, `debug:autowiring <name>`,
-  `debug:config <bundle>`, `config:dump-reference <bundle>`: what exists and how
+- `make sf c='about'`: versions, environment, paths.
+- `make sf c='debug:router'`, `make sf c='debug:container'`, `make sf c='debug:autowiring <name>'`,
+  `make sf c='debug:config <bundle>'`, `make sf c='config:dump-reference <bundle>'`: what exists and how
   it is configured.
-- `bin/console lint:container`, plus `lint:twig templates/` and
-  `lint:yaml config/` where those packages are installed: validate before running.
+- `make sf c='lint:container'`, plus `make sf c='lint:twig templates/'` and
+  `make sf c='lint:yaml config/'` where those packages are installed: validate before running.
 - Read the installed source and docblocks under `vendor`.
 - Docs: https://symfony.com/doc/current/ (switch to the version matching
   `composer.json` if it differs).
