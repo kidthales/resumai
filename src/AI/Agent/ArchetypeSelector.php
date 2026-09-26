@@ -81,15 +81,6 @@ final readonly class ArchetypeSelector implements ArchetypeSelectorInterface
         );
     }
 
-    public function selectFromRequest(ArchetypeSelectionRequest $request): ArchetypeSelection
-    {
-        return $this->select(
-            $request->jobDescription,
-            $request->thinkingDeltaProcessor,
-            $request->textDeltaProcessor,
-        );
-    }
-
     private function buildPrompt(string $jobDescription): string
     {
         return \sprintf(

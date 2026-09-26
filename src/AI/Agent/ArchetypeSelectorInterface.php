@@ -33,9 +33,4 @@ interface ArchetypeSelectorInterface
         ?callable $thinkingDeltaProcessor = null,
         ?callable $textDeltaProcessor = null,
     ): ArchetypeSelection;
-
-    /**
-     * Analyzes a job description using a request object.
-     */
-    public function selectFromRequest(ArchetypeSelectionRequest $request): ArchetypeSelection;
 }

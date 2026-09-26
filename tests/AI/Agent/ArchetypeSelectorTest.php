@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace App\Tests\AI\Agent;
 
 use App\AI\Agent\ArchetypeSelection;
-use App\AI\Agent\ArchetypeSelectionRequest;
 use App\AI\Agent\ArchetypeSelector;
 use App\AI\Platform\Result\Processor;
 use App\AI\Platform\Result\Stream\Processor as StreamProcessor;
@@ -38,7 +37,6 @@ use Symfony\AI\Platform\Result\TextResult;
 #[Group('ai')]
 #[CoversClass(ArchetypeSelector::class)]
 #[CoversClass(ArchetypeSelection::class)]
-#[CoversClass(ArchetypeSelectionRequest::class)]
 final class ArchetypeSelectorTest extends TestCase
 {
     private string $tempDir;
@@ -116,36 +114,6 @@ final class ArchetypeSelectorTest extends TestCase
         $this->assertSame('Engineering Manager Sample', $selection->archetypeName);
         $this->assertSame($archetypeContent, $selection->content);
         $this->assertSame('Role requires people leadership and hiring strategy.', $selection->rationale);
-    }
-
-    #[Test]
-    public function itSelectsArchetypeFromRequestObject(): void
-    {
-        $archetypeContent = "# DevOps & SRE\n\nKubernetes and Cloud infrastructure.";
-        file_put_contents($this->tempDir.'/devops_sre.sample.md', $archetypeContent);
-
-        $agentOutput = json_encode([
-            'archetype_id' => 'devops_sre_sample',
-            'archetype_name' => 'DevOps & SRE',
-            'rationale' => 'Infrastructure automation role.',
-        ], \JSON_THROW_ON_ERROR);
-
-        $agent = $this->createMock(AgentInterface::class);
-        $agent->expects($this->once())
-            ->method('call')
-            ->willReturn($this->createExecution($agentOutput));
-
-        $tool = new ArchetypeDirectoryTool($this->tempDir);
-        $selector = $this->createArchetypeSelector($agent, $tool);
-
-        $request = new ArchetypeSelectionRequest(
-            jobDescription: 'Seeking SRE with Terraform and Kubernetes experience.',
-        );
-
-        $selection = $selector->selectFromRequest($request);
-
-        $this->assertSame('devops_sre_sample', $selection->archetypeId);
-        $this->assertSame($archetypeContent, $selection->content);
     }
 
     #[Test]
