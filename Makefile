@@ -20,7 +20,7 @@ OLLAMA   := $(OLLAMA_CONT) ollama
 .DEFAULT_GOAL = help
 .PHONY        : help start fresh-start stop \
                 bake up down logs \
-                test \
+                test cov \
                 composer vendor \
                 sf cc \
                 npm node_modules \
@@ -57,7 +57,11 @@ logs: ## Show live logs
 ## —— Tests 🧪 —————————————————————————————————————————————————————————————————
 test: ## Start tests with phpunit, pass the parameter "c=" to add options to phpunit, example: make test c="--group e2e --stop-on-failure"
 	@$(eval c ?=)
-	@$(CD_DOCKER_COMP) exec -e APP_ENV=test php bin/phpunit $(c)
+	@$(CD_DOCKER_COMP) exec -e APP_ENV=test -e XDEBUG_MODE=coverage php bin/phpunit $(c)
+
+cov: ## ## Start tests with phpunit and generate coverage report for the project
+cov: c=--testdox --display-all-issues --coverage-text --show-uncovered-for-coverage-text --coverage-html coverage
+cov: test
 
 ## —— Composer 🧙 ——————————————————————————————————————————————————————————————
 composer: ## Run composer, pass the parameter "c=" to run a given command, example: make composer c='req symfony/orm-pack'
