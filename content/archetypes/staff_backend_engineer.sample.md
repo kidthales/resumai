@@ -1,4 +1,4 @@
-# Staff Backend Engineer (Sample)
+# Staff Backend Engineer Sample
 
 ## Profile Overview
 

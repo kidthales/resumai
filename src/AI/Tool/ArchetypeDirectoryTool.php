@@ -69,7 +69,11 @@ final readonly class ArchetypeDirectoryTool
                 continue;
             }
 
-            $id = (string) preg_replace('/(\.sample)?\.md$/', '', $file);
+            if (str_ends_with($file, '.sample.md')) {
+                $id = (string) preg_replace('/\.sample\.md$/', '_sample', $file);
+            } else {
+                $id = (string) preg_replace('/\.md$/', '', $file);
+            }
             $title = $this->extractTitle($filePath) ?? $this->formatTitleFromId($id);
 
             $archetypes[] = [
@@ -103,11 +107,15 @@ final readonly class ArchetypeDirectoryTool
             throw new \InvalidArgumentException(\sprintf('Invalid archetype identifier: "%s".', $archetypeId));
         }
 
-        $candidates = [
-            $trimmedId,
-            $trimmedId.'.md',
-            $trimmedId.'.sample.md',
-        ];
+        $candidates = [$trimmedId];
+
+        if (str_ends_with($trimmedId, '_sample')) {
+            $base = substr($trimmedId, 0, -7);
+            $candidates[] = $base.'.sample.md';
+        }
+
+        $candidates[] = $trimmedId.'.md';
+        $candidates[] = $trimmedId.'.sample.md';
 
         foreach ($candidates as $candidate) {
             $targetPath = $this->archetypesPath.\DIRECTORY_SEPARATOR.$candidate;

@@ -1,4 +1,4 @@
-# DevOps & Site Reliability Engineer (Sample)
+# DevOps & Site Reliability Engineer Sample
 
 ## Profile Overview
 

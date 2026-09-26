@@ -57,7 +57,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $this->assertCount(3, $archetypes);
         $this->assertSame([
             [
-                'id' => 'devops_sre',
+                'id' => 'devops_sre_sample',
                 'filename' => 'devops_sre.sample.md',
                 'title' => 'DevOps & SRE',
             ],
@@ -67,7 +67,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
                 'title' => 'Engineering Manager',
             ],
             [
-                'id' => 'staff_backend_engineer',
+                'id' => 'staff_backend_engineer_sample',
                 'filename' => 'staff_backend_engineer.sample.md',
                 'title' => 'Staff Backend Engineer',
             ],
@@ -83,8 +83,40 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $archetypes = $tool->listArchetypes();
 
         $this->assertCount(1, $archetypes);
-        $this->assertSame('custom_role', $archetypes[0]['id']);
-        $this->assertSame('Custom Role', $archetypes[0]['title']);
+        $this->assertSame('custom_role_sample', $archetypes[0]['id']);
+        $this->assertSame('Custom Role Sample', $archetypes[0]['title']);
+    }
+
+    #[Test]
+    public function itListsAndResolvesBothSampleAndCustomArchetypesWhenCoexisting(): void
+    {
+        $sampleContent = "# Platform Engineer\n\nSample platform engineer profile.";
+        $customContent = "# Platform Engineer\n\nCustom company-tailored platform engineer profile.";
+
+        file_put_contents($this->tempDir.'/platform_engineer.sample.md', $sampleContent);
+        file_put_contents($this->tempDir.'/platform_engineer.md', $customContent);
+
+        $tool = new ArchetypeDirectoryTool($this->tempDir);
+        $archetypes = $tool->listArchetypes();
+
+        $this->assertCount(2, $archetypes);
+        $this->assertSame([
+            [
+                'id' => 'platform_engineer',
+                'filename' => 'platform_engineer.md',
+                'title' => 'Platform Engineer',
+            ],
+            [
+                'id' => 'platform_engineer_sample',
+                'filename' => 'platform_engineer.sample.md',
+                'title' => 'Platform Engineer',
+            ],
+        ], $archetypes);
+
+        $this->assertSame($customContent, $tool->readArchetype('platform_engineer'));
+        $this->assertSame($sampleContent, $tool->readArchetype('platform_engineer_sample'));
+        $this->assertSame($customContent, $tool->readArchetype('platform_engineer.md'));
+        $this->assertSame($sampleContent, $tool->readArchetype('platform_engineer.sample.md'));
     }
 
     #[Test]
@@ -102,6 +134,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
 
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
+        $this->assertSame($content, $tool->readArchetype('staff_backend_engineer_sample'));
         $this->assertSame($content, $tool->readArchetype('staff_backend_engineer'));
         $this->assertSame($content, $tool->readArchetype('staff_backend_engineer.sample.md'));
     }

@@ -1,4 +1,4 @@
-# Full-Stack Engineer (Sample)
+# Full-Stack Engineer Sample
 
 ## Profile Overview
 

@@ -1,4 +1,4 @@
-# Technical Lead (Sample)
+# Technical Lead Sample
 
 ## Profile Overview
 

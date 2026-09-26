@@ -38,7 +38,7 @@ After completing your tool-based evaluation, output your final decision as a JSO
 
 ```json
 {
-    "archetype_id": "string (the exact identifier of the selected archetype, e.g. staff_backend_engineer)",
+    "archetype_id": "string (the exact identifier of the selected archetype, e.g. staff_backend_engineer_sample or staff_backend_engineer)",
     "archetype_name": "string (the human-readable title of the selected archetype, e.g. Staff Backend Engineer)",
     "rationale": "string (concise explanation highlighting key alignment points between the job description and the selected archetype)"
 }

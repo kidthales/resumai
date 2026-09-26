@@ -1,4 +1,4 @@
-# Engineering Manager (Sample)
+# Engineering Manager Sample
 
 ## Profile Overview
 

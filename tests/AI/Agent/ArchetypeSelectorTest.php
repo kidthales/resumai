@@ -62,7 +62,7 @@ final class ArchetypeSelectorTest extends TestCase
 
         $jobDescription = "Looking for a Staff Backend Engineer with distributed systems expertise.\nTech: Go, PHP, Kafka";
         $agentOutput = json_encode([
-            'archetype_id' => 'staff_backend_engineer',
+            'archetype_id' => 'staff_backend_engineer_sample',
             'archetype_name' => 'Staff Backend Engineer',
             'rationale' => 'Job emphasizes high concurrency distributed architecture.',
         ], \JSON_THROW_ON_ERROR);
@@ -82,7 +82,7 @@ final class ArchetypeSelectorTest extends TestCase
 
         $selection = $selector->select($jobDescription);
 
-        $this->assertSame('staff_backend_engineer', $selection->archetypeId);
+        $this->assertSame('staff_backend_engineer_sample', $selection->archetypeId);
         $this->assertSame('Staff Backend Engineer', $selection->archetypeName);
         $this->assertSame($archetypeContent, $selection->content);
         $this->assertSame('Job emphasizes high concurrency distributed architecture.', $selection->rationale);
@@ -98,7 +98,7 @@ final class ArchetypeSelectorTest extends TestCase
         file_put_contents($this->tempDir.'/engineering_manager.sample.md', $archetypeContent);
 
         $agentOutput = "```json\n".json_encode([
-            'archetype_id' => 'engineering_manager',
+            'archetype_id' => 'engineering_manager_sample',
             'rationale' => 'Role requires people leadership and hiring strategy.',
         ], \JSON_THROW_ON_ERROR)."\n```";
 
@@ -112,8 +112,8 @@ final class ArchetypeSelectorTest extends TestCase
 
         $selection = $selector->select('We need an Engineering Manager for our Platform tribe.');
 
-        $this->assertSame('engineering_manager', $selection->archetypeId);
-        $this->assertSame('Engineering Manager', $selection->archetypeName);
+        $this->assertSame('engineering_manager_sample', $selection->archetypeId);
+        $this->assertSame('Engineering Manager Sample', $selection->archetypeName);
         $this->assertSame($archetypeContent, $selection->content);
         $this->assertSame('Role requires people leadership and hiring strategy.', $selection->rationale);
     }
@@ -125,7 +125,7 @@ final class ArchetypeSelectorTest extends TestCase
         file_put_contents($this->tempDir.'/devops_sre.sample.md', $archetypeContent);
 
         $agentOutput = json_encode([
-            'archetype_id' => 'devops_sre',
+            'archetype_id' => 'devops_sre_sample',
             'archetype_name' => 'DevOps & SRE',
             'rationale' => 'Infrastructure automation role.',
         ], \JSON_THROW_ON_ERROR);
@@ -144,8 +144,36 @@ final class ArchetypeSelectorTest extends TestCase
 
         $selection = $selector->selectFromRequest($request);
 
-        $this->assertSame('devops_sre', $selection->archetypeId);
+        $this->assertSame('devops_sre_sample', $selection->archetypeId);
         $this->assertSame($archetypeContent, $selection->content);
+    }
+
+    #[Test]
+    public function itSelectsCustomNonSampleArchetypeFromJobDescription(): void
+    {
+        $archetypeContent = "# Security Architect\n\nCloud and enterprise security.";
+        file_put_contents($this->tempDir.'/security_architect.md', $archetypeContent);
+
+        $agentOutput = json_encode([
+            'archetype_id' => 'security_architect',
+            'archetype_name' => 'Security Architect',
+            'rationale' => 'Cybersecurity governance and zero-trust focus.',
+        ], \JSON_THROW_ON_ERROR);
+
+        $agent = $this->createMock(AgentInterface::class);
+        $agent->expects($this->once())
+            ->method('call')
+            ->willReturn($this->createExecution($agentOutput));
+
+        $tool = new ArchetypeDirectoryTool($this->tempDir);
+        $selector = $this->createArchetypeSelector($agent, $tool);
+
+        $selection = $selector->select('Looking for a Security Architect to oversee SOC2 and IAM.');
+
+        $this->assertSame('security_architect', $selection->archetypeId);
+        $this->assertSame('Security Architect', $selection->archetypeName);
+        $this->assertSame($archetypeContent, $selection->content);
+        $this->assertSame('Cybersecurity governance and zero-trust focus.', $selection->rationale);
     }
 
     #[Test]
@@ -155,14 +183,14 @@ final class ArchetypeSelectorTest extends TestCase
         file_put_contents($this->tempDir.'/fullstack_engineer.sample.md', $archetypeContent);
 
         $jsonPayload = json_encode([
-            'archetype_id' => 'fullstack_engineer',
+            'archetype_id' => 'fullstack_engineer_sample',
             'archetype_name' => 'Full-Stack Engineer',
             'rationale' => 'Requires both React and backend APIs.',
         ], \JSON_THROW_ON_ERROR);
 
         $deltas = [
             new ThinkingDelta('Evaluating candidate archetypes: backend vs fullstack...'),
-            new ThinkingDelta('Selected fullstack_engineer based on frontend requirements.'),
+            new ThinkingDelta('Selected fullstack_engineer_sample based on frontend requirements.'),
             new TextDelta(substr($jsonPayload, 0, 20)),
             new TextDelta(substr($jsonPayload, 20)),
         ];
@@ -188,12 +216,12 @@ final class ArchetypeSelectorTest extends TestCase
             },
         );
 
-        $this->assertSame('fullstack_engineer', $selection->archetypeId);
+        $this->assertSame('fullstack_engineer_sample', $selection->archetypeId);
         $this->assertSame($archetypeContent, $selection->content);
         $this->assertSame('Requires both React and backend APIs.', $selection->rationale);
 
         $this->assertCount(2, $capturedThinking);
-        $this->assertSame(['Evaluating candidate archetypes: backend vs fullstack...', 'Selected fullstack_engineer based on frontend requirements.'], $capturedThinking);
+        $this->assertSame(['Evaluating candidate archetypes: backend vs fullstack...', 'Selected fullstack_engineer_sample based on frontend requirements.'], $capturedThinking);
         $this->assertSame([substr($jsonPayload, 0, 20), substr($jsonPayload, 20)], $capturedText);
     }
 
