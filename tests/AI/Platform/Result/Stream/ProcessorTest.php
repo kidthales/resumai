@@ -20,8 +20,9 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Domain\Shared\AI;
+namespace App\Tests\AI\Platform\Result\Stream;
 
+use App\AI\Platform\Result\Stream\Exception\UnexpectedDeltaTypeException;
 use App\AI\Platform\Result\Stream\Processor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
@@ -132,7 +133,7 @@ final class ProcessorTest extends TestCase
     #[Test]
     public function itThrowsExceptionWithUnsupportedDeltaInterfaceImplementation(): void
     {
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(UnexpectedDeltaTypeException::class);
         $this->expectExceptionMessageMatches('/Unexpected stream result content delta type/');
 
         $gen = function () {

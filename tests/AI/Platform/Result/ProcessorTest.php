@@ -22,6 +22,7 @@ declare(strict_types=1);
 
 namespace App\Tests\AI\Platform\Result;
 
+use App\AI\Platform\Result\Exception\UnsupportedResultTypeException;
 use App\AI\Platform\Result\Processor;
 use App\AI\Platform\Result\Stream\Processor as StreamProcessor;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -157,7 +158,7 @@ final class ProcessorTest extends TestCase
     #[Test]
     public function itThrowsExceptionWithUnsupportedResultInterfaceImplementation(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(UnsupportedResultTypeException::class);
         $this->expectExceptionMessageMatches('/Unexpected result type/');
 
         new Processor(new StreamProcessor())->process(new class implements ResultInterface {
