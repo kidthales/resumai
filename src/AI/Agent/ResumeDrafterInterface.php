@@ -46,9 +46,4 @@ interface ResumeDrafterInterface
         ?callable $thinkingDeltaProcessor = null,
         ?callable $textDeltaProcessor = null,
     ): string;
-
-    /**
-     * Synthesizes an ATS-optimized resume using a request object.
-     */
-    public function draftFromRequest(ResumeDraftRequest $request): string;
 }

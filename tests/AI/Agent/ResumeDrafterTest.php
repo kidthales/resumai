@@ -23,7 +23,6 @@ declare(strict_types=1);
 namespace App\Tests\AI\Agent;
 
 use App\AI\Agent\ResumeDrafter;
-use App\AI\Agent\ResumeDraftRequest;
 use App\AI\Platform\Result\Processor;
 use App\AI\Platform\Result\Stream\Processor as StreamProcessor;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -147,34 +146,6 @@ final class ResumeDrafterTest extends TestCase
         $this->assertStringContainsString('Synthesize a complete, high-impact resume in Markdown format based on the candidate profile.', $capturedPrompt);
         $this->assertStringNotContainsString('<job_description>', $capturedPrompt);
         $this->assertStringNotContainsString('<candidate_archetype>', $capturedPrompt);
-    }
-
-    #[Test]
-    public function itDraftsFromRequestObject(): void
-    {
-        $request = new ResumeDraftRequest(
-            jobDescription: 'Software Architect',
-            candidateArchetype: 'Principal Architect',
-        );
-        $expectedOutput = "# Jane Doe\n\nPrincipal Architect";
-
-        $capturedPrompt = null;
-        $agent = $this->createMock(AgentInterface::class);
-        $agent->expects($this->once())
-            ->method('call')
-            ->willReturnCallback(function (string $prompt) use (&$capturedPrompt, $expectedOutput): Execution {
-                $capturedPrompt = $prompt;
-
-                return $this->createExecution($expectedOutput);
-            });
-
-        $drafter = $this->createResumeDrafter($agent);
-        $result = $drafter->draftFromRequest($request);
-
-        $this->assertSame($expectedOutput, $result);
-        $this->assertNotNull($capturedPrompt);
-        $this->assertStringContainsString('<job_description>', $capturedPrompt);
-        $this->assertStringContainsString('<candidate_archetype>', $capturedPrompt);
     }
 
     #[Test]
@@ -318,41 +289,6 @@ final class ResumeDrafterTest extends TestCase
         $this->assertSame("# Jane Doe\n\nSoftware Engineer", $result);
         $this->assertSame(['Analyzing requirements...'], $capturedThinking);
         $this->assertSame(['# Jane Doe', "\n\nSoftware Engineer"], $capturedText);
-    }
-
-    #[Test]
-    public function itInvokesThinkingAndTextDeltaCallbacksFromRequestObject(): void
-    {
-        $deltas = [
-            new ThinkingDelta('Thinking about leadership persona...'),
-            new TextDelta('# Jane Doe - Tech Lead'),
-        ];
-
-        $capturedThinking = [];
-        $capturedText = [];
-
-        $request = new ResumeDraftRequest(
-            jobDescription: 'Lead Engineer',
-            candidateArchetype: 'Tech Lead',
-            thinkingDeltaProcessor: function (ThinkingDelta $delta) use (&$capturedThinking): void {
-                $capturedThinking[] = $delta->getThinking();
-            },
-            textDeltaProcessor: function (TextDelta $delta) use (&$capturedText): void {
-                $capturedText[] = $delta->getText();
-            },
-        );
-
-        $agent = $this->createMock(AgentInterface::class);
-        $agent->expects($this->once())
-            ->method('call')
-            ->willReturn($this->createStreamExecution($deltas));
-
-        $drafter = $this->createResumeDrafter($agent);
-        $result = $drafter->draftFromRequest($request);
-
-        $this->assertSame('# Jane Doe - Tech Lead', $result);
-        $this->assertSame(['Thinking about leadership persona...'], $capturedThinking);
-        $this->assertSame(['# Jane Doe - Tech Lead'], $capturedText);
     }
 
     private function createResumeDrafter(AgentInterface $agent, ?Processor $processor = null): ResumeDrafter

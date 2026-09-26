@@ -75,16 +75,6 @@ final readonly class ResumeDrafter implements ResumeDrafterInterface
         return $this->sanitizeOutput($resumeText);
     }
 
-    public function draftFromRequest(ResumeDraftRequest $request): string
-    {
-        return $this->draft(
-            $request->jobDescription,
-            $request->candidateArchetype,
-            $request->thinkingDeltaProcessor,
-            $request->textDeltaProcessor,
-        );
-    }
-
     private function buildPrompt(?string $jobDescription, ?string $candidateArchetype): string
     {
         $parts = [
