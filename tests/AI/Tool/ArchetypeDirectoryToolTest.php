@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace App\Tests\AI\Tool;
 
-use App\AI\Agent\Exception\ArchetypeNotFoundException;
 use App\AI\Tool\ArchetypeDirectoryTool;
+use App\AI\Tool\Exception\ArchetypeNotFoundException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;

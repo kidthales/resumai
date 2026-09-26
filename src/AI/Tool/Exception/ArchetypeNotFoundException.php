@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace App\AI\Agent\Exception;
+namespace App\AI\Tool\Exception;
 
 /**
  * @author Tristan Bonsor <kidthales@agogpixel.com>
