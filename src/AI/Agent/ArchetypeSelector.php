@@ -13,12 +13,8 @@ declare(strict_types=1);
 
 namespace App\AI\Agent;
 
-use App\AI\Agent\Execution\Processor;
 use App\AI\Tool\ArchetypeDirectoryTool;
 use Symfony\AI\Agent\AgentInterface;
-use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
-use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
-use Symfony\AI\Platform\Result\TextResult;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
 /**
@@ -29,16 +25,12 @@ final readonly class ArchetypeSelector implements ArchetypeSelectorInterface
     public function __construct(
         #[Target('archetype_selector')]
         private AgentInterface $agent,
-        private Processor $executionProcessor,
         private ArchetypeDirectoryTool $directoryTool,
     ) {
     }
 
-    public function select(
-        string $jobDescription,
-        ?callable $thinkingDeltaProcessor = null,
-        ?callable $textDeltaProcessor = null,
-    ): ArchetypeSelection {
+    public function select(string $jobDescription): ArchetypeSelection
+    {
         $trimmedJobDescription = trim($jobDescription);
         if ('' === $trimmedJobDescription) {
             throw new \InvalidArgumentException('Job description cannot be empty.');
@@ -46,28 +38,7 @@ final readonly class ArchetypeSelector implements ArchetypeSelectorInterface
 
         $prompt = $this->buildPrompt($trimmedJobDescription);
         $execution = $this->agent->call($prompt);
-
-        $responseText = '';
-        $thinkingText = '';
-
-        $this->executionProcessor->process(
-            $execution,
-            textResultProcessor: static function (TextResult $result) use (&$responseText): void {
-                $responseText .= (string) $result->getContent();
-            },
-            textDeltaProcessor: static function (TextDelta $delta) use (&$responseText, $textDeltaProcessor): void {
-                $responseText .= $delta->getText();
-                if (null !== $textDeltaProcessor) {
-                    $textDeltaProcessor($delta);
-                }
-            },
-            thinkingDeltaProcessor: static function (ThinkingDelta $delta) use (&$thinkingText, $thinkingDeltaProcessor): void {
-                $thinkingText .= $delta->getThinking();
-                if (null !== $thinkingDeltaProcessor) {
-                    $thinkingDeltaProcessor($delta);
-                }
-            },
-        );
+        $responseText = (string) $execution->getContent();
 
         $parsed = $this->parseResponse($responseText);
         $content = $this->directoryTool->readArchetype($parsed['archetype_id']);

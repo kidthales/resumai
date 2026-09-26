@@ -15,9 +15,6 @@ namespace App\Tests\AI\Agent;
 
 use App\AI\Agent\ArchetypeSelection;
 use App\AI\Agent\ArchetypeSelector;
-use App\AI\Agent\Execution\Processor as ExecutionProcessor;
-use App\AI\Platform\Result\Processor as ResultProcessor;
-use App\AI\Platform\Result\Stream\Processor as StreamProcessor;
 use App\AI\Tool\ArchetypeDirectoryTool;
 use App\AI\Tool\Exception\ArchetypeNotFoundException;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -27,9 +24,6 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Execution;
 use Symfony\AI\Agent\Execution\Update\Result;
-use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
-use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
-use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\TextResult;
 
 /**
@@ -146,55 +140,6 @@ final class ArchetypeSelectorTest extends TestCase
     }
 
     #[Test]
-    public function itIsolatesThinkingDeltasAndInvokesCallbacksWhenStreamed(): void
-    {
-        $archetypeContent = "# Full-Stack Engineer\n\nEnd to end feature delivery.";
-        file_put_contents($this->tempDir.'/fullstack_engineer.sample.md', $archetypeContent);
-
-        $jsonPayload = json_encode([
-            'archetype_id' => 'fullstack_engineer_sample',
-            'archetype_name' => 'Full-Stack Engineer',
-            'rationale' => 'Requires both React and backend APIs.',
-        ], \JSON_THROW_ON_ERROR);
-
-        $deltas = [
-            new ThinkingDelta('Evaluating candidate archetypes: backend vs fullstack...'),
-            new ThinkingDelta('Selected fullstack_engineer_sample based on frontend requirements.'),
-            new TextDelta(substr($jsonPayload, 0, 20)),
-            new TextDelta(substr($jsonPayload, 20)),
-        ];
-
-        $capturedThinking = [];
-        $capturedText = [];
-
-        $agent = $this->createMock(AgentInterface::class);
-        $agent->expects($this->once())
-            ->method('call')
-            ->willReturn($this->createStreamExecution($deltas));
-
-        $tool = new ArchetypeDirectoryTool($this->tempDir);
-        $selector = $this->createArchetypeSelector($agent, $tool);
-
-        $selection = $selector->select(
-            jobDescription: 'Frontend React + Node developer needed.',
-            thinkingDeltaProcessor: function (ThinkingDelta $delta) use (&$capturedThinking): void {
-                $capturedThinking[] = $delta->getThinking();
-            },
-            textDeltaProcessor: function (TextDelta $delta) use (&$capturedText): void {
-                $capturedText[] = $delta->getText();
-            },
-        );
-
-        $this->assertSame('fullstack_engineer_sample', $selection->archetypeId);
-        $this->assertSame($archetypeContent, $selection->content);
-        $this->assertSame('Requires both React and backend APIs.', $selection->rationale);
-
-        $this->assertCount(2, $capturedThinking);
-        $this->assertSame(['Evaluating candidate archetypes: backend vs fullstack...', 'Selected fullstack_engineer_sample based on frontend requirements.'], $capturedThinking);
-        $this->assertSame([substr($jsonPayload, 0, 20), substr($jsonPayload, 20)], $capturedText);
-    }
-
-    #[Test]
     public function itThrowsExceptionWhenJobDescriptionIsEmpty(): void
     {
         $agent = $this->createMock(AgentInterface::class);
@@ -263,35 +208,14 @@ final class ArchetypeSelectorTest extends TestCase
     private function createArchetypeSelector(
         AgentInterface $agent,
         ArchetypeDirectoryTool $tool,
-        ?ExecutionProcessor $processor = null,
     ): ArchetypeSelector {
-        return new ArchetypeSelector(
-            $agent,
-            $processor ?? new ExecutionProcessor(new ResultProcessor(new StreamProcessor())),
-            $tool,
-        );
+        return new ArchetypeSelector($agent, $tool);
     }
 
     private function createExecution(string $output): Execution
     {
         return new Execution(static function () use ($output): \Generator {
             yield new Result(new TextResult($output));
-        });
-    }
-
-    /**
-     * @param list<TextDelta|ThinkingDelta> $deltas
-     */
-    private function createStreamExecution(array $deltas): Execution
-    {
-        return new Execution(static function () use ($deltas): \Generator {
-            $gen = static function () use ($deltas): \Generator {
-                foreach ($deltas as $delta) {
-                    yield $delta;
-                }
-            };
-
-            yield new Result(new StreamResult($gen()));
         });
     }
 

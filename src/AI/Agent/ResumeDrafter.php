@@ -22,11 +22,7 @@ declare(strict_types=1);
 
 namespace App\AI\Agent;
 
-use App\AI\Agent\Execution\Processor;
 use Symfony\AI\Agent\AgentInterface;
-use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
-use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
-use Symfony\AI\Platform\Result\TextResult;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
 /**
@@ -37,40 +33,16 @@ final readonly class ResumeDrafter implements ResumeDrafterInterface
     public function __construct(
         #[Target('resume_drafter')]
         private AgentInterface $agent,
-        private Processor $executionProcessor,
     ) {
     }
 
     public function draft(
         ?string $jobDescription = null,
         ?string $candidateArchetype = null,
-        ?callable $thinkingDeltaProcessor = null,
-        ?callable $textDeltaProcessor = null,
     ): string {
         $prompt = $this->buildPrompt($jobDescription, $candidateArchetype);
         $execution = $this->agent->call($prompt);
-
-        $resumeText = '';
-        $thinkingText = '';
-
-        $this->executionProcessor->process(
-            $execution,
-            textResultProcessor: static function (TextResult $result) use (&$resumeText): void {
-                $resumeText .= (string) $result->getContent();
-            },
-            textDeltaProcessor: static function (TextDelta $delta) use (&$resumeText, $textDeltaProcessor): void {
-                $resumeText .= $delta->getText();
-                if (null !== $textDeltaProcessor) {
-                    $textDeltaProcessor($delta);
-                }
-            },
-            thinkingDeltaProcessor: static function (ThinkingDelta $delta) use (&$thinkingText, $thinkingDeltaProcessor): void {
-                $thinkingText .= $delta->getThinking();
-                if (null !== $thinkingDeltaProcessor) {
-                    $thinkingDeltaProcessor($delta);
-                }
-            },
-        );
+        $resumeText = (string) $execution->getContent();
 
         return $this->sanitizeOutput($resumeText);
     }
