@@ -25,7 +25,7 @@ OLLAMA   := $(OLLAMA_CONT) ollama
                 sf cc \
                 npm node_modules \
                 npx \
-                lint lint-fix prettier php-cs-fixer \
+                lint fix prettier php-cs-fixer \
                 ollama skills \
                 own
 
@@ -99,7 +99,7 @@ lint: ## Check files for lint errors
 	-@$(NPX) prettier --check .
 	-@$(PHP) vendor/bin/php-cs-fixer check
 
-lint-fix: ## Fix files with lint errors
+fix: ## Fix files with lint errors
 	-@$(NPX) prettier --write .
 	-@$(PHP) vendor/bin/php-cs-fixer fix
 
