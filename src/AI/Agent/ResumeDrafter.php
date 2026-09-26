@@ -22,7 +22,7 @@ declare(strict_types=1);
 
 namespace App\AI\Agent;
 
-use App\AI\Platform\Result\Processor;
+use App\AI\Agent\Execution\Processor;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
@@ -37,7 +37,7 @@ final readonly class ResumeDrafter implements ResumeDrafterInterface
     public function __construct(
         #[Target('resume_drafter')]
         private AgentInterface $agent,
-        private Processor $resultProcessor,
+        private Processor $executionProcessor,
     ) {
     }
 
@@ -53,8 +53,8 @@ final readonly class ResumeDrafter implements ResumeDrafterInterface
         $resumeText = '';
         $thinkingText = '';
 
-        $this->resultProcessor->process(
-            $execution->getResult(),
+        $this->executionProcessor->process(
+            $execution,
             textResultProcessor: static function (TextResult $result) use (&$resumeText): void {
                 $resumeText .= (string) $result->getContent();
             },

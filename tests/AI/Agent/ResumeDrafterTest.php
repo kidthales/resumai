@@ -22,8 +22,9 @@ declare(strict_types=1);
 
 namespace App\Tests\AI\Agent;
 
+use App\AI\Agent\Execution\Processor as ExecutionProcessor;
 use App\AI\Agent\ResumeDrafter;
-use App\AI\Platform\Result\Processor;
+use App\AI\Platform\Result\Processor as ResultProcessor;
 use App\AI\Platform\Result\Stream\Processor as StreamProcessor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -291,11 +292,11 @@ final class ResumeDrafterTest extends TestCase
         $this->assertSame(['# Jane Doe', "\n\nSoftware Engineer"], $capturedText);
     }
 
-    private function createResumeDrafter(AgentInterface $agent, ?Processor $processor = null): ResumeDrafter
+    private function createResumeDrafter(AgentInterface $agent, ?ExecutionProcessor $processor = null): ResumeDrafter
     {
         return new ResumeDrafter(
             $agent,
-            $processor ?? new Processor(new StreamProcessor()),
+            $processor ?? new ExecutionProcessor(new ResultProcessor(new StreamProcessor())),
         );
     }
 

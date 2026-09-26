@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace App\AI\Agent;
 
-use App\AI\Platform\Result\Processor;
+use App\AI\Agent\Execution\Processor;
 use App\AI\Tool\ArchetypeDirectoryTool;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
@@ -29,7 +29,7 @@ final readonly class ArchetypeSelector implements ArchetypeSelectorInterface
     public function __construct(
         #[Target('archetype_selector')]
         private AgentInterface $agent,
-        private Processor $resultProcessor,
+        private Processor $executionProcessor,
         private ArchetypeDirectoryTool $directoryTool,
     ) {
     }
@@ -50,8 +50,8 @@ final readonly class ArchetypeSelector implements ArchetypeSelectorInterface
         $responseText = '';
         $thinkingText = '';
 
-        $this->resultProcessor->process(
-            $execution->getResult(),
+        $this->executionProcessor->process(
+            $execution,
             textResultProcessor: static function (TextResult $result) use (&$responseText): void {
                 $responseText .= (string) $result->getContent();
             },

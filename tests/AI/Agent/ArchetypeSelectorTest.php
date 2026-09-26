@@ -15,7 +15,8 @@ namespace App\Tests\AI\Agent;
 
 use App\AI\Agent\ArchetypeSelection;
 use App\AI\Agent\ArchetypeSelector;
-use App\AI\Platform\Result\Processor;
+use App\AI\Agent\Execution\Processor as ExecutionProcessor;
+use App\AI\Platform\Result\Processor as ResultProcessor;
 use App\AI\Platform\Result\Stream\Processor as StreamProcessor;
 use App\AI\Tool\ArchetypeDirectoryTool;
 use App\AI\Tool\Exception\ArchetypeNotFoundException;
@@ -262,11 +263,11 @@ final class ArchetypeSelectorTest extends TestCase
     private function createArchetypeSelector(
         AgentInterface $agent,
         ArchetypeDirectoryTool $tool,
-        ?Processor $processor = null,
+        ?ExecutionProcessor $processor = null,
     ): ArchetypeSelector {
         return new ArchetypeSelector(
             $agent,
-            $processor ?? new Processor(new StreamProcessor()),
+            $processor ?? new ExecutionProcessor(new ResultProcessor(new StreamProcessor())),
             $tool,
         );
     }
