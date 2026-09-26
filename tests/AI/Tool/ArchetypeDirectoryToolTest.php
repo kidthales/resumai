@@ -145,7 +145,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Archetype identifier cannot be empty.');
+        $this->expectExceptionMessageMatches('/Archetype identifier cannot be empty\./');
 
         $tool->readArchetype('   ');
     }
@@ -157,7 +157,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid archetype identifier');
+        $this->expectExceptionMessageMatches('/Invalid archetype identifier/');
 
         $tool->readArchetype($maliciousId);
     }
@@ -181,7 +181,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
         $this->expectException(ArchetypeNotFoundException::class);
-        $this->expectExceptionMessage('Archetype with identifier "unknown_role" was not found.');
+        $this->expectExceptionMessageMatches('/Archetype with identifier "unknown_role" was not found\./');
 
         $tool->readArchetype('unknown_role');
     }

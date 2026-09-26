@@ -204,7 +204,7 @@ final class ArchetypeSelectorTest extends TestCase
         $selector = $this->createArchetypeSelector($agent, $tool);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Job description cannot be empty.');
+        $this->expectExceptionMessageMatches('/Job description cannot be empty\./');
 
         $selector->select('   ');
     }
@@ -221,7 +221,7 @@ final class ArchetypeSelectorTest extends TestCase
         $selector = $this->createArchetypeSelector($agent, $tool);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Failed to parse archetype selection JSON response');
+        $this->expectExceptionMessageMatches('/Failed to parse archetype selection JSON response/');
 
         $selector->select('Looking for lead developer');
     }
@@ -238,7 +238,7 @@ final class ArchetypeSelectorTest extends TestCase
         $selector = $this->createArchetypeSelector($agent, $tool);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Missing or invalid "archetype_id" in agent response');
+        $this->expectExceptionMessageMatches('/Missing or invalid "archetype_id" in agent response/');
 
         $selector->select('Looking for lead developer');
     }
@@ -255,7 +255,7 @@ final class ArchetypeSelectorTest extends TestCase
         $selector = $this->createArchetypeSelector($agent, $tool);
 
         $this->expectException(ArchetypeNotFoundException::class);
-        $this->expectExceptionMessage('Archetype with identifier "non_existent_archetype" was not found.');
+        $this->expectExceptionMessageMatches('/Archetype with identifier "non_existent_archetype" was not found\./');
 
         $selector->select('Looking for lead developer');
     }
