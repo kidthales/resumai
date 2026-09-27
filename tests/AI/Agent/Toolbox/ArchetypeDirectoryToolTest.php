@@ -44,7 +44,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
     {
         $this->filesystem->appendToFile($this->tempDir.'/staff_backend_engineer.sample.md', "# Staff Backend Engineer\n\nOverview content.");
         $this->filesystem->appendToFile($this->tempDir.'/devops_sre.sample.md', "# DevOps & SRE\n\nDevOps content.");
-        $this->filesystem->appendToFile($this->tempDir.'/engineering_manager.md', "# Engineering Manager\n\nEM content.");
+        $this->filesystem->appendToFile($this->tempDir.'/engineering_manager.sample.md', "# Engineering Manager\n\nEM content.");
         $this->filesystem->appendToFile($this->tempDir.'/ignored.txt', 'Not markdown');
         $this->filesystem->appendToFile($this->tempDir.'/.hidden.md', 'Hidden file');
 
@@ -54,7 +54,7 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $this->assertCount(3, $archetypes);
         $this->assertSame([
             'devops_sre.sample.md',
-            'engineering_manager.md',
+            'engineering_manager.sample.md',
             'staff_backend_engineer.sample.md',
         ], $archetypes);
     }
@@ -71,10 +71,9 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $tool = new ArchetypeDirectoryTool($this->tempDir);
         $archetypes = $tool->listArchetypes();
 
-        $this->assertCount(2, $archetypes);
+        $this->assertCount(1, $archetypes);
         $this->assertSame([
             'platform_engineer.md',
-            'platform_engineer.sample.md',
         ], $archetypes);
 
         $this->assertSame($customContent, $tool->readArchetype('platform_engineer'));
