@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\AI\Agent\Toolbox;
 
 use App\AI\Agent\Toolbox\Exception\ArchetypeNotFoundException;
+use App\Filesystem\PathChecker;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Filesystem\Filesystem;
@@ -29,8 +30,7 @@ use function Symfony\Component\String\u;
 final readonly class ArchetypeDirectoryTool
 {
     public function __construct(
-        #[Autowire('%archetypes_path%')]
-        private string $archetypesPath,
+        #[Autowire('%archetypes_path%')] private string $archetypesPath,
         private Filesystem $filesystem = new Filesystem(),
     ) {
     }
@@ -54,12 +54,18 @@ final readonly class ArchetypeDirectoryTool
             ->ignoreDotFiles(true)
             ->sortByName();
 
-        $filenames = [];
+        $samples = [];
+        $nonSamples = [];
         foreach ($finder as $file) {
-            $filenames[] = $file->getFilename();
+            $filename = u($file->getFilename())->trim();
+            if ($filename->endsWith('.sample.md')) {
+                $samples[] = $filename->toString();
+            } else {
+                $nonSamples[] = $filename->toString();
+            }
         }
 
-        return array_values($filenames);
+        return array_values(0 < count($nonSamples) ? $nonSamples : $samples);
     }
 
     /**
@@ -89,15 +95,9 @@ final readonly class ArchetypeDirectoryTool
         // Path::join gracefully handles slashes
         $targetPath = Path::join($this->archetypesPath, $candidate);
 
-        if ($this->filesystem->exists($targetPath)) {
-            // Ensure symlinks are resolved for the security check
-            $realTarget = realpath($targetPath);
-            $realBase = realpath($this->archetypesPath);
-
-            // Path::isBasePath acts as a secure 'starts_with' for directories
-            if ($realTarget && $realBase && Path::isBasePath($realBase, $realTarget)) {
-                return $this->filesystem->readFile($realTarget);
-            }
+        $pathChecker = new PathChecker($targetPath);
+        if ($pathChecker->hasBasepath($this->archetypesPath, useRealpath: true)) {
+            return $this->filesystem->readFile($pathChecker->realpath());
         }
 
         throw ArchetypeNotFoundException::forFilename($filename);
