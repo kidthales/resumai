@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\AI\Tool;
+namespace App\tests\AI\Agent\Toolbox;
 
-use App\AI\Tool\ArchetypeDirectoryTool;
-use App\AI\Tool\Exception\ArchetypeNotFoundException;
+use App\AI\Agent\Toolbox\ArchetypeDirectoryTool;
+use App\AI\Agent\Toolbox\Exception\ArchetypeNotFoundException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;

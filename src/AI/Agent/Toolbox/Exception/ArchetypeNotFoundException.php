@@ -11,17 +11,15 @@
 
 declare(strict_types=1);
 
-namespace App\AI\Agent;
+namespace App\AI\Agent\Toolbox\Exception;
 
 /**
  * @author Tristan Bonsor <kidthales@agogpixel.com>
  */
-interface ArchetypeSelectorInterface
+final class ArchetypeNotFoundException extends \InvalidArgumentException
 {
-    /**
-     * Analyzes a job description and selects the most suitable archetype.
-     *
-     * @param string $jobDescription The job description text
-     */
-    public function select(string $jobDescription): ArchetypeSelection;
+    public static function forId(string $archetypeId): self
+    {
+        return new self(\sprintf('Archetype with identifier "%s" was not found.', $archetypeId));
+    }
 }

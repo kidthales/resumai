@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace App\AI\Tool;
+namespace App\AI\Agent\Toolbox;
 
-use App\AI\Tool\Exception\ArchetypeNotFoundException;
+use App\AI\Agent\Toolbox\Exception\ArchetypeNotFoundException;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
