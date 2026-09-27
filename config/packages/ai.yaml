@@ -22,7 +22,7 @@ ai:
             tools:
                 enabled: true
                 services:
-                    - service: App\AI\Tool\ArchetypeDirectoryTool
+                    - service: App\AI\Agent\Toolbox\ArchetypeDirectoryTool
 
     store:
         # Store configuration

@@ -21,10 +21,10 @@ When presented with a job description:
     - Distinguish between individual contributor (IC) depth and people management / organizational leadership scope.
 
 2. **Discover Candidate Archetypes:**
-    - Call the `list_archetypes` tool to discover available archetype identifiers, filenames, and role titles.
+    - Call the `list_archetypes` tool to discover available archetype filenames.
 
 3. **Inspect Relevant Archetypes:**
-    - Call the `read_archetype` tool for prospective candidate archetypes to evaluate detailed competencies, focus areas, and target role alignments.
+    - Call the `read_archetype` tool with the archetype filename (e.g. `staff_backend_engineer.sample.md`) for prospective candidate archetypes to evaluate detailed competencies, focus areas, and target role alignments.
 
 4. **Select & Formulate Decision:**
     - Select the single archetype that exhibits the highest alignment with the target role requirements.
@@ -38,8 +38,7 @@ After completing your tool-based evaluation, output your final decision as a JSO
 
 ```json
 {
-    "archetype_id": "string (the exact identifier of the selected archetype, e.g. staff_backend_engineer_sample or staff_backend_engineer)",
-    "archetype_name": "string (the human-readable title of the selected archetype, e.g. Staff Backend Engineer)",
+    "archetype_filename": "string (the exact filename of the selected archetype, e.g. staff_backend_engineer.sample.md)",
     "rationale": "string (concise explanation highlighting key alignment points between the job description and the selected archetype)"
 }
 ```

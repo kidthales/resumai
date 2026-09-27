@@ -18,8 +18,8 @@ namespace App\AI\Agent\Toolbox\Exception;
  */
 final class ArchetypeNotFoundException extends \InvalidArgumentException
 {
-    public static function forId(string $archetypeId): self
+    public static function forFilename(string $filename): self
     {
-        return new self(\sprintf('Archetype with identifier "%s" was not found.', $archetypeId));
+        return new self(\sprintf('Archetype with filename "%s" was not found.', $filename));
     }
 }

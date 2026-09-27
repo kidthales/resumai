@@ -1,17 +1,8 @@
 <?php
 
-/*
- * This file is part of the ResumAI package.
- *
- * (c) Tristan Bonsor <kidthales@agogpixel.com>
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
-
 declare(strict_types=1);
 
-namespace App\tests\AI\Agent\Toolbox;
+namespace App\Tests\AI\Agent\Toolbox;
 
 use App\AI\Agent\Toolbox\ArchetypeDirectoryTool;
 use App\AI\Agent\Toolbox\Exception\ArchetypeNotFoundException;
@@ -20,6 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * @author Tristan Bonsor <kidthales@agogpixel.com>
@@ -30,61 +22,41 @@ use PHPUnit\Framework\TestCase;
 final class ArchetypeDirectoryToolTest extends TestCase
 {
     private string $tempDir;
+    private Filesystem $filesystem;
 
     protected function setUp(): void
     {
-        $this->tempDir = sys_get_temp_dir().\DIRECTORY_SEPARATOR.'archetype_test_'.uniqid();
-        mkdir($this->tempDir, 0777, true);
+        $this->filesystem = new Filesystem();
+
+        // Cryptographically random suffix prevents any parallel collisions
+        $this->tempDir = sys_get_temp_dir().\DIRECTORY_SEPARATOR.'archetype_test_'.bin2hex(random_bytes(8));
+        $this->filesystem->mkdir($this->tempDir);
     }
 
     protected function tearDown(): void
     {
-        $this->removeDirectory($this->tempDir);
+        // Filesystem::remove recursively deletes files and folders robustly
+        $this->filesystem->remove($this->tempDir);
     }
 
     #[Test]
-    public function itListsAllArchetypesInDirectorySortedById(): void
+    public function itListsAllArchetypeFilenamesInDirectorySortedAlphabetically(): void
     {
-        file_put_contents($this->tempDir.'/staff_backend_engineer.sample.md', "# Staff Backend Engineer\n\nOverview content.");
-        file_put_contents($this->tempDir.'/devops_sre.sample.md', "# DevOps & SRE\n\nDevOps content.");
-        file_put_contents($this->tempDir.'/engineering_manager.md', "# Engineering Manager\n\nEM content.");
-        file_put_contents($this->tempDir.'/ignored.txt', 'Not markdown');
-        file_put_contents($this->tempDir.'/.hidden.md', 'Hidden file');
+        $this->filesystem->appendToFile($this->tempDir.'/staff_backend_engineer.sample.md', "# Staff Backend Engineer\n\nOverview content.");
+        $this->filesystem->appendToFile($this->tempDir.'/devops_sre.sample.md', "# DevOps & SRE\n\nDevOps content.");
+        $this->filesystem->appendToFile($this->tempDir.'/engineering_manager.md', "# Engineering Manager\n\nEM content.");
+        $this->filesystem->appendToFile($this->tempDir.'/ignored.txt', 'Not markdown');
+        $this->filesystem->appendToFile($this->tempDir.'/.hidden.md', 'Hidden file');
 
         $tool = new ArchetypeDirectoryTool($this->tempDir);
         $archetypes = $tool->listArchetypes();
 
         $this->assertCount(3, $archetypes);
         $this->assertSame([
-            [
-                'id' => 'devops_sre_sample',
-                'filename' => 'devops_sre.sample.md',
-                'title' => 'DevOps & SRE',
-            ],
-            [
-                'id' => 'engineering_manager',
-                'filename' => 'engineering_manager.md',
-                'title' => 'Engineering Manager',
-            ],
-            [
-                'id' => 'staff_backend_engineer_sample',
-                'filename' => 'staff_backend_engineer.sample.md',
-                'title' => 'Staff Backend Engineer',
-            ],
+            'devops_sre.sample.md',
+            'engineering_manager.md',
+            'staff_backend_engineer.sample.md',
         ], $archetypes);
-    }
-
-    #[Test]
-    public function itExtractsTitleFromFirstHeadingOrFormatsFromId(): void
-    {
-        file_put_contents($this->tempDir.'/custom_role.sample.md', "No heading here.\nJust paragraphs.");
-
-        $tool = new ArchetypeDirectoryTool($this->tempDir);
-        $archetypes = $tool->listArchetypes();
-
-        $this->assertCount(1, $archetypes);
-        $this->assertSame('custom_role_sample', $archetypes[0]['id']);
-        $this->assertSame('Custom Role Sample', $archetypes[0]['title']);
     }
 
     #[Test]
@@ -93,29 +65,21 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $sampleContent = "# Platform Engineer\n\nSample platform engineer profile.";
         $customContent = "# Platform Engineer\n\nCustom company-tailored platform engineer profile.";
 
-        file_put_contents($this->tempDir.'/platform_engineer.sample.md', $sampleContent);
-        file_put_contents($this->tempDir.'/platform_engineer.md', $customContent);
+        $this->filesystem->appendToFile($this->tempDir.'/platform_engineer.sample.md', $sampleContent);
+        $this->filesystem->appendToFile($this->tempDir.'/platform_engineer.md', $customContent);
 
         $tool = new ArchetypeDirectoryTool($this->tempDir);
         $archetypes = $tool->listArchetypes();
 
         $this->assertCount(2, $archetypes);
         $this->assertSame([
-            [
-                'id' => 'platform_engineer',
-                'filename' => 'platform_engineer.md',
-                'title' => 'Platform Engineer',
-            ],
-            [
-                'id' => 'platform_engineer_sample',
-                'filename' => 'platform_engineer.sample.md',
-                'title' => 'Platform Engineer',
-            ],
+            'platform_engineer.md',
+            'platform_engineer.sample.md',
         ], $archetypes);
 
         $this->assertSame($customContent, $tool->readArchetype('platform_engineer'));
-        $this->assertSame($sampleContent, $tool->readArchetype('platform_engineer_sample'));
         $this->assertSame($customContent, $tool->readArchetype('platform_engineer.md'));
+        $this->assertSame($sampleContent, $tool->readArchetype('platform_engineer.sample'));
         $this->assertSame($sampleContent, $tool->readArchetype('platform_engineer.sample.md'));
     }
 
@@ -127,39 +91,38 @@ final class ArchetypeDirectoryToolTest extends TestCase
     }
 
     #[Test]
-    public function itReadsArchetypeContentByIdOrFilename(): void
+    public function itReadsArchetypeContentByExactFilenameOrExtensionlessFilename(): void
     {
         $content = "# Staff Backend Engineer\n\nDeep systems expertise.";
-        file_put_contents($this->tempDir.'/staff_backend_engineer.sample.md', $content);
+        $this->filesystem->appendToFile($this->tempDir.'/staff_backend_engineer.sample.md', $content);
 
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
-        $this->assertSame($content, $tool->readArchetype('staff_backend_engineer_sample'));
-        $this->assertSame($content, $tool->readArchetype('staff_backend_engineer'));
         $this->assertSame($content, $tool->readArchetype('staff_backend_engineer.sample.md'));
+        $this->assertSame($content, $tool->readArchetype('staff_backend_engineer.sample'));
     }
 
     #[Test]
-    public function itThrowsExceptionWhenArchetypeIdIsEmpty(): void
+    public function itThrowsExceptionWhenArchetypeFilenameIsEmpty(): void
     {
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Archetype identifier cannot be empty\./');
+        $this->expectExceptionMessageMatches('/Archetype filename cannot be empty\./');
 
         $tool->readArchetype('   ');
     }
 
     #[Test]
     #[DataProvider('providePathTraversalPayloads')]
-    public function itThrowsExceptionOnPathTraversalAttempt(string $maliciousId): void
+    public function itThrowsExceptionOnPathTraversalAttempt(string $maliciousFilename): void
     {
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Invalid archetype identifier/');
+        $this->expectExceptionMessageMatches('/Invalid archetype filename/');
 
-        $tool->readArchetype($maliciousId);
+        $tool->readArchetype($maliciousFilename);
     }
 
     /**
@@ -181,31 +144,19 @@ final class ArchetypeDirectoryToolTest extends TestCase
         $tool = new ArchetypeDirectoryTool($this->tempDir);
 
         $this->expectException(ArchetypeNotFoundException::class);
-        $this->expectExceptionMessageMatches('/Archetype with identifier "unknown_role" was not found\./');
+        $this->expectExceptionMessageMatches('/Archetype with filename "unknown_role\.md" was not found\./');
 
-        $tool->readArchetype('unknown_role');
+        $tool->readArchetype('unknown_role.md');
     }
 
-    private function removeDirectory(string $dir): void
+    #[Test]
+    public function itThrowsNotFoundExceptionWhenExtensionlessArchetypeDoesNotExist(): void
     {
-        if (!is_dir($dir)) {
-            return;
-        }
+        $tool = new ArchetypeDirectoryTool($this->tempDir);
 
-        $files = scandir($dir);
-        if (false !== $files) {
-            foreach ($files as $file) {
-                if ('.' === $file || '..' === $file) {
-                    continue;
-                }
-                $path = $dir.\DIRECTORY_SEPARATOR.$file;
-                if (is_dir($path)) {
-                    $this->removeDirectory($path);
-                } else {
-                    unlink($path);
-                }
-            }
-        }
-        rmdir($dir);
+        $this->expectException(ArchetypeNotFoundException::class);
+        $this->expectExceptionMessageMatches('/Archetype with filename "unknown_role" was not found\./');
+
+        $tool->readArchetype('unknown_role');
     }
 }
