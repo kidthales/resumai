@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Filesystem;
 
 use Symfony\Component\Filesystem\Path;
@@ -26,7 +28,7 @@ final readonly class PathChecker
 
     public function realpath(): false|string
     {
-        return realpath($this->path);
+        return realpath($this->path->toString());
     }
 
     public function hasBasepath(string $basepath, $useRealpath = false): bool
