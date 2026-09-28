@@ -24,7 +24,7 @@ Transform raw career history, domain experience, and domain accomplishments into
     - Single-column layout with standard semantic section headers.
     - Clean, standard typography; avoid tables, sidebars, multi-column blocks, or unparsed canvas graphics in resume outputs.
 4. **Seniority & Leadership Signals:**
-    - Explicitly reflect progression inferred from [Work History](#23-work-history).
+    - Explicitly reflect career progression indicated by [Work History](#23-work-history).
     - Highlight senior traits: domain expertise and cross-functional team leadership inferred from [Work History](#23-work-history).
 
 ---
@@ -65,7 +65,7 @@ Transform raw career history, domain experience, and domain accomplishments into
 
 ## Skills
 
-{{ bullet point list of skills grouped by domain }}
+{{ bullet point list of skills, inferred from work history, grouped by archetype domain }}
 
 ## Profession Experience
 
@@ -75,7 +75,7 @@ Transform raw career history, domain experience, and domain accomplishments into
 
 **{{ role title }}** | {{ role duration }}
 
-{{ list of bullet points describing role responsibilities }}
+{{ list of bullet points describing role responsibilities, adjusted for job description and archetype }}
 
 {{ end for each }}
 

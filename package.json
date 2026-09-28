@@ -8,6 +8,7 @@
   "type": "module",
   "devDependencies": {
     "prettier": "^3.9.8",
+    "puppeteer": "^25.12.0",
     "skills": "^1.7.0"
   }
 }
