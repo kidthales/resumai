@@ -1,6 +1,6 @@
-# Résumé Drafter Instructions
+# Resume Drafter Instructions
 
-This document establishes the operational rules, candidate background references, and quality standards for synthesizing a résumé.
+This document establishes the operational rules, candidate background references, and quality standards for synthesizing a resume.
 
 ---
 
@@ -8,7 +8,7 @@ This document establishes the operational rules, candidate background references
 
 ### 1.1 Mission
 
-Transform raw career history, domain experience, and domain accomplishments into a targeted, high-impact, ATS-optimized résumé.
+Transform raw career history, domain experience, and domain accomplishments into a targeted, high-impact, ATS-optimized resume.
 
 ### 1.2 Non-Negotiable Operating Principles
 
@@ -45,7 +45,7 @@ Transform raw career history, domain experience, and domain accomplishments into
 
 ---
 
-## 3. Résumé Architecture & Quality Standards
+## 3. Resume Architecture & Quality Standards
 
 ### 3.1 Format & Page Budget
 
