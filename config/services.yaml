@@ -25,6 +25,11 @@ parameters:
     pii.sample_work_history: '%env(default:content_not_found:file:SAMPLE_WORK_HISTORY_PATH)%'
     pii.work_history: '%env(default:pii.sample_work_history:file:WORK_HISTORY_PATH)%'
 
+    env(SAMPLE_EXTRAS_PATH): '%content_path%/pii/extras.sample.md'
+    env(EXTRAS_PATH): '%content_path%/pii/extras.md'
+    pii.sample_extras: '%env(default:content_not_found:file:SAMPLE_EXTRAS_PATH)%'
+    pii.extras: '%env(default:pii.sample_extras:file:EXTRAS_PATH)%'
+
     env(ARCHETYPE_SELECTOR_PROMPT_PATH): '%content_path%/prompts/archetype_selector.md'
     prompts.archetype_selector: '%env(resolve:default:content_not_found:file:ARCHETYPE_SELECTOR_PROMPT_PATH)%'
 

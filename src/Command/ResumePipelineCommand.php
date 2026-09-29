@@ -372,6 +372,7 @@ final readonly class ResumePipelineCommand
         $resumeSmellCheckPath = Path::join($pipelineOutputPath, $resumeSmellCheckFilename);
         $this->filesystem->appendToFile($resumeSmellCheckPath, $trimmedOutput);
 
+        $io->info(\sprintf('%s', $resumeSmellCheckFilename));
         $history[] = \sprintf(
             <<<MD
             **RESUME SMELL CHECKED**
