@@ -74,7 +74,6 @@ final readonly class ArchetypeSelectCommand
 
         $content = $this->agent->call($input)->getContent();
 
-        // TODO: Validate the content as JSON and handle errors
         $io->writeln($content);
 
         return Command::SUCCESS;

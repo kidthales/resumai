@@ -10,11 +10,6 @@ ai:
         # Agent configuration
         # see https://symfony.com/doc/current/ai/bundles/ai-bundle.html
 
-        resume_drafter:
-            platform: ai.platform.ollama
-            model: resume-drafter
-            prompt: '%prompts.resume_drafter%'
-
         archetype_selector:
             platform: ai.platform.ollama
             model: archetype-selector
@@ -23,6 +18,16 @@ ai:
                 enabled: true
                 services:
                     - service: App\AI\Agent\Toolbox\ArchetypeDirectoryTool
+
+        resume_drafter:
+            platform: ai.platform.ollama
+            model: resume-drafter
+            prompt: '%prompts.resume_drafter%'
+
+        resume_smell_checker:
+            platform: ai.platform.ollama
+            model: resume-smell-checker
+            prompt: '%prompts.resume_smell_checker%'
 
     store:
         # Store configuration

@@ -105,7 +105,6 @@ final readonly class ResumeDraftCommand
 
         $content = $this->agent->call(implode("\n\n", $inputParts))->getContent();
 
-        // TODO: Validate the content as Markdown and handle errors
         $io->writeln($content);
 
         return Command::SUCCESS;

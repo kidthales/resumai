@@ -31,6 +31,9 @@ parameters:
     env(RESUME_DRAFTER_PROMPT_PATH): '%content_path%/prompts/resume_drafter.md'
     prompts.resume_drafter: '%env(resolve:default:content_not_found:file:RESUME_DRAFTER_PROMPT_PATH)%'
 
+    env(RESUME_SMELL_CHECKER_PROMPT_PATH): '%content_path%/prompts/resume_smell_checker.md'
+    prompts.resume_smell_checker: '%env(resolve:default:content_not_found:file:RESUME_SMELL_CHECKER_PROMPT_PATH)%'
+
     env(ARCHETYPES_PATH): '%content_path%/archetypes'
     archetypes_path: '%env(resolve:ARCHETYPES_PATH)%'
 

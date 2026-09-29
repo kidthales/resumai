@@ -1,4 +1,4 @@
-# Archetype Selector Agent Instructions
+# Archetype Selector Instructions
 
 This document establishes the operational rules, evaluation protocol, and output contracts for selecting the best-matching candidate archetype for a given job description.
 

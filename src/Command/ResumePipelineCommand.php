@@ -90,8 +90,6 @@ final readonly class ResumePipelineCommand
         $history = [];
         $history[] = \sprintf(
             <<<MD
-            ---
-
             # %s
 
             **PARAMETERS**
@@ -131,6 +129,17 @@ final readonly class ResumePipelineCommand
                 $uid,
                 $history
             );
+
+            $io->section('3. Resume Smell Check');
+            $history[] = '## 3. Resume Smell Check';
+            $resumeSmellCheckPath = $this->doResumeSmellCheck(
+                $application,
+                $io,
+                $realPipelineOutputPath,
+                $resumeDraftPath,
+                $uid,
+                $history
+            );
         } catch (\Throwable $e) {
             $history[] = \sprintf(
                 <<<MD
@@ -156,11 +165,11 @@ final readonly class ResumePipelineCommand
         } finally {
             try {
                 $historyPath = Path::join($realPipelineOutputPath, self::HISTORY_FILENAME);
-                $this->filesystem->appendToFile($historyPath, \implode("\n\n", $history)."\n\n");
+                $this->filesystem->appendToFile($historyPath, \implode("\n\n", $history)."\n\n---\n\n");
             } catch (\Throwable $e) {
                 $io->outlineError(\sprintf('Failed to append to history file: %s', $e->getMessage()));
                 $io->writeln('Dumping history to console...');
-                $io->writeln(\implode("\n\n", $history));
+                $io->writeln(\implode("\n\n", $history)."\n\n---\n");
             }
         }
 
@@ -192,7 +201,13 @@ final readonly class ResumePipelineCommand
                 throw new \RuntimeException('Command app:archetype:select failed.');
             }
 
-            $trimmedArchetypeSelection = u($output->fetch())->trim();
+            $trimmedOutput = u($output->fetch())->trim()->toString();
+
+            if (preg_match('/^```(?:json)?\s*\n?(.*?)\n?```$/s', $trimmedOutput, $matches)) {
+                $trimmedOutput = trim($matches[1]);
+            } elseif (preg_match('/\{[\s\S]*\}/', $trimmedOutput, $matches)) {
+                $trimmedOutput = $matches[0];
+            }
 
             $history[] = \sprintf(
                 <<<MD
@@ -202,19 +217,33 @@ final readonly class ResumePipelineCommand
                 %s
                 ```
                 MD,
-                $trimmedArchetypeSelection->toString()
+                $trimmedOutput
             );
 
-            $archetypeSelection = json_decode($trimmedArchetypeSelection->toString(), true, \JSON_THROW_ON_ERROR);
+            try {
+                $archetypeSelection = json_decode($trimmedOutput, true, \JSON_THROW_ON_ERROR);
+            } catch (\JsonException $e) {
+                throw new \RuntimeException('Failed to parse command app:archetype:select JSON output.', previous: $e);
+            }
 
-            $archetypeFilename = $archetypeSelection['archetype_filename'] ?? null;
+            if (!\is_array($archetypeSelection)) {
+                throw new \RuntimeException('Invalid archetype selection response structure. Expected JSON object.');
+            }
+
+            $archetypeFilename = $archetypeSelection['archetype_filename'] ?? $archetypeSelection['archetypeFilename'] ?? null;
+
+            if (!\is_string($archetypeFilename) || '' === trim($archetypeFilename)) {
+                throw new \RuntimeException('Missing or invalid "archetype_id" in archetype response structure.');
+            }
+
             $archetypeRationale = $archetypeSelection['rationale'] ?? null;
 
-            if (null === $archetypeFilename) {
-                throw new \RuntimeException('Command app:archetype:select failed to return an archetype filename.');
-            } elseif (null === $archetypeRationale) {
-                throw new \RuntimeException('Command app:archetype:select failed to return a rationale.');
+            if (!\is_string($archetypeRationale) || '' === trim($archetypeRationale)) {
+                throw new \RuntimeException('Missing or invalid "rationale" in archetype response structure.');
             }
+
+            $archetypeFilename = trim($archetypeFilename);
+            $archetypeRationale = trim($archetypeRationale);
 
             $io->info(\sprintf('%s', $archetypeFilename));
             $io->comment(\sprintf('%s', $archetypeRationale));
@@ -286,20 +315,72 @@ final readonly class ResumePipelineCommand
             throw new \RuntimeException('Command app:resume:draft failed.');
         }
 
+        $trimmedOutput = u($output->fetch())->trim()->toString();
+
+        if (preg_match('/^```(?:[a-zA-Z0-9_-]+)?\s*\r?\n?(.*?)\r?\n?```$/s', $trimmedOutput, $matches)) {
+            $trimmedOutput = trim($matches[1]);
+        }
+
         $resumeDraftFilename = \sprintf('resume_draft.%s.md', $uid->toString());
         $resumeDraftPath = Path::join($pipelineOutputPath, $resumeDraftFilename);
-        $this->filesystem->appendToFile($resumeDraftPath, u($output->fetch())->trim()->toString());
+        $this->filesystem->appendToFile($resumeDraftPath, $trimmedOutput);
 
         $io->info(\sprintf('%s', $resumeDraftFilename));
         $history[] = \sprintf(
             <<<MD
-                **RESUME DRAFTED**
+            **RESUME DRAFTED**
 
-                `%s`
-                MD,
+            `%s`
+            MD,
             $resumeDraftFilename
         );
 
         return $resumeDraftPath;
+    }
+
+    /**
+     * @throws \Symfony\Component\Console\Exception\ExceptionInterface
+     */
+    private function doResumeSmellCheck(
+        Application $application,
+        SymfonyStyle $io,
+        string $pipelineOutputPath,
+        string $resumePath,
+        Uuid $uid,
+        &$history,
+    ): string {
+        $command = $application->find('app:resume:smell-check');
+
+        $input = new ArrayInput(['resume-path' => $resumePath]);
+        $output = new BufferedOutput();
+
+        $io->writeln('Executing: app:resume:smell-check...');
+
+        $exitCode = $command->run($input, $output);
+
+        if (Command::SUCCESS !== $exitCode) {
+            throw new \RuntimeException('Command app:resume:smell-check failed.');
+        }
+
+        $trimmedOutput = u($output->fetch())->trim()->toString();
+
+        if (preg_match('/^```(?:[a-zA-Z0-9_-]+)?\s*\r?\n?(.*?)\r?\n?```$/s', $trimmedOutput, $matches)) {
+            $trimmedOutput = trim($matches[1]);
+        }
+
+        $resumeSmellCheckFilename = \sprintf('resume_smell_check.%s.md', $uid->toString());
+        $resumeSmellCheckPath = Path::join($pipelineOutputPath, $resumeSmellCheckFilename);
+        $this->filesystem->appendToFile($resumeSmellCheckPath, $trimmedOutput);
+
+        $history[] = \sprintf(
+            <<<MD
+            **RESUME SMELL CHECKED**
+
+            `%s`
+            MD,
+            $resumeSmellCheckFilename
+        );
+
+        return $resumeSmellCheckPath;
     }
 }
