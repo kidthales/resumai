@@ -39,6 +39,10 @@ final readonly class ResumePipelineCommand
     ) {
     }
 
+    /**
+     * @throws \Symfony\Component\Console\Exception\ExceptionInterface
+     * @throws \Throwable
+     */
     public function __invoke(
         SymfonyStyle $io,
         #[Argument('Path to pipeline output directory')] string $pipelineOutputPath,
@@ -107,98 +111,25 @@ final readonly class ResumePipelineCommand
 
             $io->section('1. Archetype Select');
             $history[] = '## 1. Archetype Select';
-
-            if (null === $archetypeFilename && true !== $excludeArchetypes && null !== $jobDescriptionPath) {
-                $archetypeSelectCommand = $application->find('app:archetype:select');
-                $archetypeSelectCommandInput = new ArrayInput(['job-description-path' => $jobDescriptionPath]);
-                $archetypeSelectCommandOutput = new BufferedOutput();
-
-                $io->writeln('Executing: app:archetype:select...');
-                $archetypeSelectCommandExitCode = $archetypeSelectCommand->run($archetypeSelectCommandInput, $archetypeSelectCommandOutput);
-
-                if (Command::SUCCESS !== $archetypeSelectCommandExitCode) {
-                    throw new \RuntimeException('Command app:archetype:select failed.');
-                }
-
-                $trimmedArchetypeSelection = u($archetypeSelectCommandOutput->fetch())->trim();
-
-                $history[] = \sprintf(
-                    <<<MD
-                    **ARCHETYPE SELECTOR AGENT**
-
-                    ```json
-                    %s
-                    ```
-                    MD,
-                    $trimmedArchetypeSelection->toString()
-                );
-
-                $archetypeSelection = json_decode($trimmedArchetypeSelection->toString(), true);
-                $archetypeFilename = $archetypeSelection['archetype_filename'] ?? null;
-                $archetypeRationale = $archetypeSelection['rationale'] ?? null;
-
-                // TODO
-                if (null === $archetypeFilename || null === $archetypeRationale) {
-                    throw new \RuntimeException('Command app:archetype:select failed to return "archetype_filename" or "rationale".');
-                }
-
-                $io->info(\sprintf('%s', $archetypeFilename));
-                $io->comment(\sprintf('%s', $archetypeRationale));
-            } elseif (null !== $archetypeFilename) {
-                $io->info(\sprintf('%s', $archetypeFilename));
-                $io->comment('User provided.');
-                $history[] = \sprintf(
-                    <<<MD
-                    **USER PROVIDED**
-
-                    `%s`
-                    MD,
-                    $archetypeFilename
-                );
-            } else {
-                $reason = $excludeArchetypes ? 'User excluded archetypes.' : 'User did not provide an archetype and job description.';
-                $io->info('N/A');
-                $io->comment(\sprintf('%s', $reason));
-                $history[] = \sprintf(
-                    <<<MD
-                    **SKIPPED**
-
-                    %s
-                    MD,
-                    $reason
-                );
-            }
+            $this->doArchetypeSelect(
+                $application,
+                $io,
+                $jobDescriptionPath,
+                $archetypeFilename,
+                $excludeArchetypes,
+                $history
+            );
 
             $io->section('2. Resume Draft');
             $history[] = '## 2. Resume Draft';
-
-            $resumeDraftCommand = $application->find('app:resume:draft');
-            $resumeDraftCommandParameters = ['job-description-path' => $jobDescriptionPath];
-            if (null !== $archetypeFilename) {
-                $resumeDraftCommandParameters['--archetype'] = $archetypeFilename;
-            }
-            $resumeDraftCommandInput = new ArrayInput($resumeDraftCommandParameters);
-            $resumeDraftCommandOutput = new BufferedOutput();
-
-            $io->writeln('Executing: app:resume:draft...');
-            $resumeDraftCommandExitCode = $resumeDraftCommand->run($resumeDraftCommandInput, $resumeDraftCommandOutput);
-
-            if (Command::SUCCESS !== $resumeDraftCommandExitCode) {
-                throw new \RuntimeException('Command app:resume:draft failed.');
-            }
-
-            $resumeDraftFilename = \sprintf('resume_draft.%s.md', $uid->toString());
-            $resumeDraftPath = Path::join($realPipelineOutputPath, $resumeDraftFilename);
-            $this->filesystem->appendToFile($resumeDraftPath, u($resumeDraftCommandOutput->fetch())->trim()->toString());
-
-            $io->info(\sprintf('%s', $resumeDraftFilename));
-            $history[] = \sprintf(
-                <<<MD
-                **RESUME DRAFTED**
-
-                `%s`
-                MD,
-                $resumeDraftFilename
+            $resumeDraftPath = $this->doResumeDraft(
+                $application,
+                $io,
+                $realPipelineOutputPath,
+                $jobDescriptionPath,
+                $archetypeFilename,
+                $uid,
+                $history
             );
         } catch (\Throwable $e) {
             $history[] = \sprintf(
@@ -228,11 +159,147 @@ final readonly class ResumePipelineCommand
                 $this->filesystem->appendToFile($historyPath, \implode("\n\n", $history)."\n\n");
             } catch (\Throwable $e) {
                 $io->outlineError(\sprintf('Failed to append to history file: %s', $e->getMessage()));
-                $io->info('Dumping history to console...');
-                $io->write(\implode("\n\n", $history));
+                $io->writeln('Dumping history to console...');
+                $io->writeln(\implode("\n\n", $history));
             }
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * @throws \Symfony\Component\Console\Exception\ExceptionInterface
+     */
+    private function doArchetypeSelect(
+        Application $application,
+        SymfonyStyle $io,
+        ?string $jobDescriptionPath,
+        ?string &$archetypeFilename,
+        bool $excludeArchetypes,
+        array &$history,
+    ): void {
+        if (null === $archetypeFilename && true !== $excludeArchetypes && null !== $jobDescriptionPath) {
+            $command = $application->find('app:archetype:select');
+
+            $input = new ArrayInput(['job-description-path' => $jobDescriptionPath]);
+            $output = new BufferedOutput();
+
+            $io->writeln('Executing: app:archetype:select...');
+
+            $exitCode = $command->run($input, $output);
+
+            if (Command::SUCCESS !== $exitCode) {
+                throw new \RuntimeException('Command app:archetype:select failed.');
+            }
+
+            $trimmedArchetypeSelection = u($output->fetch())->trim();
+
+            $history[] = \sprintf(
+                <<<MD
+                **ARCHETYPE SELECTOR AGENT**
+
+                ```json
+                %s
+                ```
+                MD,
+                $trimmedArchetypeSelection->toString()
+            );
+
+            $archetypeSelection = json_decode($trimmedArchetypeSelection->toString(), true, \JSON_THROW_ON_ERROR);
+
+            $archetypeFilename = $archetypeSelection['archetype_filename'] ?? null;
+            $archetypeRationale = $archetypeSelection['rationale'] ?? null;
+
+            if (null === $archetypeFilename) {
+                throw new \RuntimeException('Command app:archetype:select failed to return an archetype filename.');
+            } elseif (null === $archetypeRationale) {
+                throw new \RuntimeException('Command app:archetype:select failed to return a rationale.');
+            }
+
+            $io->info(\sprintf('%s', $archetypeFilename));
+            $io->comment(\sprintf('%s', $archetypeRationale));
+
+            return;
+        }
+
+        if (null !== $archetypeFilename) {
+            $io->info(\sprintf('%s', $archetypeFilename));
+            $io->comment('User provided.');
+
+            $history[] = \sprintf(
+                <<<MD
+                **USER PROVIDED**
+
+                `%s`
+                MD,
+                $archetypeFilename
+            );
+
+            return;
+        }
+
+        $reason = $excludeArchetypes
+            ? 'User excluded archetypes.'
+            : 'User did not provide an archetype and job description.';
+
+        $io->info('N/A');
+        $io->comment(\sprintf('%s', $reason));
+
+        $history[] = \sprintf(
+            <<<MD
+            **SKIPPED**
+
+            %s
+            MD,
+            $reason
+        );
+    }
+
+    /**
+     * @throws \Symfony\Component\Console\Exception\ExceptionInterface
+     */
+    private function doResumeDraft(
+        Application $application,
+        SymfonyStyle $io,
+        string $pipelineOutputPath,
+        ?string $jobDescriptionPath,
+        ?string $archetypeFilename,
+        Uuid $uid,
+        &$history,
+    ): string {
+        $command = $application->find('app:resume:draft');
+
+        $parameters = ['job-description-path' => $jobDescriptionPath];
+
+        if (null !== $archetypeFilename) {
+            $parameters['--archetype'] = $archetypeFilename;
+        }
+
+        $input = new ArrayInput($parameters);
+        $output = new BufferedOutput();
+
+        $io->writeln('Executing: app:resume:draft...');
+
+        $exitCode = $command->run($input, $output);
+
+        if (Command::SUCCESS !== $exitCode) {
+            throw new \RuntimeException('Command app:resume:draft failed.');
+        }
+
+        $resumeDraftFilename = \sprintf('resume_draft.%s.md', $uid->toString());
+        $resumeDraftPath = Path::join($pipelineOutputPath, $resumeDraftFilename);
+        $this->filesystem->appendToFile($resumeDraftPath, u($output->fetch())->trim()->toString());
+
+        $io->info(\sprintf('%s', $resumeDraftFilename));
+        $history[] = \sprintf(
+            <<<MD
+                **RESUME DRAFTED**
+
+                `%s`
+                MD,
+            $resumeDraftFilename
+        );
+
+        return $resumeDraftPath;
     }
 }
