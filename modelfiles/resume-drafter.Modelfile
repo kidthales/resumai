@@ -1,7 +1,11 @@
-FROM qwen2.5:14b-instruct-q4_K_M
+FROM qwen2.5:14b-instruct-q5_K_M
 
-PARAMETER temperature 0.2
-PARAMETER top_p 0.8
-PARAMETER top_k 20
-PARAMETER repeat_penalty 1.05
+# Fluidity and vocabulary diversity while maintaining rule adherence
+PARAMETER temperature 0.35
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+
+# Generation controls and context
+PARAMETER repeat_penalty 1.10
 PARAMETER num_ctx 16384
+PARAMETER num_predict 4096

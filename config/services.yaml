@@ -30,6 +30,9 @@ parameters:
     pii.sample_extras: '%env(default:content_not_found:file:SAMPLE_EXTRAS_PATH)%'
     pii.extras: '%env(default:pii.sample_extras:file:EXTRAS_PATH)%'
 
+    env(ARCHETYPES_PATH): '%content_path%/archetypes'
+    archetypes_path: '%env(resolve:ARCHETYPES_PATH)%'
+
     env(ARCHETYPE_SELECTOR_PROMPT_PATH): '%content_path%/prompts/archetype_selector.md'
     prompts.archetype_selector: '%env(resolve:default:content_not_found:file:ARCHETYPE_SELECTOR_PROMPT_PATH)%'
 
@@ -39,8 +42,11 @@ parameters:
     env(RESUME_SMELL_CHECKER_PROMPT_PATH): '%content_path%/prompts/resume_smell_checker.md'
     prompts.resume_smell_checker: '%env(resolve:default:content_not_found:file:RESUME_SMELL_CHECKER_PROMPT_PATH)%'
 
-    env(ARCHETYPES_PATH): '%content_path%/archetypes'
-    archetypes_path: '%env(resolve:ARCHETYPES_PATH)%'
+    env(RESUME_REVISER_PROMPT_PATH): '%content_path%/prompts/resume_reviser.md'
+    prompts.resume_reviser: '%env(resolve:default:content_not_found:file:RESUME_REVISER_PROMPT_PATH)%'
+
+    env(RESUME_FINALIZER_PROMPT_PATH): '%content_path%/prompts/resume_finalizer.md'
+    prompts.resume_finalizer: '%env(resolve:default:content_not_found:file:RESUME_FINALIZER_PROMPT_PATH)%'
 
 services:
     # default configuration for services in *this* file

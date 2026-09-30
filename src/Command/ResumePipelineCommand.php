@@ -32,6 +32,8 @@ final readonly class ResumePipelineCommand
 {
     private const string HISTORY_FILENAME = 'history.md';
 
+    private const int MAX_PLATFORM_RETRIES = 3;
+
     public function __construct(
         #[Autowire('%kernel.project_dir%')] private string $projectPath,
         private KernelInterface $kernel,
@@ -109,14 +111,62 @@ final readonly class ResumePipelineCommand
 
             $io->section('1. Archetype Select');
             $history[] = '## 1. Archetype Select';
-            $this->doArchetypeSelect(
-                $application,
-                $io,
-                $jobDescriptionPath,
-                $archetypeFilename,
-                $excludeArchetypes,
-                $history
-            );
+
+            $platformRetries = 0;
+            do {
+                try {
+                    $this->doArchetypeSelect(
+                        $application,
+                        $io,
+                        $jobDescriptionPath,
+                        $archetypeFilename,
+                        $excludeArchetypes,
+                        $history
+                    );
+
+                    $platformError = false;
+                } catch (\Symfony\AI\Platform\Exception\RuntimeException $e) {
+                    $platformError = true;
+
+                    if (self::MAX_PLATFORM_RETRIES === $platformRetries++) {
+                        throw $e;
+                    }
+
+                    $retryMessage = \sprintf('Retry attempt %d of %d...', $platformRetries, self::MAX_PLATFORM_RETRIES);
+
+                    $io->outlineError($e->getMessage());
+                    $io->writeln(\sprintf('Retry attempt %d of %d...', $platformRetries, self::MAX_PLATFORM_RETRIES));
+
+                    $history[] = \sprintf(
+                        <<<MD
+                        **ERROR**
+
+                        Message:
+
+                        ```text
+                        %s
+                        ```
+
+                        Trace:
+
+                        ```text
+                        %s
+                        ```
+
+                        %s
+                        MD,
+                        $e->getMessage(),
+                        $e->getTraceAsString(),
+                        $retryMessage
+                    );
+                } finally {
+                    if (self::MAX_PLATFORM_RETRIES !== $platformRetries) {
+                        $sleepDuration = 60 * (($platformRetries * ($platformError ? 1 : 0)) + 1);
+                        $io->writeln(\sprintf('Sleeping for %d seconds...', $sleepDuration));
+                        sleep($sleepDuration);
+                    }
+                }
+            } while ($platformError);
 
             $io->section('2. Resume Draft');
             $history[] = '## 2. Resume Draft';
@@ -130,6 +180,9 @@ final readonly class ResumePipelineCommand
                 $history
             );
 
+            $io->writeln('Sleeping for 60 seconds...');
+            sleep(60);
+
             $io->section('3. Resume Smell Check');
             $history[] = '## 3. Resume Smell Check';
             $resumeSmellCheckPath = $this->doResumeSmellCheck(
@@ -137,6 +190,21 @@ final readonly class ResumePipelineCommand
                 $io,
                 $realPipelineOutputPath,
                 $resumeDraftPath,
+                $uid,
+                $history
+            );
+
+            $io->writeln('Sleeping for 60 seconds...');
+            sleep(60);
+
+            $io->section('4. Resume Revise');
+            $history[] = '## 4. Resume Revise';
+            $resumeRevisedPath = $this->doResumeRevise(
+                $application,
+                $io,
+                $realPipelineOutputPath,
+                $resumeDraftPath,
+                $resumeSmellCheckPath,
                 $uid,
                 $history
             );
@@ -383,5 +451,53 @@ final readonly class ResumePipelineCommand
         );
 
         return $resumeSmellCheckPath;
+    }
+
+    /**
+     * @throws \Symfony\Component\Console\Exception\ExceptionInterface
+     */
+    private function doResumeRevise(
+        Application $application,
+        SymfonyStyle $io,
+        string $pipelineOutputPath,
+        string $resumePath,
+        string $resumeSmellCheckPath,
+        Uuid $uid,
+        &$history,
+    ): string {
+        $command = $application->find('app:resume:revise');
+
+        $input = new ArrayInput(['resume-path' => $resumePath, 'resume-smell-check-path' => $resumeSmellCheckPath]);
+        $output = new BufferedOutput();
+
+        $io->writeln('Executing: app:resume:revise...');
+
+        $exitCode = $command->run($input, $output);
+
+        if (Command::SUCCESS !== $exitCode) {
+            throw new \RuntimeException('Command app:resume:revise failed.');
+        }
+
+        $trimmedOutput = u($output->fetch())->trim()->toString();
+
+        if (preg_match('/^```(?:[a-zA-Z0-9_-]+)?\s*\r?\n?(.*?)\r?\n?```$/s', $trimmedOutput, $matches)) {
+            $trimmedOutput = trim($matches[1]);
+        }
+
+        $resumeRevisedFilename = \sprintf('resume_revised.%s.md', $uid->toString());
+        $resumeRevisedPath = Path::join($pipelineOutputPath, $resumeRevisedFilename);
+        $this->filesystem->appendToFile($resumeRevisedPath, $trimmedOutput);
+
+        $io->info(\sprintf('%s', $resumeRevisedFilename));
+        $history[] = \sprintf(
+            <<<MD
+            **RESUME REVISED**
+
+            `%s`
+            MD,
+            $resumeRevisedFilename
+        );
+
+        return $resumeRevisedPath;
     }
 }

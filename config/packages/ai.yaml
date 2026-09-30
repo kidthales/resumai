@@ -29,6 +29,16 @@ ai:
             model: resume-smell-checker
             prompt: '%prompts.resume_smell_checker%'
 
+        resume_reviser:
+            platform: ai.platform.ollama
+            model: resume-reviser
+            prompt: '%prompts.resume_reviser%'
+
+        resume_finalizer:
+            platform: ai.platform.ollama
+            model: resume-finalizer
+            prompt: '%prompts.resume_finalizer%'
+
     store:
         # Store configuration
 
