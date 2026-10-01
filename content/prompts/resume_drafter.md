@@ -93,7 +93,7 @@ Generate the resume strictly adhering to the following Markdown schema:
 {{ bullet point list of education history }}
 
 {{ if pii.extras exists }}
-## Projects & Volunteering
+## Extracurricular
 
 {{ bullet point list of extra information }}
 {{ end if }}

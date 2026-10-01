@@ -65,6 +65,10 @@ parameters:
     env(RESUME_JOB_ALIGNMENT_CHECKER_PROMPT_PATH): '%prompts_path%/resume_job_alignment_checker.md'
     prompts.resume_job_alignment_checker: '%env(resolve:default:content_not_found:file:resolve:RESUME_JOB_ALIGNMENT_CHECKER_PROMPT_PATH)%'
 
+    # Resume Editor Prompt
+    env(RESUME_EDITOR_PROMPT_PATH): '%prompts_path%/resume_editor.md'
+    prompts.resume_editor: '%env(resolve:default:content_not_found:file:resolve:RESUME_EDITOR_PROMPT_PATH)%'
+
     #
     # Models
     #
@@ -86,6 +90,12 @@ parameters:
     resume_job_alignment_checker.ollama.model_params: '%env(json:OLLAMA_AGENT_RESUME_JOB_ALIGNMENT_CHECKER_MODEL_PARAMS)%'
     resume_job_alignment_checker.gemini.model: '%env(GEMINI_AGENT_RESUME_JOB_ALIGNMENT_CHECKER_MODEL)%'
     resume_job_alignment_checker.gemini.model_params: '%env(json:GEMINI_AGENT_RESUME_JOB_ALIGNMENT_CHECKER_MODEL_PARAMS)%'
+
+    # Resume Editor Models
+    resume_editor.ollama.model: '%env(OLLAMA_AGENT_RESUME_EDITOR_MODEL)%'
+    resume_editor.ollama.model_params: '%env(json:OLLAMA_AGENT_RESUME_EDITOR_MODEL_PARAMS)%'
+    resume_editor.gemini.model: '%env(GEMINI_AGENT_RESUME_EDITOR_MODEL)%'
+    resume_editor.gemini.model_params: '%env(json:GEMINI_AGENT_RESUME_EDITOR_MODEL_PARAMS)%'
 
     #
 
