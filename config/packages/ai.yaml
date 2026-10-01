@@ -3,12 +3,26 @@ ai:
         # Inference Platform configuration
         # see https://github.com/symfony/ai/tree/main/src/platform#platform-bridges
 
+        gemini:
+            api_key: '%env(GEMINI_API_KEY)%'
+
         ollama:
             http_client: ollama.client
 
     agent:
         # Agent configuration
         # see https://symfony.com/doc/current/ai/bundles/ai-bundle.html
+
+        resume_drafter.ollama:
+            platform: ai.platform.ollama
+            model: '%resume_drafter.ollama.model%'
+            prompt: '%prompts.resume_drafter%'
+        resume_drafter.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_drafter.gemini.model%'
+            prompt: '%prompts.resume_drafter%'
+
+        #
 
         archetype_selector:
             platform: ai.platform.ollama
@@ -23,6 +37,11 @@ ai:
             platform: ai.platform.ollama
             model: resume-drafter
             prompt: '%prompts.resume_drafter%'
+
+        # NOPE - Needs static platform!
+        #resume_drafter_v2:
+        #    model: '%models.resume_drafter%'
+        #    prompt: '%prompts.resume_drafter%'
 
         resume_smell_checker:
             platform: ai.platform.ollama

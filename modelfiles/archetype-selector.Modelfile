@@ -1,4 +1,4 @@
-FROM qwen2.5:14b-instruct-q8_0
+FROM qwen2.5:14b-instruct-q5_K_M
 
 # Strict determinism for tool calls and rubric evaluation
 PARAMETER temperature 0.0

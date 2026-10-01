@@ -7,37 +7,96 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
-    content_path: '%kernel.project_dir%/content'
-    content_not_found: 'Not Found'
+    #
+    # Content Base Paths
+    #
 
-    env(SAMPLE_PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.sample.md'
-    env(PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.md'
-    pii.sample_personal_info: '%env(default:content_not_found:file:SAMPLE_PERSONAL_INFO_PATH)%'
-    pii.personal_info: '%env(default:pii.sample_personal_info:file:PERSONAL_INFO_PATH)%'
-
-    env(SAMPLE_EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.sample.md'
-    env(EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.md'
-    pii.sample_education_history: '%env(default:content_not_found:file:SAMPLE_EDUCATION_HISTORY_PATH)%'
-    pii.education_history: '%env(default:pii.sample_education_history:file:EDUCATION_HISTORY_PATH)%'
-
-    env(SAMPLE_WORK_HISTORY_PATH): '%content_path%/pii/work_history.sample.md'
-    env(WORK_HISTORY_PATH): '%content_path%/pii/work_history.md'
-    pii.sample_work_history: '%env(default:content_not_found:file:SAMPLE_WORK_HISTORY_PATH)%'
-    pii.work_history: '%env(default:pii.sample_work_history:file:WORK_HISTORY_PATH)%'
-
-    env(SAMPLE_EXTRAS_PATH): '%content_path%/pii/extras.sample.md'
-    env(EXTRAS_PATH): '%content_path%/pii/extras.md'
-    pii.sample_extras: '%env(default:content_not_found:file:SAMPLE_EXTRAS_PATH)%'
-    pii.extras: '%env(default:pii.sample_extras:file:EXTRAS_PATH)%'
+    env(CONTENT_PATH): '%kernel.project_dir%/content'
+    content_path: '%env(resolve:CONTENT_PATH)%'
 
     env(ARCHETYPES_PATH): '%content_path%/archetypes'
     archetypes_path: '%env(resolve:ARCHETYPES_PATH)%'
 
+    env(PII_PATH): '%content_path%/pii'
+    pii_path: '%env(resolve:PII_PATH)%'
+
+    env(PROMPTS_PATH): '%content_path%/prompts'
+    prompts_path: '%env(resolve:PROMPTS_PATH)%'
+
+    #
+    # Content
+    #
+
+    content_not_found: 'Not Found'
+
+    # Personal Info
+    env(SAMPLE_PERSONAL_INFO_PATH): '%pii_path%/personal_info.sample.md'
+    env(PERSONAL_INFO_PATH): '%pii_path%/personal_info.md'
+    pii.sample_personal_info: '%env(default:content_not_found:file:resolve:SAMPLE_PERSONAL_INFO_PATH)%'
+    pii.personal_info: '%env(default:pii.sample_personal_info:file:resolve:PERSONAL_INFO_PATH)%'
+
+    # Education History
+    env(SAMPLE_EDUCATION_HISTORY_PATH): '%pii_path%/education_history.sample.md'
+    env(EDUCATION_HISTORY_PATH): '%pii_path%/education_history.md'
+    pii.sample_education_history: '%env(default:content_not_found:file:resolve:SAMPLE_EDUCATION_HISTORY_PATH)%'
+    pii.education_history: '%env(default:pii.sample_education_history:file:resolve:EDUCATION_HISTORY_PATH)%'
+
+    # Work History
+    env(SAMPLE_WORK_HISTORY_PATH): '%pii_path%/work_history.sample.md'
+    env(WORK_HISTORY_PATH): '%pii_path%/work_history.md'
+    pii.sample_work_history: '%env(default:content_not_found:file:resolve:SAMPLE_WORK_HISTORY_PATH)%'
+    pii.work_history: '%env(default:pii.sample_work_history:file:resolve:WORK_HISTORY_PATH)%'
+
+    # Extras
+    env(SAMPLE_EXTRAS_PATH): '%pii_path%/extras.sample.md'
+    env(EXTRAS_PATH): '%pii_path%/extras.md'
+    pii.sample_extras: '%env(default:content_not_found:file:resolve:SAMPLE_EXTRAS_PATH)%'
+    pii.extras: '%env(default:pii.sample_extras:file:resolve:EXTRAS_PATH)%'
+
+    # Resume Drafter Prompt
+    env(RESUME_DRAFTER_PROMPT_PATH): '%prompts_path%/resume_drafter.md'
+    prompts.resume_drafter: '%env(resolve:default:content_not_found:file:resolve:RESUME_DRAFTER_PROMPT_PATH)%'
+
+    #
+    # Models
+    #
+
+    resume_drafter.ollama.model: '%env(OLLAMA_AGENT_RESUME_DRAFTER_MODEL)%'
+    resume_drafter.ollama.model_params: '%env(json:OLLAMA_AGENT_RESUME_DRAFTER_MODEL_PARAMS)%'
+
+    resume_drafter.gemini.model: '%env(GEMINI_AGENT_RESUME_DRAFTER_MODEL)%'
+    resume_drafter.gemini.model_params: '%env(json:GEMINI_AGENT_RESUME_DRAFTER_MODEL_PARAMS)%'
+
+    #
+
+    #env(SAMPLE_PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.sample.md'
+    #env(PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.md'
+    #pii.sample_personal_info: '%env(default:content_not_found:file:SAMPLE_PERSONAL_INFO_PATH)%'
+    #pii.personal_info: '%env(default:pii.sample_personal_info:file:PERSONAL_INFO_PATH)%'
+
+    #env(SAMPLE_EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.sample.md'
+    #env(EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.md'
+    #pii.sample_education_history: '%env(default:content_not_found:file:SAMPLE_EDUCATION_HISTORY_PATH)%'
+    #pii.education_history: '%env(default:pii.sample_education_history:file:EDUCATION_HISTORY_PATH)%'
+
+    #env(SAMPLE_WORK_HISTORY_PATH): '%content_path%/pii/work_history.sample.md'
+    #env(WORK_HISTORY_PATH): '%content_path%/pii/work_history.md'
+    #pii.sample_work_history: '%env(default:content_not_found:file:SAMPLE_WORK_HISTORY_PATH)%'
+    #pii.work_history: '%env(default:pii.sample_work_history:file:WORK_HISTORY_PATH)%'
+
+    #env(SAMPLE_EXTRAS_PATH): '%content_path%/pii/extras.sample.md'
+    #env(EXTRAS_PATH): '%content_path%/pii/extras.md'
+    #pii.sample_extras: '%env(default:content_not_found:file:SAMPLE_EXTRAS_PATH)%'
+    #pii.extras: '%env(default:pii.sample_extras:file:EXTRAS_PATH)%'
+
     env(ARCHETYPE_SELECTOR_PROMPT_PATH): '%content_path%/prompts/archetype_selector.md'
     prompts.archetype_selector: '%env(resolve:default:content_not_found:file:ARCHETYPE_SELECTOR_PROMPT_PATH)%'
 
-    env(RESUME_DRAFTER_PROMPT_PATH): '%content_path%/prompts/resume_drafter.md'
-    prompts.resume_drafter: '%env(resolve:default:content_not_found:file:RESUME_DRAFTER_PROMPT_PATH)%'
+    #env(RESUME_DRAFTER_PROMPT_PATH): '%content_path%/prompts/resume_drafter.md'
+    #prompts.resume_drafter: '%env(resolve:default:content_not_found:file:RESUME_DRAFTER_PROMPT_PATH)%'
+
+    #models.resume_drafter: '%env(AGENT_RESUME_DRAFTER_MODEL)%'
+    #model_params.resume_drafter: '%env(json:AGENT_RESUME_DRAFTER_MODEL_PARAMS)%'
 
     env(RESUME_SMELL_CHECKER_PROMPT_PATH): '%content_path%/prompts/resume_smell_checker.md'
     prompts.resume_smell_checker: '%env(resolve:default:content_not_found:file:RESUME_SMELL_CHECKER_PROMPT_PATH)%'
