@@ -57,15 +57,25 @@ parameters:
     env(RESUME_DRAFTER_PROMPT_PATH): '%prompts_path%/resume_drafter.md'
     prompts.resume_drafter: '%env(resolve:default:content_not_found:file:resolve:RESUME_DRAFTER_PROMPT_PATH)%'
 
+    # Resume Fact-Checker Prompt
+    env(RESUME_FACT_CHECKER_PROMPT_PATH): '%prompts_path%/resume_fact_checker.md'
+    prompts.resume_fact_checker: '%env(resolve:default:content_not_found:file:resolve:RESUME_FACT_CHECKER_PROMPT_PATH)%'
+
     #
     # Models
     #
 
+    # Resume Drafter Models
     resume_drafter.ollama.model: '%env(OLLAMA_AGENT_RESUME_DRAFTER_MODEL)%'
     resume_drafter.ollama.model_params: '%env(json:OLLAMA_AGENT_RESUME_DRAFTER_MODEL_PARAMS)%'
-
     resume_drafter.gemini.model: '%env(GEMINI_AGENT_RESUME_DRAFTER_MODEL)%'
     resume_drafter.gemini.model_params: '%env(json:GEMINI_AGENT_RESUME_DRAFTER_MODEL_PARAMS)%'
+
+    # Resume Fact-Checker Models
+    resume_fact_checker.ollama.model: '%env(OLLAMA_AGENT_RESUME_FACT_CHECKER_MODEL)%'
+    resume_fact_checker.ollama.model_params: '%env(json:OLLAMA_AGENT_RESUME_FACT_CHECKER_MODEL_PARAMS)%'
+    resume_fact_checker.gemini.model: '%env(GEMINI_AGENT_RESUME_FACT_CHECKER_MODEL)%'
+    resume_fact_checker.gemini.model_params: '%env(json:GEMINI_AGENT_RESUME_FACT_CHECKER_MODEL_PARAMS)%'
 
     #
 

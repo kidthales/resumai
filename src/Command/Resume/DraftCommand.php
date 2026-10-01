@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace App\Command\Resume;
 
 use App\AI\Agent\Toolbox\ArchetypeDirectoryTool;
+use App\Command\StreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
 use App\Filesystem\FilesystemV2;
 use App\Service\ResumeDrafterLocator;
-use Symfony\AI\Agent\Execution\Update\Progress;
-use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
-use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -30,6 +28,8 @@ use function Symfony\Component\String\u;
 )]
 final readonly class DraftCommand
 {
+    use StreamExecutionProgressTrait;
+
     public function __construct(
         private ResumeDrafterLocator $resumeDrafterLocator,
         private ArchetypeDirectoryTool $archetypeDirectoryTool,
@@ -40,11 +40,12 @@ final readonly class DraftCommand
 
     /**
      * @throws \Symfony\AI\Agent\Exception\ExceptionInterface
+     * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
      */
     public function __invoke(
         SymfonyStyle $io,
         #[Argument('Resume output filepath')] string $resumeOutputPath,
-        #[Argument('Path to a job description file')] ?string $jobDescriptionPath = null,
+        #[Option('Path to a job description file', 'job', 'j')] ?string $jobDescriptionPath = null,
         #[Option('Archetype filename', 'archetype', 'a')] ?string $archetypeFilename = null,
         #[Option('Agent platform', 'platform', 'p')] string $platform = 'ollama',
     ): int {
@@ -64,15 +65,16 @@ final readonly class DraftCommand
             ['Agent platform' => $platform]
         );
 
+        $io->section('Agent');
+
         $agent = $this->resumeDrafterLocator->getAgentByPlatform($normalizedPlatform);
         $model = $this->resumeDrafterLocator->getModelByPlatform($normalizedPlatform);
         $modelParams = $this->resumeDrafterLocator->getModelParamsByPlatform($normalizedPlatform);
 
-        $io->section(\sprintf('Agent: %s', $agent->getName()));
-
         $io->definitionList(
-            $model,
+            $agent->getName(),
             new TableSeparator(),
+            ['model' => $model],
             ...$this->definitionListConverter->convert($modelParams),
         );
 
@@ -81,32 +83,11 @@ final readonly class DraftCommand
 
         $execution = $agent->call($this->buildAgentInput($jobDescription, $archetype), ['stream' => true, ...$modelParams]);
 
-        $execution->onProgress(function (Progress $progress) use ($indicator) {
-            $indicator->advance();
-            $indicator->setMessage($progress->getMessage());
-        });
-
         $resultText = '';
         $thinkingText = '';
-        foreach ($execution->asStream() as $delta) {
-            $indicator->advance();
+        $this->streamExecutionProgress($execution, $indicator, $resultText, $thinkingText);
 
-            if ($delta instanceof ThinkingDelta) {
-                $thinkingText .= $delta->getThinking();
-
-                $preview = str_replace("\n", ' ', mb_substr($thinkingText, -40));
-                $indicator->setMessage(sprintf('Thinking: "...%s"', $preview));
-            } elseif ($delta instanceof TextDelta) {
-                $resultText .= $delta->getText();
-
-                $preview = str_replace("\n", ' ', mb_substr($resultText, -40));
-                $indicator->setMessage(sprintf('Generating: "...%s"', $preview));
-            }
-        }
-
-        $indicator->finish('<info>Execution completed.</info>');
-
-        $this->filesystem->dumpFile(\sprintf('%s.thunk', $resolvedResumeOutputPath), $thinkingText);
+        $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeOutputPath), $thinkingText);
         $this->filesystem->dumpFile($resolvedResumeOutputPath, $this->sanitizeResultText($resultText));
 
         $io->success(\sprintf('Resume draft generated and written to %s.', $resumeOutputPath));

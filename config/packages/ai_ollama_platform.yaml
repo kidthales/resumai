@@ -1,3 +1,4 @@
 ai:
     platform:
-        ollama: null
+        ollama:
+            http_client: ollama.client
