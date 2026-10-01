@@ -7,7 +7,7 @@ namespace App\Command\Resume;
 use App\Command\StreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
 use App\Filesystem\FilesystemV2;
-use App\Service\ResumeFactCheckerLocator;
+use App\Service\ResumeJobAlignmentCheckerLocator;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -22,15 +22,15 @@ use function Symfony\Component\String\u;
  * @author Tristan Bonsor <kidthales@agogpixel.com>
  */
 #[AsCommand(
-    name: 'app:resume:fact-check',
-    description: 'Fact check a resume',
+    name: 'app:resume:job-alignment-check',
+    description: 'Check a resume for job alignment',
 )]
-final readonly class FactCheckCommand
+final readonly class JobAlignmentCheckCommand
 {
     use StreamExecutionProgressTrait;
 
     public function __construct(
-        private ResumeFactCheckerLocator $resumeFactCheckerLocator,
+        private ResumeJobAlignmentCheckerLocator $resumeJobAlignmentCheckerLocator,
         private FilesystemV2 $filesystem,
         private DefinitionListConverter $definitionListConverter,
     ) {
@@ -39,28 +39,31 @@ final readonly class FactCheckCommand
     public function __invoke(
         SymfonyStyle $io,
         #[Argument('Resume input filepath')] string $resumeInputPath,
-        #[Argument('Resume fact-check output filepath')] string $resumeFactCheckOutputPath,
+        #[Argument('Path to a job description file')] string $jobDescriptionPath,
+        #[Argument('Resume job-alignment-check output filepath')] string $resumeJobAlignmentCheckOutputPath,
         #[Option('Agent platform', 'platform', 'p')] string $platform = 'ollama',
     ): int {
-        $io->title('Resume Fact-Check');
+        $io->title('Resume Job-Alignment-Check');
 
         $io->section('Parameters');
 
         $resume = $this->fetchResume($resumeInputPath);
-        $resolvedResumeFactCheckOutputPath = $this->filesystem->resolveProjectPath($resumeFactCheckOutputPath);
+        $jobDescription = $this->fetchJobDescription($jobDescriptionPath);
+        $resolvedResumeJobAlignmentCheckOutputPath = $this->filesystem->resolveProjectPath($resumeJobAlignmentCheckOutputPath);
         $normalizedPlatform = u($platform)->trim()->lower()->toString();
 
         $io->definitionList(
             ['Resume input filepath' => $resumeInputPath],
-            ['Resume fact-check output filepath' => $resumeFactCheckOutputPath],
+            ['Path to a job description file' => $jobDescriptionPath],
+            ['Resume job-alignment-check output filepath' => $resumeJobAlignmentCheckOutputPath],
             ['Agent platform' => $platform]
         );
 
         $io->section('Agent');
 
-        $agent = $this->resumeFactCheckerLocator->getAgentByPlatform($normalizedPlatform);
-        $model = $this->resumeFactCheckerLocator->getModelByPlatform($normalizedPlatform);
-        $modelParams = $this->resumeFactCheckerLocator->getModelParamsByPlatform($normalizedPlatform);
+        $agent = $this->resumeJobAlignmentCheckerLocator->getAgentByPlatform($normalizedPlatform);
+        $model = $this->resumeJobAlignmentCheckerLocator->getModelByPlatform($normalizedPlatform);
+        $modelParams = $this->resumeJobAlignmentCheckerLocator->getModelParamsByPlatform($normalizedPlatform);
 
         $io->definitionList(
             $agent->getName(),
@@ -72,16 +75,16 @@ final readonly class FactCheckCommand
         $indicator = new ProgressIndicator($io);
         $indicator->start('Initializing...');
 
-        $execution = $agent->call($this->buildAgentInput($resume), ['stream' => true, ...$modelParams]);
+        $execution = $agent->call($this->buildAgentInput($resume, $jobDescription), ['stream' => true, ...$modelParams]);
 
         $resultText = '';
         $thinkingText = '';
         $this->streamExecutionProgress($execution, $indicator, $resultText, $thinkingText);
 
-        $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeFactCheckOutputPath), $thinkingText);
-        $this->filesystem->dumpFile($resolvedResumeFactCheckOutputPath, $this->sanitizeResultText($resultText));
+        $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeJobAlignmentCheckOutputPath), $thinkingText);
+        $this->filesystem->dumpFile($resolvedResumeJobAlignmentCheckOutputPath, $this->sanitizeResultText($resultText));
 
-        $io->success(\sprintf('Resume fact-check generated and written to %s.', $resumeFactCheckOutputPath));
+        $io->success(\sprintf('Resume job-alignment-check generated and written to %s.', $resumeJobAlignmentCheckOutputPath));
 
         return Command::SUCCESS;
     }
@@ -98,19 +101,36 @@ final readonly class FactCheckCommand
         return $trimmedResume->toString();
     }
 
-    private function buildAgentInput(string $resume): string
+    private function fetchJobDescription(string $jobDescriptionPath): string
+    {
+        $realJobDescriptionPath = $this->filesystem->realProjectPath($jobDescriptionPath);
+        $trimmedJobDescription = u($this->filesystem->readFile($realJobDescriptionPath))->trim();
+
+        if ($trimmedJobDescription->isEmpty()) {
+            throw new \RuntimeException('Job description cannot be empty.');
+        }
+
+        return $trimmedJobDescription->toString();
+    }
+
+    private function buildAgentInput(string $resume, string $jobDescription): string
     {
         return \sprintf(
             <<<MD
-            Perform a fact-check and coherence analysis, against Verified Source Facts, for the following resume:
+            Perform a job-alignment-check and analysis for the following candidate resume and job description:
 
-            <resume>
+            <candidate_resume>
             %s
-            </resume>
+            </candidate_resume>
+
+            <job_description>
+            %s
+            </job_description>
 
             Output only the final Markdown executive summary. Do not include introductory text, explanations, or enclosing code block fences.
             MD,
-            $resume
+            $resume,
+            $jobDescription,
         );
     }
 

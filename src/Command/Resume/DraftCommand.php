@@ -138,6 +138,7 @@ final readonly class DraftCommand
             $inputParts[] = \sprintf(
                 <<<MD
                 Target the resume specifically to the following Job Description:
+
                 <job_description>
                 %s
                 </job_description>
@@ -150,6 +151,7 @@ final readonly class DraftCommand
             $inputParts[] = \sprintf(
                 <<<MD
                 Position the candidate according to the following Candidate Archetype:
+
                 <candidate_archetype>
                 %s
                 </candidate_archetype>

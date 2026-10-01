@@ -25,6 +25,15 @@ ai:
             model: '%resume_fact_checker.gemini.model%'
             prompt: '%prompts.resume_fact_checker%'
 
+        resume_job_alignment_checker.ollama:
+            platform: ai.platform.ollama
+            model: '%resume_job_alignment_checker.ollama.model%'
+            prompt: '%prompts.resume_job_alignment_checker%'
+        resume_job_alignment_checker.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_job_alignment_checker.gemini.model%'
+            prompt: '%prompts.resume_job_alignment_checker%'
+
         #
 
         archetype_selector:
