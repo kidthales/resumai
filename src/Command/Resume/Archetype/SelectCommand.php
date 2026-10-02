@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Command\Resume\Archetype;
 
 use App\Command\CallAgentAndStreamExecutionProgressTrait;
-use App\Console\Style\DefinitionListConverter;
+use App\Console\Style\DefinitionListTransformer;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeArchetypeSelectorLocator;
 use Symfony\Component\Console\Attribute\Argument;
@@ -30,7 +30,7 @@ final readonly class SelectCommand
     public function __construct(
         private ResumeArchetypeSelectorLocator $resumeArchetypeSelectorLocator,
         private Filesystem $filesystem,
-        private DefinitionListConverter $definitionListConverter,
+        private DefinitionListTransformer $definitionListTransformer,
     ) {
     }
 
@@ -70,7 +70,7 @@ final readonly class SelectCommand
             $model,
             $modelParams,
             $io,
-            $this->definitionListConverter,
+            $this->definitionListTransformer,
             $resultText,
             $thinkingText
         );

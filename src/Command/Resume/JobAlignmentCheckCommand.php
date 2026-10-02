@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Command\Resume;
 
 use App\Command\CallAgentAndStreamExecutionProgressTrait;
-use App\Console\Style\DefinitionListConverter;
+use App\Console\Style\DefinitionListTransformer;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeJobAlignmentCheckerLocator;
 use Symfony\Component\Console\Attribute\Argument;
@@ -30,7 +30,7 @@ final readonly class JobAlignmentCheckCommand
     public function __construct(
         private ResumeJobAlignmentCheckerLocator $resumeJobAlignmentCheckerLocator,
         private Filesystem $filesystem,
-        private DefinitionListConverter $definitionListConverter,
+        private DefinitionListTransformer $definitionListTransformer,
     ) {
     }
 
@@ -73,7 +73,7 @@ final readonly class JobAlignmentCheckCommand
             $model,
             $modelParams,
             $io,
-            $this->definitionListConverter,
+            $this->definitionListTransformer,
             $resultText,
             $thinkingText
         );

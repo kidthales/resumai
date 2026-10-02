@@ -9,7 +9,7 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 /**
  * @author Tristan Bonsor <kidthales@agogpixel.com>
  */
-final readonly class DefinitionListConverter
+final readonly class DefinitionListTransformer
 {
     public function __construct(private NormalizerInterface $normalizer)
     {
@@ -18,7 +18,7 @@ final readonly class DefinitionListConverter
     /**
      * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
      */
-    public function convert(mixed $data, array $context = []): array
+    public function transform(mixed $data, array $context = []): array
     {
         $normalized = $this->normalizer->normalize($data, null, $context);
 

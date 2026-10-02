@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\Console\Style\DefinitionListConverter;
+use App\Console\Style\DefinitionListTransformer;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Update\Progress;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
@@ -28,7 +28,7 @@ trait CallAgentAndStreamExecutionProgressTrait
         string $model,
         array $modelParams,
         SymfonyStyle $io,
-        DefinitionListConverter $definitionListConverter,
+        DefinitionListTransformer $definitionListTransformer,
         ?string &$resultText = '',
         ?string &$thinkingText = '',
         ?array &$messages = [],
@@ -37,7 +37,7 @@ trait CallAgentAndStreamExecutionProgressTrait
             $agent->getName(),
             new TableSeparator(),
             ['model' => $model],
-            ...$definitionListConverter->convert($modelParams),
+            ...$definitionListTransformer->transform($modelParams),
         );
 
         $indicator = new ProgressIndicator($io);

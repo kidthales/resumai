@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Command\Resume;
 
 use App\Command\CallAgentAndStreamExecutionProgressTrait;
-use App\Console\Style\DefinitionListConverter;
+use App\Console\Style\DefinitionListTransformer;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeFactCheckerLocator;
 use Symfony\Component\Console\Attribute\Argument;
@@ -30,7 +30,7 @@ final readonly class FactCheckCommand
     public function __construct(
         private ResumeFactCheckerLocator $resumeFactCheckerLocator,
         private Filesystem $filesystem,
-        private DefinitionListConverter $definitionListConverter,
+        private DefinitionListTransformer $definitionListTransformer,
     ) {
     }
 
@@ -70,7 +70,7 @@ final readonly class FactCheckCommand
             $model,
             $modelParams,
             $io,
-            $this->definitionListConverter,
+            $this->definitionListTransformer,
             $resultText,
             $thinkingText
         );
