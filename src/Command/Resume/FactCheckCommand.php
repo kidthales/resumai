@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command\Resume;
 
-use App\Command\StreamExecutionProgressTrait;
+use App\Command\CallAgentAndStreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeFactCheckerLocator;
@@ -12,8 +12,6 @@ use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Helper\ProgressIndicator;
-use Symfony\Component\Console\Helper\TableSeparator;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 use function Symfony\Component\String\u;
@@ -27,7 +25,7 @@ use function Symfony\Component\String\u;
 )]
 final readonly class FactCheckCommand
 {
-    use StreamExecutionProgressTrait;
+    use CallAgentAndStreamExecutionProgressTrait;
 
     public function __construct(
         private ResumeFactCheckerLocator $resumeFactCheckerLocator,
@@ -40,7 +38,7 @@ final readonly class FactCheckCommand
         SymfonyStyle $io,
         #[Argument('Resume input filepath')] string $resumeInputPath,
         #[Argument('Resume fact-check output filepath')] string $resumeFactCheckOutputPath,
-        #[Option('Agent platform', 'platform', 'p')] string $platform = 'ollama',
+        #[Option('Agent platform', 'platform', 'p')] string $agentPlatform = 'ollama',
     ): int {
         $io->title('Resume Fact-Check');
 
@@ -48,35 +46,30 @@ final readonly class FactCheckCommand
 
         $resume = $this->fetchResume($resumeInputPath);
         $resolvedResumeFactCheckOutputPath = $this->filesystem->resolveProjectPath($resumeFactCheckOutputPath);
-        $normalizedPlatform = u($platform)->trim()->lower()->toString();
+        $normalizedAgentPlatform = u($agentPlatform)->trim()->lower()->toString();
 
         $io->definitionList(
             ['Resume input filepath' => $resumeInputPath],
             ['Resume fact-check output filepath' => $resumeFactCheckOutputPath],
-            ['Agent platform' => $platform]
+            ['Agent platform' => $agentPlatform]
         );
 
         $io->section('Agent');
 
-        $agent = $this->resumeFactCheckerLocator->getAgentByPlatform($normalizedPlatform);
-        $model = $this->resumeFactCheckerLocator->getModelByPlatform($normalizedPlatform);
-        $modelParams = $this->resumeFactCheckerLocator->getModelParamsByPlatform($normalizedPlatform);
+        $agent = $this->resumeFactCheckerLocator->getAgentByPlatform($normalizedAgentPlatform);
+        $model = $this->resumeFactCheckerLocator->getModelByPlatform($normalizedAgentPlatform);
+        $modelParams = $this->resumeFactCheckerLocator->getModelParamsByPlatform($normalizedAgentPlatform);
 
-        $io->definitionList(
-            $agent->getName(),
-            new TableSeparator(),
-            ['model' => $model],
-            ...$this->definitionListConverter->convert($modelParams),
+        self::callAgentAndStreamExecutionProgress(
+            $agent,
+            $this->buildAgentInput($resume),
+            $model,
+            $modelParams,
+            $io,
+            $this->definitionListConverter,
+            $resultText,
+            $thinkingText
         );
-
-        $indicator = new ProgressIndicator($io);
-        $indicator->start('Initializing...');
-
-        $execution = $agent->call($this->buildAgentInput($resume), ['stream' => true, ...$modelParams]);
-
-        $resultText = '';
-        $thinkingText = '';
-        $this->streamExecutionProgress($execution, $indicator, $resultText, $thinkingText);
 
         $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeFactCheckOutputPath), $thinkingText);
         $this->filesystem->dumpFile($resolvedResumeFactCheckOutputPath, $this->sanitizeResultText($resultText));

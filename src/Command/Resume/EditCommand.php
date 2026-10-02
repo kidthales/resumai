@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command\Resume;
 
-use App\Command\StreamExecutionProgressTrait;
+use App\Command\CallAgentAndStreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeEditorLocator;
@@ -12,8 +12,6 @@ use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Helper\ProgressIndicator;
-use Symfony\Component\Console\Helper\TableSeparator;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 use function Symfony\Component\String\u;
@@ -27,7 +25,7 @@ use function Symfony\Component\String\u;
 )]
 final readonly class EditCommand
 {
-    use StreamExecutionProgressTrait;
+    use CallAgentAndStreamExecutionProgressTrait;
 
     public function __construct(
         private ResumeEditorLocator $resumeEditorLocator,
@@ -46,7 +44,7 @@ final readonly class EditCommand
         #[Argument('Resume fact-check input filepath')] string $resumeFactCheckInputPath,
         #[Argument('Resume output filepath')] string $resumeOutputPath,
         #[Option('Resume job-alignment-check input filepath', 'job', 'j')] ?string $resumeJobAlignmentCheckInputPath = null,
-        #[Option('Agent platform', 'platform', 'p')] string $platform = 'ollama',
+        #[Option('Agent platform', 'platform', 'p')] string $agentPlatform = 'ollama',
     ): int {
         $io->title('Resume Edit');
 
@@ -56,37 +54,32 @@ final readonly class EditCommand
         $resumeFactCheck = $this->fetchResumeFactCheck($resumeFactCheckInputPath);
         $resolvedResumeOutputPath = $this->filesystem->resolveProjectPath($resumeOutputPath);
         $resumeJobAlignmentCheck = $this->fetchResumeJobAlignmentCheck($resumeJobAlignmentCheckInputPath);
-        $normalizedPlatform = u($platform)->trim()->lower()->toString();
+        $normalizedAgentPlatform = u($agentPlatform)->trim()->lower()->toString();
 
         $io->definitionList(
             ['Resume input filepath' => $resumeInputPath],
             ['Resume fact-check input filepath' => $resumeFactCheckInputPath],
             ['Resume output filepath' => $resumeOutputPath],
             ['Resume job-alignment-check input filepath' => null === $resumeJobAlignmentCheckInputPath ? '<comment>null</comment>' : $resumeJobAlignmentCheckInputPath],
-            ['Agent platform' => $platform]
+            ['Agent platform' => $agentPlatform]
         );
 
         $io->section('Agent');
 
-        $agent = $this->resumeEditorLocator->getAgentByPlatform($normalizedPlatform);
-        $model = $this->resumeEditorLocator->getModelByPlatform($normalizedPlatform);
-        $modelParams = $this->resumeEditorLocator->getModelParamsByPlatform($normalizedPlatform);
+        $agent = $this->resumeEditorLocator->getAgentByPlatform($normalizedAgentPlatform);
+        $model = $this->resumeEditorLocator->getModelByPlatform($normalizedAgentPlatform);
+        $modelParams = $this->resumeEditorLocator->getModelParamsByPlatform($normalizedAgentPlatform);
 
-        $io->definitionList(
-            $agent->getName(),
-            new TableSeparator(),
-            ['model' => $model],
-            ...$this->definitionListConverter->convert($modelParams),
+        self::callAgentAndStreamExecutionProgress(
+            $agent,
+            $this->buildAgentInput($resume, $resumeFactCheck, $resumeJobAlignmentCheck),
+            $model,
+            $modelParams,
+            $io,
+            $this->definitionListConverter,
+            $resultText,
+            $thinkingText
         );
-
-        $indicator = new ProgressIndicator($io);
-        $indicator->start('Initializing...');
-
-        $execution = $agent->call($this->buildAgentInput($resume, $resumeFactCheck, $resumeJobAlignmentCheck), ['stream' => true, ...$modelParams]);
-
-        $resultText = '';
-        $thinkingText = '';
-        $this->streamExecutionProgress($execution, $indicator, $resultText, $thinkingText);
 
         $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeOutputPath), $thinkingText);
         $this->filesystem->dumpFile($resolvedResumeOutputPath, $this->sanitizeResultText($resultText));

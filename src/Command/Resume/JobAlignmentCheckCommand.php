@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command\Resume;
 
-use App\Command\StreamExecutionProgressTrait;
+use App\Command\CallAgentAndStreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeJobAlignmentCheckerLocator;
@@ -12,8 +12,6 @@ use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Helper\ProgressIndicator;
-use Symfony\Component\Console\Helper\TableSeparator;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 use function Symfony\Component\String\u;
@@ -27,7 +25,7 @@ use function Symfony\Component\String\u;
 )]
 final readonly class JobAlignmentCheckCommand
 {
-    use StreamExecutionProgressTrait;
+    use CallAgentAndStreamExecutionProgressTrait;
 
     public function __construct(
         private ResumeJobAlignmentCheckerLocator $resumeJobAlignmentCheckerLocator,
@@ -39,47 +37,42 @@ final readonly class JobAlignmentCheckCommand
     public function __invoke(
         SymfonyStyle $io,
         #[Argument('Resume input filepath')] string $resumeInputPath,
-        #[Argument('Path to a job description file')] string $jobDescriptionPath,
+        #[Argument('Job description input filepath')] string $jobDescriptionInputPath,
         #[Argument('Resume job-alignment-check output filepath')] string $resumeJobAlignmentCheckOutputPath,
-        #[Option('Agent platform', 'platform', 'p')] string $platform = 'ollama',
+        #[Option('Agent platform', 'platform', 'p')] string $agentPlatform = 'ollama',
     ): int {
         $io->title('Resume Job-Alignment-Check');
 
         $io->section('Parameters');
 
         $resume = $this->fetchResume($resumeInputPath);
-        $jobDescription = $this->fetchJobDescription($jobDescriptionPath);
+        $jobDescription = $this->fetchJobDescription($jobDescriptionInputPath);
         $resolvedResumeJobAlignmentCheckOutputPath = $this->filesystem->resolveProjectPath($resumeJobAlignmentCheckOutputPath);
-        $normalizedPlatform = u($platform)->trim()->lower()->toString();
+        $normalizedAgentPlatform = u($agentPlatform)->trim()->lower()->toString();
 
         $io->definitionList(
             ['Resume input filepath' => $resumeInputPath],
-            ['Path to a job description file' => $jobDescriptionPath],
+            ['Job description input filepath' => $jobDescriptionInputPath],
             ['Resume job-alignment-check output filepath' => $resumeJobAlignmentCheckOutputPath],
-            ['Agent platform' => $platform]
+            ['Agent platform' => $agentPlatform]
         );
 
         $io->section('Agent');
 
-        $agent = $this->resumeJobAlignmentCheckerLocator->getAgentByPlatform($normalizedPlatform);
-        $model = $this->resumeJobAlignmentCheckerLocator->getModelByPlatform($normalizedPlatform);
-        $modelParams = $this->resumeJobAlignmentCheckerLocator->getModelParamsByPlatform($normalizedPlatform);
+        $agent = $this->resumeJobAlignmentCheckerLocator->getAgentByPlatform($normalizedAgentPlatform);
+        $model = $this->resumeJobAlignmentCheckerLocator->getModelByPlatform($normalizedAgentPlatform);
+        $modelParams = $this->resumeJobAlignmentCheckerLocator->getModelParamsByPlatform($normalizedAgentPlatform);
 
-        $io->definitionList(
-            $agent->getName(),
-            new TableSeparator(),
-            ['model' => $model],
-            ...$this->definitionListConverter->convert($modelParams),
+        self::callAgentAndStreamExecutionProgress(
+            $agent,
+            $this->buildAgentInput($resume, $jobDescription),
+            $model,
+            $modelParams,
+            $io,
+            $this->definitionListConverter,
+            $resultText,
+            $thinkingText
         );
-
-        $indicator = new ProgressIndicator($io);
-        $indicator->start('Initializing...');
-
-        $execution = $agent->call($this->buildAgentInput($resume, $jobDescription), ['stream' => true, ...$modelParams]);
-
-        $resultText = '';
-        $thinkingText = '';
-        $this->streamExecutionProgress($execution, $indicator, $resultText, $thinkingText);
 
         $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeJobAlignmentCheckOutputPath), $thinkingText);
         $this->filesystem->dumpFile($resolvedResumeJobAlignmentCheckOutputPath, $this->sanitizeResultText($resultText));
@@ -101,10 +94,10 @@ final readonly class JobAlignmentCheckCommand
         return $trimmedResume->toString();
     }
 
-    private function fetchJobDescription(string $jobDescriptionPath): string
+    private function fetchJobDescription(string $jobDescriptionInputPath): string
     {
-        $realJobDescriptionPath = $this->filesystem->realProjectPath($jobDescriptionPath);
-        $trimmedJobDescription = u($this->filesystem->readFile($realJobDescriptionPath))->trim();
+        $realJobDescriptionInputPath = $this->filesystem->realProjectPath($jobDescriptionInputPath);
+        $trimmedJobDescription = u($this->filesystem->readFile($realJobDescriptionInputPath))->trim();
 
         if ($trimmedJobDescription->isEmpty()) {
             throw new \RuntimeException('Job description cannot be empty.');

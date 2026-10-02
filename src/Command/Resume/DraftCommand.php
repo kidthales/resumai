@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command\Resume;
 
-use App\Command\StreamExecutionProgressTrait;
+use App\Command\CallAgentAndStreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeDrafterLocator;
@@ -12,8 +12,6 @@ use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Helper\ProgressIndicator;
-use Symfony\Component\Console\Helper\TableSeparator;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 use function Symfony\Component\String\u;
@@ -22,12 +20,12 @@ use function Symfony\Component\String\u;
  * @author Tristan Bonsor <kidthales@agogpixel.com>
  */
 #[AsCommand(
-    name: 'app:resume:draft:v2',
+    name: 'app:resume:draft',
     description: 'Draft a resume optionally tailored to a job description and candidate archetype',
 )]
 final readonly class DraftCommand
 {
-    use StreamExecutionProgressTrait;
+    use CallAgentAndStreamExecutionProgressTrait;
 
     public function __construct(
         private ResumeDrafterLocator $resumeDrafterLocator,
@@ -43,47 +41,42 @@ final readonly class DraftCommand
     public function __invoke(
         SymfonyStyle $io,
         #[Argument('Resume output filepath')] string $resumeOutputPath,
-        #[Option('Path to a job description file', 'job', 'j')] ?string $jobDescriptionPath = null,
-        #[Option('Archetype filename', 'archetype', 'a')] ?string $archetypeFilename = null,
-        #[Option('Agent platform', 'platform', 'p')] string $platform = 'ollama',
+        #[Option('Job description input filepath', 'job', 'j')] ?string $jobDescriptionInputPath = null,
+        #[Option('Archetype input filename', 'archetype', 'a')] ?string $archetypeInputFilename = null,
+        #[Option('Agent platform', 'platform', 'p')] string $agentPlatform = 'ollama',
     ): int {
         $io->title('Resume Draft');
 
         $io->section('Parameters');
 
         $resolvedResumeOutputPath = $this->filesystem->resolveProjectPath($resumeOutputPath);
-        $jobDescription = $this->fetchJobDescription($jobDescriptionPath);
-        $archetype = $this->fetchArchetype($archetypeFilename);
-        $normalizedPlatform = u($platform)->trim()->lower()->toString();
+        $jobDescription = $this->fetchJobDescription($jobDescriptionInputPath);
+        $archetype = $this->fetchArchetype($archetypeInputFilename);
+        $normalizedAgentPlatform = u($agentPlatform)->trim()->lower()->toString();
 
         $io->definitionList(
             ['Resume output filepath' => $resumeOutputPath],
-            ['Path to a job description file' => null === $jobDescriptionPath ? '<comment>null</comment>' : $jobDescriptionPath],
-            ['Archetype filename' => null === $archetypeFilename ? '<comment>null</comment>' : $archetypeFilename],
-            ['Agent platform' => $platform]
+            ['Job description input filepath' => null === $jobDescriptionInputPath ? '<comment>null</comment>' : $jobDescriptionInputPath],
+            ['Archetype input filename' => null === $archetypeInputFilename ? '<comment>null</comment>' : $archetypeInputFilename],
+            ['Agent platform' => $agentPlatform]
         );
 
         $io->section('Agent');
 
-        $agent = $this->resumeDrafterLocator->getAgentByPlatform($normalizedPlatform);
-        $model = $this->resumeDrafterLocator->getModelByPlatform($normalizedPlatform);
-        $modelParams = $this->resumeDrafterLocator->getModelParamsByPlatform($normalizedPlatform);
+        $agent = $this->resumeDrafterLocator->getAgentByPlatform($normalizedAgentPlatform);
+        $model = $this->resumeDrafterLocator->getModelByPlatform($normalizedAgentPlatform);
+        $modelParams = $this->resumeDrafterLocator->getModelParamsByPlatform($normalizedAgentPlatform);
 
-        $io->definitionList(
-            $agent->getName(),
-            new TableSeparator(),
-            ['model' => $model],
-            ...$this->definitionListConverter->convert($modelParams),
+        self::callAgentAndStreamExecutionProgress(
+            $agent,
+            $this->buildAgentInput($jobDescription, $archetype),
+            $model,
+            $modelParams,
+            $io,
+            $this->definitionListConverter,
+            $resultText,
+            $thinkingText
         );
-
-        $indicator = new ProgressIndicator($io);
-        $indicator->start('Initializing...');
-
-        $execution = $agent->call($this->buildAgentInput($jobDescription, $archetype), ['stream' => true, ...$modelParams]);
-
-        $resultText = '';
-        $thinkingText = '';
-        $this->streamExecutionProgress($execution, $indicator, $resultText, $thinkingText);
 
         $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeOutputPath), $thinkingText);
         $this->filesystem->dumpFile($resolvedResumeOutputPath, $this->sanitizeResultText($resultText));
@@ -93,13 +86,13 @@ final readonly class DraftCommand
         return Command::SUCCESS;
     }
 
-    private function fetchJobDescription(?string $jobDescriptionPath): ?string
+    private function fetchJobDescription(?string $jobDescriptionInputPath): ?string
     {
         $jobDescription = null;
 
-        if (null !== $jobDescriptionPath) {
-            $realJobDescriptionPath = $this->filesystem->realProjectPath($jobDescriptionPath);
-            $trimmedJobDescription = u($this->filesystem->readFile($realJobDescriptionPath))->trim();
+        if (null !== $jobDescriptionInputPath) {
+            $realJobDescriptionInputPath = $this->filesystem->realProjectPath($jobDescriptionInputPath);
+            $trimmedJobDescription = u($this->filesystem->readFile($realJobDescriptionInputPath))->trim();
 
             if ($trimmedJobDescription->isEmpty()) {
                 throw new \RuntimeException('Job description cannot be empty.');
@@ -111,15 +104,15 @@ final readonly class DraftCommand
         return $jobDescription;
     }
 
-    private function fetchArchetype(?string $archetypeFilename): ?string
+    private function fetchArchetype(?string $archetypeInputFilename): ?string
     {
         $archetype = null;
 
-        if (null !== $archetypeFilename) {
-            $trimmedArchetype = u($this->filesystem->readArchetypeFile($archetypeFilename))->trim();
+        if (null !== $archetypeInputFilename) {
+            $trimmedArchetype = u($this->filesystem->readArchetypeFile($archetypeInputFilename))->trim();
 
             if ($trimmedArchetype->isEmpty()) {
-                throw new \RuntimeException(\sprintf('Archetype "%s" cannot be empty.', $archetypeFilename));
+                throw new \RuntimeException(\sprintf('Archetype "%s" cannot be empty.', $archetypeInputFilename));
             }
 
             $archetype = $trimmedArchetype->toString();
