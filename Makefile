@@ -19,13 +19,14 @@ OLLAMA   := $(OLLAMA_CONT) ollama
 # Misc
 .DEFAULT_GOAL = help
 .PHONY        : help start fresh-start stop \
+                resume-arch resume-draft resume-fc resume-jac resume-edit \
                 bake up down logs \
                 test cov \
                 composer vendor \
                 sf cc \
                 npm node_modules \
                 npx \
-                lint fix prettier php-cs-fixer \
+                lint fix prettier prettier-check prettier-fix php-cs-fixer php-cs-fixer-check php-cs-fixer-fix \
                 ollama skills \
                 own
 
@@ -33,12 +34,32 @@ OLLAMA   := $(OLLAMA_CONT) ollama
 help: ## Outputs this help screen
 	@grep -E '(^[a-zA-Z0-9\./_-]+:.*?##.*$$)|(^##)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}{printf "\033[32m%-30s\033[0m %s\n", $$1, $$2}' | sed -e 's/\[32m##/[33m/'
 
-start: bake up logs ## Start local development
+start: bake up logs ## Start the app
 
-fresh-start: ## Start local development with fresh images
+fresh-start: ## Start the app with fresh images
 	@$(MAKE) bake c='--pull --no-cache' up logs
 
-stop: down ## Stop local development
+stop: down ## Stop the app
+
+resume-arch: ## Select resume archetype for a job description, pass the parameter "c=" to specify options and the JD path, example: make resume-archetype-select c='var/jd.txt'
+	@$(eval c ?=)
+	@$(SYMFONY) app:resume:archetype:select $(c)
+
+resume-draft: ## Draft resume optionally tailored to job description and archetype, pass the parameter "c=" to specify options and the output path, example: make resume-draft c='var/resume_draft.md'
+	@$(eval c ?=)
+	@$(SYMFONY) app:resume:draft $(c)
+
+resume-fc: ## Fact-check resume, pass the parameter "c=" to specify options and the input/output paths, example: make resume-fact-check c='var/resume_draft.md var/resume_draft_fc.md'
+	@$(eval c ?=)
+	@$(SYMFONY) app:resume:fact-check $(c)
+
+resume-jac: ## Check resume for job alignment, pass the parameter "c=" to specify options and the input/output paths, example: make resume-job-alignment-check c='var/resume_draft.md var/jd.txt var/resume_draft_jac.md'
+	@$(eval c ?=)
+	@$(SYMFONY) app:resume:job-alignment-check $(c)
+
+resume-edit: ## Edit resume with fact-check and optional job-alignment-check, pass the parameter "c=" to specify options and the input/output paths, example: make resume-edit c='var/resume_draft.md var/resume_draft_fc.md var/resume_edit.md'
+	@$(eval c ?=)
+	@$(SYMFONY) app:resume:edit $(c)
 
 ## —— Docker 🐳 ————————————————————————————————————————————————————————————————
 bake: ## Bakes the Docker images, pass the parameter "c=" to specify options and targets, example: make bake c='--pull --no-cache php node'
@@ -60,7 +81,7 @@ test: ## Start tests with phpunit, pass the parameter "c=" to add options to php
 	@$(CD_DOCKER_COMP) exec -e APP_ENV=test -e XDEBUG_MODE=coverage php bin/phpunit $(c)
 
 cov: ## ## Start tests with phpunit and generate coverage report for the project
-cov: c=--testdox --display-all-issues --coverage-text --show-uncovered-for-coverage-text --coverage-html coverage
+cov: c=--testdox --display-all-issues --coverage-text --show-uncovered-for-coverage-text --coverage-html coverage/html --coverage-jsonl coverage/jsonl --coverage-clover coverage/clover.xml
 cov: test
 
 ## —— Composer 🧙 ——————————————————————————————————————————————————————————————
@@ -80,7 +101,7 @@ sf: ## List all Symfony commands or pass the parameter "c=" to run a given comma
 cc: c=c:c ## Clear the cache
 cc: sf
 
-## —— NPM 📦️ ——————————————————————————————————————————————————————————————————
+## —— Node.js 📦️ ——————————————————————————————————————————————————————————————
 npm: ## Run npm, pass the parameter "c=" to run a given command, example: make npm c='i -D prettier'
 	@$(eval c ?=)
 	@$(NPM) $(c)
@@ -89,27 +110,40 @@ node_modules: ## Install node_modules according to the current package-lock.json
 node_modules: c=ci
 node_modules: npm
 
-## —— NPX ❌️ ——————————————————————————————————————————————————————————————————
 npx: ## Run npx, pass the parameter "c=" to run a given command, example: make npx c='prettier --check .'
 	@$(eval c ?=)
 	@$(NPX) $(c)
 
 ## —— Lint 🧹 ——————————————————————————————————————————————————————————————————
 lint: ## Check files for lint errors
-	-@$(NPX) prettier --check .
-	-@$(PHP) vendor/bin/php-cs-fixer check
+	@$(MAKE) -j 2 --output-sync prettier-check php-cs-fixer-check
 
 fix: ## Fix files with lint errors
-	-@$(NPX) prettier --write .
-	-@$(PHP) vendor/bin/php-cs-fixer fix
+	@$(MAKE) -j 2 --output-sync prettier-fix php-cs-fixer-fix
 
 prettier: ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
 	@$(eval c ?=)
 	@$(NPX) prettier $(c)
 
+prettier-check: ## Check files with prettier
+prettier-check: c=--check .
+prettier-check: prettier
+
+prettier-fix: ## Fix files with prettier
+prettier-fix: c=--write .
+prettier-fix: prettier
+
 php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given command, example: make php-cs-fixer c='check'
 	@$(eval c ?=)
 	@$(PHP) vendor/bin/php-cs-fixer $(c)
+
+php-cs-fixer-check: ## Check files with php-cs-fixer
+php-cs-fixer-check: c=check
+php-cs-fixer-check: php-cs-fixer
+
+php-cs-fixer-fix: ## Fix files with php-cs-fixer
+php-cs-fixer-fix: c=fix
+php-cs-fixer-fix: php-cs-fixer
 
 ## —— AI 🤖 ————————————————————————————————————————————————————————————————————
 ollama: ## Run ollama cli, pass the parameter "c=" to run a given command; example: make ollama c='pull qwen3:14b'

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\Console\Style\DefinitionListTransformer;
+use App\Console\Transformer\DefinitionListTransformer;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Update\Progress;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;

@@ -25,7 +25,7 @@ final class Filesystem extends \Symfony\Component\Filesystem\Filesystem
     {
         $pathChecker = new PathChecker($path);
 
-        if ('' === $pathChecker->path()) {
+        if ($pathChecker->isEmpty()) {
             throw new \RuntimeException('Path cannot be empty.');
         }
 
@@ -44,26 +44,39 @@ final class Filesystem extends \Symfony\Component\Filesystem\Filesystem
     {
         $pathChecker = new PathChecker($path);
 
-        if ('' === $pathChecker->path()) {
+        if ($pathChecker->isEmpty()) {
             throw new \RuntimeException('Path cannot be empty.');
         }
 
-        if ($pathChecker->isAbsolute()) {
-            if (!$pathChecker->hasBasepath($this->projectPath)) {
-                throw new \RuntimeException(\sprintf('Path "%s" is not within the project path.', $path));
-            }
+        $realProjectPath = realpath($this->projectPath) ?: $this->projectPath;
 
-            return $pathChecker->canonicalize();
+        // 1. Get the logical absolute path first
+        $logicalPath = Path::makeAbsolute($pathChecker->path(), $realProjectPath);
+
+        // 2. Find the deepest portion of the path that actually exists on disk
+        $existingPart = $logicalPath;
+        $nonExistingPart = [];
+        while (!$this->exists($existingPart) && $existingPart !== dirname($existingPart)) {
+            array_unshift($nonExistingPart, basename($existingPart));
+            $existingPart = dirname($existingPart);
         }
 
-        $joinedPathChecker = new PathChecker(Path::join($this->projectPath, $pathChecker->path()));
-
-        // TODO: What about symlinks?
-        if (!$joinedPathChecker->hasBasepath($this->projectPath)) {
-            throw new \RuntimeException(\sprintf('Path "%s" is not within the project path.', $path));
+        // 3. Safely resolve any symlinks in the existing portion
+        if ($this->exists($existingPart)) {
+            $existingPart = realpath($existingPart) ?: $existingPart;
         }
 
-        return $joinedPathChecker->canonicalize();
+        // 4. Reconstruct the true target path
+        $finalPath = empty($nonExistingPart)
+            ? $existingPart
+            : Path::join($existingPart, ...$nonExistingPart);
+
+        // 5. Verify the physical path remains within the project boundary
+        if (!Path::isBasePath($realProjectPath, $finalPath)) {
+            throw new \RuntimeException(\sprintf('Path "%s" resolves outside the project path.', $path));
+        }
+
+        return $finalPath;
     }
 
     public function findArchetypeFiles(): array|Finder
@@ -86,11 +99,11 @@ final class Filesystem extends \Symfony\Component\Filesystem\Filesystem
         $trimmedFilename = u($filename)->trim();
 
         if ($trimmedFilename->isEmpty()) {
-            throw new \InvalidArgumentException('Archetype filename cannot be empty.');
+            throw new \RuntimeException('Archetype filename cannot be empty.');
         }
 
         if ($trimmedFilename->containsAny(['..', '/', '\\', "\0"])) {
-            throw new \InvalidArgumentException(\sprintf('Invalid archetype filename: "%s".', $filename));
+            throw new \RuntimeException(\sprintf('Invalid archetype filename: "%s".', $filename));
         }
 
         $candidate = $trimmedFilename->endsWith('.md')

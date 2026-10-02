@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Console\Style;
+namespace App\Console\Transformer;
 
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Command\Resume;
 
 use App\Command\CallAgentAndStreamExecutionProgressTrait;
-use App\Console\Style\DefinitionListTransformer;
+use App\Console\Transformer\DefinitionListTransformer;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeDrafterLocator;
 use Symfony\Component\Console\Attribute\Argument;

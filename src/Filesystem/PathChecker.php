@@ -48,13 +48,8 @@ final readonly class PathChecker
         return '' !== $basepath && '' !== $path && Path::isBasePath($basepath, $path);
     }
 
-    public function isAbsolute(): bool
+    public function isEmpty(): bool
     {
-        return Path::isAbsolute($this->path->toString());
-    }
-
-    public function canonicalize(): string
-    {
-        return Path::canonicalize($this->path->toString());
+        return $this->path->isEmpty();
     }
 }
