@@ -11,6 +11,9 @@ use Symfony\Component\DependencyInjection\Attribute\Target;
 use Symfony\Contracts\Service\Attribute\SubscribedService;
 use Symfony\Contracts\Service\ServiceSubscriberInterface;
 
+/**
+ * @author Tristan Bonsor <kidthales@agogpixel.com>
+ */
 abstract readonly class AgentByPlatformLocator implements ServiceSubscriberInterface
 {
     protected const string AGENT_NAME = '';

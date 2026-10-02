@@ -34,6 +34,10 @@ final readonly class JobAlignmentCheckCommand
     ) {
     }
 
+    /**
+     * @throws \Symfony\AI\Agent\Exception\ExceptionInterface
+     * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
+     */
     public function __invoke(
         SymfonyStyle $io,
         #[Argument('Resume input filepath')] string $resumeInputPath,

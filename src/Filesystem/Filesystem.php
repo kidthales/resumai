@@ -10,6 +10,9 @@ use Symfony\Component\Finder\Finder;
 
 use function Symfony\Component\String\u;
 
+/**
+ * @author Tristan Bonsor <kidthales@agogpixel.com>
+ */
 final class Filesystem extends \Symfony\Component\Filesystem\Filesystem
 {
     public function __construct(
