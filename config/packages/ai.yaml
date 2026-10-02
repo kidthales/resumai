@@ -60,37 +60,6 @@ ai:
             model: '%resume_editor.gemini.model%'
             prompt: '%prompts.resume_editor%'
 
-        #
-
-        archetype_selector:
-            platform: ai.platform.ollama
-            model: archetype-selector
-            prompt: '%prompts.archetype_selector%'
-            tools:
-                enabled: true
-                services:
-                    - service: App\AI\Agent\Toolbox\ArchetypeDirectoryTool
-
-        resume_drafter:
-            platform: ai.platform.ollama
-            model: resume-drafter
-            prompt: '%prompts.resume_drafter%'
-
-        resume_smell_checker:
-            platform: ai.platform.ollama
-            model: resume-smell-checker
-            prompt: '%prompts.resume_smell_checker%'
-
-        resume_reviser:
-            platform: ai.platform.ollama
-            model: resume-reviser
-            prompt: '%prompts.resume_reviser%'
-
-        resume_finalizer:
-            platform: ai.platform.ollama
-            model: resume-finalizer
-            prompt: '%prompts.resume_finalizer%'
-
     store:
         # Store configuration
 

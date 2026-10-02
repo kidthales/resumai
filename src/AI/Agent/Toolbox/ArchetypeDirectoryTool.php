@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\AI\Agent\Toolbox;
 
-use App\Filesystem\FilesystemV2;
+use App\Filesystem\Filesystem;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 
 use function Symfony\Component\String\u;
@@ -24,7 +24,7 @@ use function Symfony\Component\String\u;
 )]
 final readonly class ArchetypeDirectoryTool
 {
-    public function __construct(private FilesystemV2 $filesystem)
+    public function __construct(private Filesystem $filesystem)
     {
     }
 

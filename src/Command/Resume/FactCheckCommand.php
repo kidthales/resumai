@@ -6,7 +6,7 @@ namespace App\Command\Resume;
 
 use App\Command\StreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
-use App\Filesystem\FilesystemV2;
+use App\Filesystem\Filesystem;
 use App\Service\ResumeFactCheckerLocator;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -31,7 +31,7 @@ final readonly class FactCheckCommand
 
     public function __construct(
         private ResumeFactCheckerLocator $resumeFactCheckerLocator,
-        private FilesystemV2 $filesystem,
+        private Filesystem $filesystem,
         private DefinitionListConverter $definitionListConverter,
     ) {
     }

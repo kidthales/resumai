@@ -107,46 +107,6 @@ parameters:
     resume_editor.gemini.model: '%env(GEMINI_AGENT_RESUME_EDITOR_MODEL)%'
     resume_editor.gemini.model_params: '%env(json:GEMINI_AGENT_RESUME_EDITOR_MODEL_PARAMS)%'
 
-    #
-
-    #env(SAMPLE_PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.sample.md'
-    #env(PERSONAL_INFO_PATH): '%content_path%/pii/personal_info.md'
-    #pii.sample_personal_info: '%env(default:content_not_found:file:SAMPLE_PERSONAL_INFO_PATH)%'
-    #pii.personal_info: '%env(default:pii.sample_personal_info:file:PERSONAL_INFO_PATH)%'
-
-    #env(SAMPLE_EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.sample.md'
-    #env(EDUCATION_HISTORY_PATH): '%content_path%/pii/education_history.md'
-    #pii.sample_education_history: '%env(default:content_not_found:file:SAMPLE_EDUCATION_HISTORY_PATH)%'
-    #pii.education_history: '%env(default:pii.sample_education_history:file:EDUCATION_HISTORY_PATH)%'
-
-    #env(SAMPLE_WORK_HISTORY_PATH): '%content_path%/pii/work_history.sample.md'
-    #env(WORK_HISTORY_PATH): '%content_path%/pii/work_history.md'
-    #pii.sample_work_history: '%env(default:content_not_found:file:SAMPLE_WORK_HISTORY_PATH)%'
-    #pii.work_history: '%env(default:pii.sample_work_history:file:WORK_HISTORY_PATH)%'
-
-    #env(SAMPLE_EXTRAS_PATH): '%content_path%/pii/extras.sample.md'
-    #env(EXTRAS_PATH): '%content_path%/pii/extras.md'
-    #pii.sample_extras: '%env(default:content_not_found:file:SAMPLE_EXTRAS_PATH)%'
-    #pii.extras: '%env(default:pii.sample_extras:file:EXTRAS_PATH)%'
-
-    env(ARCHETYPE_SELECTOR_PROMPT_PATH): '%content_path%/prompts/archetype_selector.md'
-    prompts.archetype_selector: '%env(resolve:default:content_not_found:file:ARCHETYPE_SELECTOR_PROMPT_PATH)%'
-
-    #env(RESUME_DRAFTER_PROMPT_PATH): '%content_path%/prompts/resume_drafter.md'
-    #prompts.resume_drafter: '%env(resolve:default:content_not_found:file:RESUME_DRAFTER_PROMPT_PATH)%'
-
-    #models.resume_drafter: '%env(AGENT_RESUME_DRAFTER_MODEL)%'
-    #model_params.resume_drafter: '%env(json:AGENT_RESUME_DRAFTER_MODEL_PARAMS)%'
-
-    env(RESUME_SMELL_CHECKER_PROMPT_PATH): '%content_path%/prompts/resume_smell_checker.md'
-    prompts.resume_smell_checker: '%env(resolve:default:content_not_found:file:RESUME_SMELL_CHECKER_PROMPT_PATH)%'
-
-    env(RESUME_REVISER_PROMPT_PATH): '%content_path%/prompts/resume_reviser.md'
-    prompts.resume_reviser: '%env(resolve:default:content_not_found:file:RESUME_REVISER_PROMPT_PATH)%'
-
-    env(RESUME_FINALIZER_PROMPT_PATH): '%content_path%/prompts/resume_finalizer.md'
-    prompts.resume_finalizer: '%env(resolve:default:content_not_found:file:RESUME_FINALIZER_PROMPT_PATH)%'
-
 services:
     # default configuration for services in *this* file
     _defaults:

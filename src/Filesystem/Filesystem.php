@@ -10,7 +10,7 @@ use Symfony\Component\Finder\Finder;
 
 use function Symfony\Component\String\u;
 
-final class FilesystemV2 extends \Symfony\Component\Filesystem\Filesystem
+final class Filesystem extends \Symfony\Component\Filesystem\Filesystem
 {
     public function __construct(
         #[Autowire('%kernel.project_dir%')] private readonly string $projectPath,
