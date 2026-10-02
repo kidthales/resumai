@@ -125,14 +125,14 @@ final readonly class EditCommand
         $resumeJobAlignmentCheck = null;
 
         if (null !== $resumeJobAlignmentCheck) {
-            $realJobAlignmentCheckInputPath = $this->filesystem->realProjectPath($resumeJobAlignmentCheck);
-            $trimmedJobAlignmentCheck = u($this->filesystem->readFile($realJobAlignmentCheckInputPath))->trim();
+            $realResumeJobAlignmentCheckInputPath = $this->filesystem->realProjectPath($resumeJobAlignmentCheck);
+            $trimmedResumeJobAlignmentCheck = u($this->filesystem->readFile($realResumeJobAlignmentCheckInputPath))->trim();
 
-            if ($trimmedJobAlignmentCheck->isEmpty()) {
-                throw new \RuntimeException('Job  cannot be empty.');
+            if ($trimmedResumeJobAlignmentCheck->isEmpty()) {
+                throw new \RuntimeException('Resume job-alignment-check cannot be empty.');
             }
 
-            $resumeJobAlignmentCheck = $trimmedJobAlignmentCheck->toString();
+            $resumeJobAlignmentCheck = $trimmedResumeJobAlignmentCheck->toString();
         }
 
         return $resumeJobAlignmentCheck;

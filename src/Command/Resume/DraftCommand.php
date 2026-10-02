@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Command\Resume;
 
-use App\AI\Agent\Toolbox\ArchetypeDirectoryTool;
 use App\Command\StreamExecutionProgressTrait;
 use App\Console\Style\DefinitionListConverter;
 use App\Filesystem\FilesystemV2;
@@ -32,7 +31,6 @@ final readonly class DraftCommand
 
     public function __construct(
         private ResumeDrafterLocator $resumeDrafterLocator,
-        private ArchetypeDirectoryTool $archetypeDirectoryTool,
         private FilesystemV2 $filesystem,
         private DefinitionListConverter $definitionListConverter,
     ) {
@@ -118,7 +116,7 @@ final readonly class DraftCommand
         $archetype = null;
 
         if (null !== $archetypeFilename) {
-            $trimmedArchetype = u($this->archetypeDirectoryTool->readArchetype($archetypeFilename))->trim();
+            $trimmedArchetype = u($this->filesystem->readArchetypeFile($archetypeFilename))->trim();
 
             if ($trimmedArchetype->isEmpty()) {
                 throw new \RuntimeException(\sprintf('Archetype "%s" cannot be empty.', $archetypeFilename));

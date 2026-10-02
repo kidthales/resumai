@@ -6,11 +6,16 @@ namespace App\Filesystem;
 
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Filesystem\Path;
+use Symfony\Component\Finder\Finder;
+
+use function Symfony\Component\String\u;
 
 final class FilesystemV2 extends \Symfony\Component\Filesystem\Filesystem
 {
-    public function __construct(#[Autowire('%kernel.project_dir%')] private readonly string $projectPath)
-    {
+    public function __construct(
+        #[Autowire('%kernel.project_dir%')] private readonly string $projectPath,
+        #[Autowire('%archetypes_path%')] private readonly string $archetypesPath,
+    ) {
     }
 
     public function realProjectPath(string $path): string
@@ -56,5 +61,41 @@ final class FilesystemV2 extends \Symfony\Component\Filesystem\Filesystem
         }
 
         return $joinedPathChecker->canonicalize();
+    }
+
+    public function findArchetypeFiles(): array|Finder
+    {
+        if (!$this->exists($this->archetypesPath)) {
+            return [];
+        }
+
+        return new Finder()
+            ->files()
+            ->in($this->archetypesPath)
+            ->depth('== 0')
+            ->name('*.md')
+            ->ignoreDotFiles(true)
+            ->sortByName();
+    }
+
+    public function readArchetypeFile(string $filename): string
+    {
+        $trimmedFilename = u($filename)->trim();
+
+        if ($trimmedFilename->isEmpty()) {
+            throw new \InvalidArgumentException('Archetype filename cannot be empty.');
+        }
+
+        if ($trimmedFilename->containsAny(['..', '/', '\\', "\0"])) {
+            throw new \InvalidArgumentException(\sprintf('Invalid archetype filename: "%s".', $filename));
+        }
+
+        $candidate = $trimmedFilename->endsWith('.md')
+            ? $trimmedFilename->toString()
+            : $trimmedFilename->append('.md')->toString();
+
+        $realCandidatePath = $this->realProjectPath(Path::join($this->archetypesPath, $candidate));
+
+        return $this->readFile($realCandidatePath);
     }
 }

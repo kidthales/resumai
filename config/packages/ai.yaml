@@ -7,6 +7,23 @@ ai:
         # Agent configuration
         # see https://symfony.com/doc/current/ai/bundles/ai-bundle.html
 
+        resume_archetype_selector.ollama:
+            platform: ai.platform.ollama
+            model: '%resume_archetype_selector.ollama.model%'
+            prompt: '%prompts.resume_archetype_selector%'
+            tools:
+                enabled: true
+                services:
+                    - service: App\AI\Agent\Toolbox\ArchetypeDirectoryTool
+        resume_archetype_selector.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_archetype_selector.gemini.model%'
+            prompt: '%prompts.resume_archetype_selector%'
+            tools:
+                enabled: true
+                services:
+                    - service: App\AI\Agent\Toolbox\ArchetypeDirectoryTool
+
         resume_drafter.ollama:
             platform: ai.platform.ollama
             model: '%resume_drafter.ollama.model%'

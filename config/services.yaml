@@ -53,6 +53,10 @@ parameters:
     pii.sample_extras: '%env(default:content_not_found:file:resolve:SAMPLE_EXTRAS_PATH)%'
     pii.extras: '%env(default:pii.sample_extras:file:resolve:EXTRAS_PATH)%'
 
+    # Resume Archetype Selector Prompt
+    env(RESUME_ARCHETYPE_SELECTOR_PROMPT_PATH): '%prompts_path%/resume_archetype_selector.md'
+    prompts.resume_archetype_selector: '%env(resolve:default:content_not_found:file:resolve:RESUME_ARCHETYPE_SELECTOR_PROMPT_PATH)%'
+
     # Resume Drafter Prompt
     env(RESUME_DRAFTER_PROMPT_PATH): '%prompts_path%/resume_drafter.md'
     prompts.resume_drafter: '%env(resolve:default:content_not_found:file:resolve:RESUME_DRAFTER_PROMPT_PATH)%'
@@ -72,6 +76,12 @@ parameters:
     #
     # Models
     #
+
+    # Resume Archetype Selector Models
+    resume_archetype_selector.ollama.model: '%env(OLLAMA_AGENT_RESUME_ARCHETYPE_SELECTOR_MODEL)%'
+    resume_archetype_selector.ollama.model_params: '%env(json:OLLAMA_AGENT_RESUME_ARCHETYPE_SELECTOR_MODEL_PARAMS)%'
+    resume_archetype_selector.gemini.model: '%env(GEMINI_AGENT_RESUME_ARCHETYPE_SELECTOR_MODEL)%'
+    resume_archetype_selector.gemini.model_params: '%env(json:GEMINI_AGENT_RESUME_ARCHETYPE_SELECTOR_MODEL_PARAMS)%'
 
     # Resume Drafter Models
     resume_drafter.ollama.model: '%env(OLLAMA_AGENT_RESUME_DRAFTER_MODEL)%'
