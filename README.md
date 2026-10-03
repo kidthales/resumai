@@ -26,7 +26,7 @@ A résumé and job application engineering system.
         ```dotenv
         GEMINI_API_KEY=<gemini_api_key>
         ```
-8. Generate a general-purpose resume based only on `content/pii/` and output to `var/resume_draft.md`:
+8. Generate a general-purpose résumé based only on `content/pii/` and output to `var/resume_draft.md`:
     ```shell
     make resume-draft c='var/resume_draft.md' # Ollama
     make resume-draft c='var/resume_draft.md --platform gemini' # Gemini
@@ -58,10 +58,10 @@ The app is composed of five commands (some of which are optional). They are desi
 
 ### 3. Resume Checkers
 
-These agent commands are designed to provide checks and feedback for a resume. Generated feedback can then be used with [step 4](#4-resume-editor).
+These agent commands are designed to provide checks and feedback for a résumé. Generated feedback can then be used with [step 4](#4-resume-editor).
 
 > [!NOTE]
-> These may also be used as standalone commands to check a hand-crafted resume.
+> These may also be used as standalone commands to check a hand-crafted résumé.
 
 #### 3.1. Resume Fact Checker
 
@@ -107,3 +107,9 @@ resumai/
         ├── resume_fact_checker.md           # Resume fact checker agent prompt
         └── resume_job_alignment_checker.md  # Resume job alignment checker agent prompt
 ```
+
+## Licenses
+
+Source code and content are licensed under the GNU Affero General Public License v3.0 or later. See [LICENSE](./LICENSE) for the full license text.
+
+Docker FrankenPHP image is licensed under the MIT License. See [docker/php/LICENSE](./docker/php/LICENSE) for the full license text.

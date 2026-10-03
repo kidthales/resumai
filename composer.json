@@ -1,7 +1,7 @@
 {
     "name": "kidthales/resumai",
     "type": "project",
-    "license": "proprietary",
+    "license": "AGPL-3.0-or-later",
     "description": "A resume and job application engineering system",
     "minimum-stability": "stable",
     "prefer-stable": true,

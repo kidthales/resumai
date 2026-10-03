@@ -29,10 +29,9 @@ OLLAMA   := $(OLLAMA_CONT) ollama
                 test cov \
                 composer vendor \
                 sf cc \
-                npm node_modules \
-                npx \
+                npm node_modules npx \
                 lint fix prettier prettier-check prettier-fix php-cs-fixer php-cs-fixer-check php-cs-fixer-fix \
-                ollama skills \
+                ollama ollama-pull skills \
                 own
 
 ## —— 📄 🤖 The ResumAI Makefile 🤖 📄 —————————————————————————————————————————
