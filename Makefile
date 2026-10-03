@@ -1,7 +1,12 @@
 # Executables (local)
+AWK             = awk
 CD_DOCKER       = cd docker
 DOCKER_COMP     = docker compose
 CD_DOCKER_COMP := $(CD_DOCKER) && $(DOCKER_COMP)
+ECHO            = echo
+GREP            = grep
+SED             = sed
+SORT            = sort
 
 # Docker containers
 PHP_CONT    := $(CD_DOCKER_COMP) exec php
@@ -32,7 +37,7 @@ OLLAMA   := $(OLLAMA_CONT) ollama
 
 ## —— 📄 🤖 The ResumAI Makefile 🤖 📄 —————————————————————————————————————————
 help: ## Outputs this help screen
-	@grep -E '(^[a-zA-Z0-9\./_-]+:.*?##.*$$)|(^##)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}{printf "\033[32m%-30s\033[0m %s\n", $$1, $$2}' | sed -e 's/\[32m##/[33m/'
+	@$(GREP) -E '(^[a-zA-Z0-9\./_-]+:.*?##.*$$)|(^##)' $(MAKEFILE_LIST) | $(AWK) 'BEGIN {FS = ":.*?## "}{printf "\033[32m%-30s\033[0m %s\n", $$1, $$2}' | $(SED) -e 's/\[32m##/[33m/'
 
 start: bake up logs ## Start the app
 
@@ -149,6 +154,12 @@ php-cs-fixer-fix: php-cs-fixer
 ollama: ## Run ollama cli, pass the parameter "c=" to run a given command; example: make ollama c='pull qwen3:14b'
 	@$(eval c ?=)
 	@$(OLLAMA) $(c)
+
+ollama-pull: ## Pull the agent Ollama models currently assigned in the .env file
+	@for model in $$($(GREP) -oP "^OLLAMA_AGENT_.*_MODEL=[\"']?\K.*?(?=[\"']?$$)" .env | $(SORT) -u); do \
+		$(ECHO) Pulling $$model...; \
+		$(OLLAMA) pull $$model; \
+	done
 
 skills: ## Run skills cli. Pass the parameter "c=" to run a given command; example: make skills c='add phaserjs/phaser'
 	@$(eval c ?=)

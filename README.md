@@ -19,9 +19,14 @@ A résumé and job application engineering system.
     - Once started, Docker logging will continue in the current shell. When all services are healthy, the application is ready to accept commands in another shell.
 4. Within the `content/pii` directory, create and populate `education_history.md`, `extras.md`, `personal_info.md`, and `work_history.md` with your own information; refer to the corresponding sample files for guidance.
 5. Within the `content/archetypes` directory, create and populate at least 2–3 of your own git-ignored files with your own archetypes; refer to the corresponding sample files for guidance. Keep these archetypes aligned with the content you've added in `content/pii/work_history.md`.
-6. **TODO** Ollama model pull instructions...
-7. **TODO** Google AI Studio instructions...
-8. To create a general-purpose resume based only on `content/pii/`:
+6. Pull the required agent models used by the Ollama platform: `make ollama-pull`.
+7. Open a web browser and navigate to https://aistudio.google.com/api-keys and click the _Create API key_ button.
+    1. Create a new project or select an existing one.
+    2. Copy the API key and save it in the git-ignored `.env.local` file as:
+        ```dotenv
+        GEMINI_API_KEY=<gemini_api_key>
+        ```
+8. Generate a general-purpose resume based only on `content/pii/` and output to `var/resume_draft.md`:
     ```shell
     make resume-draft c='var/resume_draft.md' # Ollama
     make resume-draft c='var/resume_draft.md --platform gemini' # Gemini
@@ -29,7 +34,55 @@ A résumé and job application engineering system.
 
 ## Usage
 
-**TODO** Usage instructions...
+> [!TIP]
+> Use `make help` to reference available make targets and descriptions.
+
+The app is composed of five commands (some of which are optional). They are designed to run in a sequence but are left to be run independently, for two main reasons:
+
+1. Workflow flexibility.
+2. Unreliability of free-tier and local model service/output.
+
+### 1. Resume Archetype Selector (Optional)
+
+> [!TIP]
+> `make resume-arch c='--help'`
+
+**TODO**
+
+### 2. Resume Drafter
+
+> [!TIP]
+> `make resume-draft c='--help'`
+
+**TODO**
+
+### 3. Resume Checkers
+
+These agent commands are designed to provide checks and feedback for a resume. Generated feedback can then be used with [step 4](#4-resume-editor).
+
+> [!NOTE]
+> These may also be used as standalone commands to check a hand-crafted resume.
+
+#### 3.1. Resume Fact Checker
+
+> [!TIP]
+> `make resume-fc c='--help'`
+
+**TODO**
+
+#### 3.2. Resume Job Alignment Checker (Optional)
+
+> [!TIP]
+> `make resume-jac c='--help'`
+
+**TODO**
+
+### 4. Resume Editor
+
+> [!TIP]
+> `make resume-edit c='--help'`
+
+**TODO**
 
 ## Content Structure
 
