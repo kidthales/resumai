@@ -55,7 +55,7 @@ Generate the final edited resume strictly adhering to the following Markdown sch
 {{ bullet point list of education history, optimized for the provided revisions }}
 
 {{ if pii.extras exists }}
-## Projects & Volunteering
+## Extracurricular
 
 {{ bullet point list of extra information, optimized for the provided revisions }}
 {{ end if }}

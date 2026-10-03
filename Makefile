@@ -41,7 +41,7 @@ fresh-start: ## Start the app with fresh images
 
 stop: down ## Stop the app
 
-resume-arch: ## Select resume archetype for a job description, pass the parameter "c=" to specify options and the JD path, example: make resume-archetype-select c='var/jd.txt'
+resume-arch: ## Select resume archetype for a job description, pass the parameter "c=" to specify options and the JD path, example: make resume-arch c='var/jd.txt'
 	@$(eval c ?=)
 	@$(SYMFONY) app:resume:archetype:select $(c)
 
@@ -49,15 +49,15 @@ resume-draft: ## Draft resume optionally tailored to job description and archety
 	@$(eval c ?=)
 	@$(SYMFONY) app:resume:draft $(c)
 
-resume-fc: ## Fact-check resume, pass the parameter "c=" to specify options and the input/output paths, example: make resume-fact-check c='var/resume_draft.md var/resume_draft_fc.md'
+resume-fc: ## Fact-check resume, pass the parameter "c=" to specify options and the input/output paths, example: make resume-fc c='var/resume_draft.md var/resume_fc.md'
 	@$(eval c ?=)
 	@$(SYMFONY) app:resume:fact-check $(c)
 
-resume-jac: ## Check resume for job alignment, pass the parameter "c=" to specify options and the input/output paths, example: make resume-job-alignment-check c='var/resume_draft.md var/jd.txt var/resume_draft_jac.md'
+resume-jac: ## Check resume for job alignment, pass the parameter "c=" to specify options and the input/output paths, example: make resume-jac c='var/resume_draft.md var/jd.txt var/resume_jac.md'
 	@$(eval c ?=)
 	@$(SYMFONY) app:resume:job-alignment-check $(c)
 
-resume-edit: ## Edit resume with fact-check and optional job-alignment-check, pass the parameter "c=" to specify options and the input/output paths, example: make resume-edit c='var/resume_draft.md var/resume_draft_fc.md var/resume_edit.md'
+resume-edit: ## Edit resume with fact-check and optional job-alignment-check, pass the parameter "c=" to specify options and the input/output paths, example: make resume-edit c='var/resume_draft.md var/resume_fc.md var/resume_edit.md'
 	@$(eval c ?=)
 	@$(SYMFONY) app:resume:edit $(c)
 
@@ -155,5 +155,5 @@ skills: ## Run skills cli. Pass the parameter "c=" to run a given command; examp
 	@$(NPX) skills $(c)
 
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
-own: ## On Linux, set yourself as owner of files created by the Docker container
+own: ## On Linux, set yourself as owner of files created by the Docker containers
 	@$(CD_DOCKER_COMP) run --quiet --rm php chown -R $$(id -u):$$(id -g) .

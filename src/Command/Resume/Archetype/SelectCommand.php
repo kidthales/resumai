@@ -92,7 +92,7 @@ final readonly class SelectCommand
             $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeArchetypeSelectionOutputPath), $thinkingText);
             $this->filesystem->dumpFile($resolvedResumeArchetypeSelectionOutputPath, $sanitizedResultText);
 
-            $io->success(\sprintf('Resume archetype selection generated and written to %s.', $resolvedResumeArchetypeSelectionOutputPath));
+            $io->success(\sprintf('Resume archetype selection generated and written to %s.', $resumeArchetypeSelectionOutputPath));
         }
 
         return Command::SUCCESS;
