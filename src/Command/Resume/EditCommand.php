@@ -23,7 +23,6 @@ declare(strict_types=1);
 namespace App\Command\Resume;
 
 use App\Command\CallAgentAndStreamExecutionProgressTrait;
-use App\Console\Transformer\DefinitionListTransformer;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeEditorLocator;
 use Symfony\Component\Console\Attribute\Argument;
@@ -41,14 +40,13 @@ use function Symfony\Component\String\u;
     name: 'app:resume:edit',
     description: 'Edit a resume with a fact-check report and an optional job-alignment report',
 )]
-final readonly class EditCommand
+final class EditCommand
 {
     use CallAgentAndStreamExecutionProgressTrait;
 
     public function __construct(
-        private ResumeEditorLocator $resumeEditorLocator,
-        private Filesystem $filesystem,
-        private DefinitionListTransformer $definitionListTransformer,
+        private readonly ResumeEditorLocator $resumeEditorLocator,
+        private readonly Filesystem $filesystem,
     ) {
     }
 
@@ -88,19 +86,16 @@ final readonly class EditCommand
         $model = $this->resumeEditorLocator->getModelByPlatform($normalizedAgentPlatform);
         $modelParams = $this->resumeEditorLocator->getModelParamsByPlatform($normalizedAgentPlatform);
 
-        self::callAgentAndStreamExecutionProgress(
+        $result = $this->callAgentAndStreamExecutionProgress(
+            $io,
             $agent,
             $this->buildAgentInput($resume, $resumeFactCheck, $resumeJobAlignmentCheck),
             $model,
-            $modelParams,
-            $io,
-            $this->definitionListTransformer,
-            $resultText,
-            $thinkingText
+            $modelParams
         );
 
-        $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeOutputPath), $thinkingText);
-        $this->filesystem->dumpFile($resolvedResumeOutputPath, $this->sanitizeResultText($resultText));
+        $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeOutputPath), $result->thinking);
+        $this->filesystem->dumpFile($resolvedResumeOutputPath, $this->sanitizeResultText($result->result));
 
         $io->success(\sprintf('Resume edit generated and written to %s.', $resumeOutputPath));
 

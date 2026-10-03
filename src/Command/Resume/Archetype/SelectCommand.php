@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Command\Resume\Archetype;
 
 use App\Command\CallAgentAndStreamExecutionProgressTrait;
-use App\Console\Transformer\DefinitionListTransformer;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeArchetypeSelectorLocator;
 use Symfony\Component\Console\Attribute\Argument;
@@ -23,14 +22,13 @@ use function Symfony\Component\String\u;
     name: 'app:resume:archetype:select',
     description: 'Select a suitable resume archetype for a given job description',
 )]
-final readonly class SelectCommand
+final class SelectCommand
 {
     use CallAgentAndStreamExecutionProgressTrait;
 
     public function __construct(
-        private ResumeArchetypeSelectorLocator $resumeArchetypeSelectorLocator,
-        private Filesystem $filesystem,
-        private DefinitionListTransformer $definitionListTransformer,
+        private readonly ResumeArchetypeSelectorLocator $resumeArchetypeSelectorLocator,
+        private readonly Filesystem $filesystem,
     ) {
     }
 
@@ -64,24 +62,21 @@ final readonly class SelectCommand
         $model = $this->resumeArchetypeSelectorLocator->getModelByPlatform($normalizedAgentPlatform);
         $modelParams = $this->resumeArchetypeSelectorLocator->getModelParamsByPlatform($normalizedAgentPlatform);
 
-        self::callAgentAndStreamExecutionProgress(
+        $result = $this->callAgentAndStreamExecutionProgress(
+            $io,
             $agent,
             $this->buildAgentInput($jobDescription),
             $model,
-            $modelParams,
-            $io,
-            $this->definitionListTransformer,
-            $resultText,
-            $thinkingText
+            $modelParams
         );
 
         $io->section('Result');
 
-        $sanitizedResultText = $this->sanitizeResultText($resultText);
+        $sanitizedResultText = $this->sanitizeResultText($result->result);
         $parsedResult = $this->parseResultText($sanitizedResultText);
 
-        if ('' !== $thinkingText) {
-            $io->writeln(\sprintf('<fg=gray>%s</fg=gray>', $thinkingText));
+        if ('' !== $result->thinking) {
+            $io->writeln(\sprintf('<fg=gray>%s</fg=gray>', $result->thinking));
         }
 
         $io->outlineInfo(array_values($parsedResult));
@@ -89,7 +84,7 @@ final readonly class SelectCommand
         if (null === $resolvedResumeArchetypeSelectionOutputPath) {
             $io->success('Resume archetype selection generated.');
         } else {
-            $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeArchetypeSelectionOutputPath), $thinkingText);
+            $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeArchetypeSelectionOutputPath), $result->thinking);
             $this->filesystem->dumpFile($resolvedResumeArchetypeSelectionOutputPath, $sanitizedResultText);
 
             $io->success(\sprintf('Resume archetype selection generated and written to %s.', $resumeArchetypeSelectionOutputPath));

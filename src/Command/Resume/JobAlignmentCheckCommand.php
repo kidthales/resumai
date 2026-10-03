@@ -23,7 +23,6 @@ declare(strict_types=1);
 namespace App\Command\Resume;
 
 use App\Command\CallAgentAndStreamExecutionProgressTrait;
-use App\Console\Transformer\DefinitionListTransformer;
 use App\Filesystem\Filesystem;
 use App\Service\ResumeJobAlignmentCheckerLocator;
 use Symfony\Component\Console\Attribute\Argument;
@@ -41,14 +40,13 @@ use function Symfony\Component\String\u;
     name: 'app:resume:job-alignment-check',
     description: 'Check a resume for job alignment',
 )]
-final readonly class JobAlignmentCheckCommand
+final class JobAlignmentCheckCommand
 {
     use CallAgentAndStreamExecutionProgressTrait;
 
     public function __construct(
-        private ResumeJobAlignmentCheckerLocator $resumeJobAlignmentCheckerLocator,
-        private Filesystem $filesystem,
-        private DefinitionListTransformer $definitionListTransformer,
+        private readonly ResumeJobAlignmentCheckerLocator $resumeJobAlignmentCheckerLocator,
+        private readonly Filesystem $filesystem,
     ) {
     }
 
@@ -85,19 +83,16 @@ final readonly class JobAlignmentCheckCommand
         $model = $this->resumeJobAlignmentCheckerLocator->getModelByPlatform($normalizedAgentPlatform);
         $modelParams = $this->resumeJobAlignmentCheckerLocator->getModelParamsByPlatform($normalizedAgentPlatform);
 
-        self::callAgentAndStreamExecutionProgress(
+        $result = $this->callAgentAndStreamExecutionProgress(
+            $io,
             $agent,
             $this->buildAgentInput($resume, $jobDescription),
             $model,
-            $modelParams,
-            $io,
-            $this->definitionListTransformer,
-            $resultText,
-            $thinkingText
+            $modelParams
         );
 
-        $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeJobAlignmentCheckOutputPath), $thinkingText);
-        $this->filesystem->dumpFile($resolvedResumeJobAlignmentCheckOutputPath, $this->sanitizeResultText($resultText));
+        $this->filesystem->dumpFile(\sprintf('%s.thonk', $resolvedResumeJobAlignmentCheckOutputPath), $result->thinking);
+        $this->filesystem->dumpFile($resolvedResumeJobAlignmentCheckOutputPath, $this->sanitizeResultText($result->result));
 
         $io->success(\sprintf('Resume job-alignment-check generated and written to %s.', $resumeJobAlignmentCheckOutputPath));
 

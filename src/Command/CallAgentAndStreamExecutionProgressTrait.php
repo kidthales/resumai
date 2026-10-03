@@ -22,7 +22,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\Console\Transformer\DefinitionListTransformer;
+use App\Console\Transformer\DefinitionListTransformerAwareTrait;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Update\Progress;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
@@ -36,26 +36,24 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 trait CallAgentAndStreamExecutionProgressTrait
 {
+    use DefinitionListTransformerAwareTrait;
+
     /**
      * @throws \Symfony\AI\Agent\Exception\ExceptionInterface
      * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
      */
-    protected static function callAgentAndStreamExecutionProgress(
+    protected function callAgentAndStreamExecutionProgress(
+        SymfonyStyle $io,
         AgentInterface $agent,
         string $agentInput,
         string $model,
         array $modelParams,
-        SymfonyStyle $io,
-        DefinitionListTransformer $definitionListTransformer,
-        ?string &$resultText = '',
-        ?string &$thinkingText = '',
-        ?array &$messages = [],
-    ): void {
+    ): StreamedExecutionResult {
         $io->definitionList(
             $agent->getName(),
             new TableSeparator(),
             ['model' => $model],
-            ...$definitionListTransformer->transform($modelParams),
+            ...$this->definitionListTransformer->transform($modelParams),
         );
 
         $indicator = new ProgressIndicator($io);
@@ -89,5 +87,7 @@ trait CallAgentAndStreamExecutionProgressTrait
         }
 
         $indicator->finish('<info>Execution completed.</info>');
+
+        return new StreamedExecutionResult($resultText, $thinkingText, $messages);
     }
 }

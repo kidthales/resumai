@@ -37,47 +37,50 @@ A résumé and job application engineering system.
 > [!TIP]
 > Use `make help` to reference available make targets and descriptions.
 
-The app is composed of five commands (some of which are optional). They are designed to run in a sequence but are left to be run independently, for two main reasons:
+The app is composed of five commands (some of which are optional). The commands are designed to run in a sequence but are left to be run manually, for two reasons:
 
 1. Workflow flexibility.
-2. Unreliability of free-tier and local model service/output.
+2. Unreliability of free-tier and local LLM service/output.
 
-### 1. Resume Archetype Selector (Optional)
+### 1. Résumé Archetype Selector (Optional)
 
 > [!TIP]
 > `make resume-arch c='--help'`
 
 **TODO**
 
-### 2. Resume Drafter
+### 2. Résumé Drafter
 
 > [!TIP]
 > `make resume-draft c='--help'`
 
 **TODO**
 
-### 3. Resume Checkers
+> [!WARNING]
+> Calling the `resume_drafter` agent with a job description and no archetype may result in an increased amount of factually inaccurate output.
+
+### 3. Résumé Checkers
 
 These agent commands are designed to provide checks and feedback for a résumé. Generated feedback can then be used with [step 4](#4-resume-editor).
 
 > [!NOTE]
 > These may also be used as standalone commands to check a hand-crafted résumé.
 
-#### 3.1. Resume Fact Checker
+#### 3.1. Résumé Fact Checker
 
 > [!TIP]
 > `make resume-fc c='--help'`
 
 **TODO**
 
-#### 3.2. Resume Job Alignment Checker (Optional)
+#### 3.2. Résumé Job Alignment Checker (Optional)
 
 > [!TIP]
 > `make resume-jac c='--help'`
 
 **TODO**
 
-### 4. Resume Editor
+### 4. Résumé Editor
 
 > [!TIP]
 > `make resume-edit c='--help'`
@@ -110,6 +113,8 @@ resumai/
 
 ## Licenses
 
-Source code and content are licensed under the GNU Affero General Public License v3.0 or later. See [LICENSE](./LICENSE) for the full license text.
+Application source code and content are licensed under the GNU Affero General Public License v3.0 or later. See [LICENSE](./LICENSE) for the full license text.
 
 Docker FrankenPHP image is licensed under the MIT License. See [docker/php/LICENSE](./docker/php/LICENSE) for the full license text.
+
+Symfony is licensed under the MIT License. See https://github.com/symfony/symfony/blob/8.1/LICENSE for the full license text.
