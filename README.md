@@ -44,21 +44,25 @@ The app is composed of five commands (two of which are optional). The commands a
 
 ### 1. Résumé Archetype Selector (Optional)
 
-`make resume-arch c='path/to/job_description.md -o path/to/archetype_selection.json'`
+**TODO**
+
+`make resume-arch c='path/to/input/job_description.txt -o path/to/output/archetype_selection.json'`
 
 <img alt="Résumé Archetype Selector Flowchart" src="./.agents/flowcharts/resume_archetype_selector.svg" width="100%" />
-
-**TODO**
 
 > [!TIP]
 > `make resume-arch c='--help'`
 
 ### 2. Résumé Drafter
 
+**TODO**
+
+`make resume-draft c='path/to/output/resume_draft.md -j path/to/input/job_description.txt -a archetype_filename'`
+
+<img alt="Résumé Drafter Flowchart" src="./.agents/flowcharts/resume_drafter.svg" width="100%" />
+
 > [!TIP]
 > `make resume-draft c='--help'`
-
-**TODO**
 
 > [!WARNING]
 > Calling the `resume_drafter` agent with a job description and no archetype may result in an increased amount of factually inaccurate output.
@@ -72,24 +76,24 @@ These agent commands are designed to provide checks and feedback for a résumé.
 
 #### 3.1. Résumé Fact Checker
 
+**TODO**
+
 > [!TIP]
 > `make resume-fc c='--help'`
 
-**TODO**
-
 #### 3.2. Résumé Job Alignment Checker (Optional)
+
+**TODO**
 
 > [!TIP]
 > `make resume-jac c='--help'`
 
-**TODO**
-
 ### 4. Résumé Editor
+
+**TODO**
 
 > [!TIP]
 > `make resume-edit c='--help'`
-
-**TODO**
 
 ## Content Structure
 
