@@ -1,6 +1,8 @@
 /.agents/skills/
 /.idea/
+/.junie/
 /.vscode/
+/coverage/
 /node_modules/
 
 ###> symfony/framework-bundle ###
