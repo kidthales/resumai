@@ -1,6 +1,6 @@
 #syntax=docker/dockerfile:1
 
-FROM dunglas/frankenphp:1-php8.5 AS frankenphp_upstream
+FROM dunglas/frankenphp:1.12-php8.5 AS frankenphp_upstream
 
 FROM frankenphp_upstream AS app_base
 
