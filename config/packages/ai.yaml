@@ -3,21 +3,62 @@ ai:
         # Inference Platform configuration
         # see https://github.com/symfony/ai/tree/main/src/platform#platform-bridges
 
-        ollama:
-            http_client: ollama.client
-
     agent:
         # Agent configuration
         # see https://symfony.com/doc/current/ai/bundles/ai-bundle.html
 
-        resume_drafter:
+        resume_archetype_selector.ollama:
             platform: ai.platform.ollama
-            model: precision-qwen25-14
-            prompt: |
-                This document establishes the operational rules, candidate background references,
-                engineering archetypes, document generation workflows, and quality standards for
-                AI agents assisting **%env(default::APPLICANT_NAME)%** in generating resumes, cover letters,
-                and application materials for **%env(default::APPLICANT_ROLE)%** roles.
+            model: '%resume_archetype_selector.ollama.model%'
+            prompt: '%prompts.resume_archetype_selector%'
+            tools:
+                enabled: true
+                services:
+                    - service: App\AI\Agent\Toolbox\ArchetypeDirectoryTool
+        resume_archetype_selector.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_archetype_selector.gemini.model%'
+            prompt: '%prompts.resume_archetype_selector%'
+            tools:
+                enabled: true
+                services:
+                    - service: App\AI\Agent\Toolbox\ArchetypeDirectoryTool
+
+        resume_drafter.ollama:
+            platform: ai.platform.ollama
+            model: '%resume_drafter.ollama.model%'
+            prompt: '%prompts.resume_drafter%'
+        resume_drafter.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_drafter.gemini.model%'
+            prompt: '%prompts.resume_drafter%'
+
+        resume_fact_checker.ollama:
+            platform: ai.platform.ollama
+            model: '%resume_fact_checker.ollama.model%'
+            prompt: '%prompts.resume_fact_checker%'
+        resume_fact_checker.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_fact_checker.gemini.model%'
+            prompt: '%prompts.resume_fact_checker%'
+
+        resume_job_alignment_checker.ollama:
+            platform: ai.platform.ollama
+            model: '%resume_job_alignment_checker.ollama.model%'
+            prompt: '%prompts.resume_job_alignment_checker%'
+        resume_job_alignment_checker.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_job_alignment_checker.gemini.model%'
+            prompt: '%prompts.resume_job_alignment_checker%'
+
+        resume_editor.ollama:
+            platform: ai.platform.ollama
+            model: '%resume_editor.ollama.model%'
+            prompt: '%prompts.resume_editor%'
+        resume_editor.gemini:
+            platform: ai.platform.gemini
+            model: '%resume_editor.gemini.model%'
+            prompt: '%prompts.resume_editor%'
 
     store:
         # Store configuration

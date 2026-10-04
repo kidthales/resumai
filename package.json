@@ -2,12 +2,13 @@
   "name": "@kidthales/resumai",
   "version": "0.1.0",
   "description": "A resume and job application engineering system",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-or-later",
   "author": "Tristan Bonsor <kidthales@agogpixel.com>",
   "private": true,
   "type": "module",
   "devDependencies": {
     "prettier": "^3.9.8",
+    "puppeteer": "^25.12.0",
     "skills": "^1.7.0"
   }
 }
