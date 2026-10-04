@@ -37,17 +37,21 @@ A résumé and job application engineering system.
 > [!TIP]
 > Use `make help` to reference available make targets and descriptions.
 
-The app is composed of five commands (some of which are optional). The commands are designed to run in a sequence but are left to be run manually, for two reasons:
+The app is composed of five commands (two of which are optional). The commands are designed to run in a sequence but are left to be run manually, for two reasons:
 
 1. Workflow flexibility.
 2. Unreliability of free-tier and local LLM service/output.
 
 ### 1. Résumé Archetype Selector (Optional)
 
-> [!TIP]
-> `make resume-arch c='--help'`
+`make resume-arch c='path/to/job_description.md -o path/to/archetype_selection.json'`
+
+<img alt="Résumé Archetype Selector Flowchart" src="./.agents/flowcharts/resume_archetype_selector.svg" width="100%" />
 
 **TODO**
+
+> [!TIP]
+> `make resume-arch c='--help'`
 
 ### 2. Résumé Drafter
 
