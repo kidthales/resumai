@@ -7,6 +7,7 @@ ECHO            = echo
 GREP            = grep
 SED             = sed
 SORT            = sort
+TOUCH           = touch
 
 # Docker containers
 PHP_CONT    := $(CD_DOCKER_COMP) exec php
@@ -68,7 +69,7 @@ resume-edit: ## Edit resume with fact-check and optional job-alignment-check, pa
 ## —— Docker 🐳 ————————————————————————————————————————————————————————————————
 bake: ## Bakes the Docker images, pass the parameter "c=" to specify options and targets, example: make bake c='--pull --no-cache php node'
 	@$(eval c ?=)
-	@$(CD_DOCKER) && touch -a .env && docker buildx bake --allow=fs.read=.. -f .env -f docker-bake.hcl $(c)
+	@$(CD_DOCKER) && $(TOUCH) -a .env && docker buildx bake --allow=fs.read=.. -f .env -f docker-bake.hcl $(c)
 
 up: ## Start the docker hub in detached mode (no logs)
 	@$(CD_DOCKER_COMP) up --detach
@@ -84,7 +85,7 @@ test: ## Start tests with phpunit, pass the parameter "c=" to add options to php
 	@$(eval c ?=)
 	@$(CD_DOCKER_COMP) exec -e APP_ENV=test -e XDEBUG_MODE=coverage php bin/phpunit $(c)
 
-cov: ## ## Start tests with phpunit and generate coverage report for the project
+cov: ## ## Start tests with phpunit and generate coverage reports for the project
 cov: c=--testdox --display-all-issues --coverage-text --show-uncovered-for-coverage-text --coverage-html coverage/html --coverage-jsonl coverage/jsonl --coverage-clover coverage/clover.xml
 cov: test
 

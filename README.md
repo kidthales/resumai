@@ -26,7 +26,7 @@ A résumé and job application engineering system.
         ```dotenv
         GEMINI_API_KEY=<gemini_api_key>
         ```
-8. Generate a general-purpose résumé based only on `content/pii/` and output to `var/resume_draft.md`:
+8. Generate a general-purpose résumé based only on `content/pii/` and write the result to `var/resume_draft.md`:
     ```shell
     make resume-draft c='var/resume_draft.md' # Ollama
     make resume-draft c='var/resume_draft.md --platform gemini' # Gemini
