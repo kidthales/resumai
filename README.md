@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/kidthales/resumai/actions/workflows/ci.yaml/badge.svg)](https://github.com/kidthales/resumai/actions/workflows/ci.yaml)
 
-A résumé generation system that leverages LLMs.
+A resume generation system that leverages LLMs.
 
 ## Requirements
 
@@ -10,7 +10,7 @@ A résumé generation system that leverages LLMs.
 - [GNU Make](https://www.gnu.org/software/make/) and [GNU Bash](https://www.gnu.org/software/bash/)
 - [Git](https://git-scm.com/install/)
 
-## Getting Started
+## Quickstart
 
 1. `git clone https://github.com/kidthales/resumai.git`
 2. `cd resumai`
@@ -26,7 +26,7 @@ A résumé generation system that leverages LLMs.
         ```dotenv
         GEMINI_API_KEY=<gemini_api_key>
         ```
-8. Generate a general-purpose résumé based only on `content/pii/` and write the result to `var/resume_draft.md`:
+8. Generate a general-purpose resume based only on `content/pii/` and write the result to `var/resume_draft.md`:
     ```shell
     make resume-draft c='var/resume_draft.md' # Ollama
     make resume-draft c='var/resume_draft.md --platform gemini' # Gemini
@@ -42,24 +42,24 @@ The app is composed of five commands (two of which are optional). The commands a
 1. Workflow flexibility.
 2. Unreliability of free-tier and local LLM service/output.
 
-### 1. Résumé Archetype Selector (Optional)
+### 1. Resume Archetype Selector (Optional)
 
 **TODO**
 
 `make resume-arch c='path/to/input/job_description.txt --output path/to/output/archetype_selection.json'`
 
-<img alt="Résumé Archetype Selector Flowchart" src="./.agents/flowcharts/resume_archetype_selector.svg" width="100%" />
+<img alt="Resume Archetype Selector Flowchart" src="./.agents/flowcharts/resume_archetype_selector.svg" width="100%" />
 
 > [!TIP]
 > `make resume-arch c='--help'`
 
-### 2. Résumé Drafter
+### 2. Resume Drafter
 
 **TODO**
 
 `make resume-draft c='path/to/output/resume_draft.md --job path/to/input/job_description.txt --archetype archetype_filename'`
 
-<img alt="Résumé Drafter Flowchart" src="./.agents/flowcharts/resume_drafter.svg" width="100%" />
+<img alt="Resume Drafter Flowchart" src="./.agents/flowcharts/resume_drafter.svg" width="100%" />
 
 > [!TIP]
 > `make resume-draft c='--help'`
@@ -67,42 +67,42 @@ The app is composed of five commands (two of which are optional). The commands a
 > [!WARNING]
 > Calling the `resume_drafter` agent with a job description and no archetype may result in an increased amount of factually inaccurate output.
 
-### 3. Résumé Checkers
+### 3. Resume Checkers
 
-These agent commands are designed to provide checks and feedback for a résumé. Generated feedback can then be used with [step 4](#4-resume-editor).
+These agent commands are designed to provide checks and feedback for a resume. Generated feedback can then be used with [step 4](#4-resume-editor).
 
 > [!NOTE]
-> These may also be used as standalone commands to check a hand-crafted résumé.
+> These may also be used as standalone commands to check a hand-crafted resume.
 
-#### 3.1. Résumé Fact Checker
+#### 3.1. Resume Fact Checker
 
 **TODO**
 
 `make resume-fc c='path/to/input/resume.md path/to/output/resume_fact_check.md'`
 
-<img alt="Résumé Fact Checker Flowchart" src="./.agents/flowcharts/resume_fact_checker.svg" width="100%" />
+<img alt="Resume Fact Checker Flowchart" src="./.agents/flowcharts/resume_fact_checker.svg" width="100%" />
 
 > [!TIP]
 > `make resume-fc c='--help'`
 
-#### 3.2. Résumé Job Alignment Checker (Optional)
+#### 3.2. Resume Job Alignment Checker (Optional)
 
 **TODO**
 
 `make resume-jac c='path/to/input/resume.md path/to/input/job_description.txt path/to/output/resume_job_alignment_check.md'`
 
-<img alt="Résumé Job Alignment Checker Flowchart" src="./.agents/flowcharts/resume_job_alignment_checker.svg" width="100%" />
+<img alt="Resume Job Alignment Checker Flowchart" src="./.agents/flowcharts/resume_job_alignment_checker.svg" width="100%" />
 
 > [!TIP]
 > `make resume-jac c='--help'`
 
-### 4. Résumé Editor
+### 4. Resume Editor
 
 **TODO**
 
 `make resume-edit c='path/to/input/resume.md path/to/input/resume_fact_check.md path/to/output/resume.md --job path/to/input/resume_job_alignment_check.md'`
 
-<img alt="Résumé Editor Flowchart" src="./.agents/flowcharts/resume_editor.svg" width="100%" />
+<img alt="Resume Editor Flowchart" src="./.agents/flowcharts/resume_editor.svg" width="100%" />
 
 > [!TIP]
 > `make resume-edit c='--help'`
