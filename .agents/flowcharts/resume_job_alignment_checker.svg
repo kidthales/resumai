@@ -8,7 +8,7 @@
    version="1.1"
    id="svg1"
    inkscape:version="1.4 (86a8ad7, 2024-10-11)"
-   sodipodi:docname="resume_drafter.svg"
+   sodipodi:docname="resume_job_alignment_checker.svg"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
@@ -17,7 +17,7 @@
    xmlns:cc="http://creativecommons.org/ns#"
    xmlns:dc="http://purl.org/dc/elements/1.1/">
   <title
-     id="title1">Resume Drafter</title>
+     id="title1">Resume Job Alignment Checker</title>
   <sodipodi:namedview
      id="namedview1"
      pagecolor="#ffffff"
@@ -36,7 +36,7 @@
      inkscape:window-x="-9"
      inkscape:window-y="-9"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer1"
+     inkscape:current-layer="g4"
      showgrid="true">
     <inkscape:grid
        id="grid1"
@@ -103,33 +103,48 @@
      y="0"
      inkscape:label="Background" />
   <g
-     inkscape:label="Resume Drafter Flowchart"
+     inkscape:label="Resume Job Alignment Checker Flowchart"
      inkscape:groupmode="layer"
      id="layer1"
      transform="translate(-26.458286,-110.93696)">
     <g
        id="g4"
-       inkscape:label="Resume"
-       transform="translate(1.6320418e-6,15.875)">
+       inkscape:label="Resume Job Alignment Check"
+       transform="translate(-0.05762041,9.2737949)">
       <rect
-         style="fill:#bbddbb;fill-opacity:1;stroke:#000000;stroke-width:0.123404;stroke-dasharray:none"
+         style="fill:#bbddbb;fill-opacity:1;stroke:#000000;stroke-width:0.257254;stroke-dasharray:none"
          id="rect1-8-1-8"
-         width="21.092627"
-         height="5.3125648"
-         x="168.08444"
-         y="120.37497" />
+         width="26.316313"
+         height="18.504528"
+         x="162.84737"
+         y="120.38835" />
       <text
          xml:space="preserve"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.54675px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.266005;stroke-dasharray:none"
-         x="177.63873"
+         x="175.00705"
          y="125.02272"
          id="text18"
-         transform="scale(1.0053761,0.99465263)"><tspan
+         transform="scale(1.0053761,0.99465264)"><tspan
            sodipodi:role="line"
            style="font-size:3.54675px;stroke-width:0.266005"
-           x="177.63873"
+           x="175.00705"
            y="125.02272"
-           id="tspan19">Resume</tspan></text>
+           id="tspan19">Resume</tspan><tspan
+           sodipodi:role="line"
+           style="font-size:3.54675px;stroke-width:0.266005"
+           x="175.00705"
+           y="129.45616"
+           id="tspan8">Job</tspan><tspan
+           sodipodi:role="line"
+           style="font-size:3.54675px;stroke-width:0.266005"
+           x="175.00705"
+           y="133.8896"
+           id="tspan9">Alignment</tspan><tspan
+           sodipodi:role="line"
+           style="font-size:3.54675px;stroke-width:0.266005"
+           x="175.00705"
+           y="138.32303"
+           id="tspan10">Check</tspan></text>
     </g>
     <g
        id="g2"
@@ -138,24 +153,24 @@
       <text
          xml:space="preserve"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52777px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-dasharray:none;stroke-opacity:1"
-         x="141.55208"
+         x="138.90625"
          y="128.32292"
          id="text32"><tspan
            sodipodi:role="line"
            id="tspan32"
            style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-opacity:1"
-           x="141.55208"
+           x="138.90625"
            y="128.32292">Output</tspan></text>
       <path
-         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.519121;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#marker33)"
-         d="m 125.67708,129.64584 h 24.87323 6.21828"
+         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.476778;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#marker33)"
+         d="m 125.67708,129.64584 h 20.98104 5.24523"
          id="path32-4" />
     </g>
     <g
        id="g9"
        style="stroke-width:0.264583;stroke-dasharray:none"
        transform="translate(-0.37821404,-3.213056)"
-       inkscape:label="Resume Drafter">
+       inkscape:label="Resume Job Alignment Checker">
       <rect
          style="fill:#eebbdd;fill-opacity:1;stroke:#000000;stroke-width:0.396874;stroke-dasharray:none"
          id="rect1-8-1-1-4"
@@ -166,47 +181,30 @@
          transform="rotate(45)" />
       <text
          xml:space="preserve"
-         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:2.83739px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.266005;stroke-dasharray:none"
-         x="89.476822"
-         y="139.65352"
-         id="text23-5"
-         transform="scale(1.0053761,0.99465264)"><tspan
-           sodipodi:role="line"
-           id="tspan23-2"
-           style="font-size:2.83739px;stroke-width:0.266005"
-           x="89.476822"
-           y="139.65352">- personal_info.md</tspan><tspan
-           sodipodi:role="line"
-           style="font-size:2.83739px;stroke-width:0.266005"
-           x="89.476822"
-           y="143.20026"
-           id="tspan24-7">- work_history.md</tspan><tspan
-           sodipodi:role="line"
-           style="font-size:2.83739px;stroke-width:0.266005"
-           x="89.476822"
-           y="146.74699"
-           id="tspan8">- education_history.md</tspan><tspan
-           sodipodi:role="line"
-           style="font-size:2.83739px;stroke-width:0.266005"
-           x="89.476822"
-           y="150.29373"
-           id="tspan9">- extras.md</tspan></text>
-      <text
-         xml:space="preserve"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52777px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.264583;stroke-dasharray:none"
-         x="108.47869"
-         y="129.64633"
+         x="107.53445"
+         y="134.18181"
          id="text3"><tspan
            sodipodi:role="line"
            style="stroke-width:0.264583"
-           x="108.47869"
-           y="129.64633"
+           x="107.53445"
+           y="134.18181"
            id="tspan5">Resume</tspan><tspan
            sodipodi:role="line"
            style="stroke-width:0.264583"
-           x="108.47869"
-           y="134.05605"
-           id="tspan6">Drafter</tspan></text>
+           x="107.53445"
+           y="138.59152"
+           id="tspan6">Job</tspan><tspan
+           sodipodi:role="line"
+           style="stroke-width:0.264583"
+           x="107.53445"
+           y="143.00124"
+           id="tspan3">Alignment</tspan><tspan
+           sodipodi:role="line"
+           style="stroke-width:0.264583"
+           x="107.53445"
+           y="147.41095"
+           id="tspan4">Checker</tspan></text>
     </g>
     <g
        id="g3"
@@ -222,21 +220,21 @@
            id="tspan28"
            style="text-align:center;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-opacity:1"
            x="67.46875"
-           y="128.32292">Optional Inputs</tspan></text>
+           y="128.32292">Inputs</tspan></text>
       <path
-         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.433285;stroke-dasharray:0.433285, 0.433285;stroke-dashoffset:0;stroke-opacity:1"
+         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.433285;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
          d="m 41.010414,126.609 v 17.24609 4.31151"
          id="path32-2"
          transform="translate(7.9375005,-9.2604216)" />
       <path
-         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.568393;stroke-dasharray:0.568393, 0.568393;stroke-dashoffset:0;stroke-opacity:1;marker-end:url(#Triangle)"
+         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.568393;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;marker-end:url(#Triangle)"
          d="m 49.164558,129.64584 h 29.678445 7.419605"
          id="path32" />
     </g>
     <g
        id="g7"
        transform="translate(25.135418,116.22863)"
-       inkscape:label="Archetype">
+       inkscape:label="Resume">
       <rect
          style="fill:#cceeff;fill-opacity:1;stroke:#000000;stroke-width:0.20681;stroke-dasharray:none"
          id="rect1-8-19-2"
@@ -254,7 +252,7 @@
            style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
            x="15.874995"
            y="35.906799"
-           id="tspan7">Archetype</tspan></text>
+           id="tspan7">Resume</tspan></text>
     </g>
     <g
        id="g28"
@@ -290,7 +288,7 @@
     <rdf:RDF>
       <cc:Work
          rdf:about="">
-        <dc:title>Resume Drafter</dc:title>
+        <dc:title>Resume Job Alignment Checker</dc:title>
       </cc:Work>
     </rdf:RDF>
   </metadata>
