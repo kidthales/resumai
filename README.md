@@ -55,7 +55,7 @@ Given a **job description**, this agent compares it against a set of candidate *
 }
 ```
 
-<img alt="Resume Archetype Selector Flowchart" src="./.agents/flowcharts/resume_archetype_selector.svg" width="100%" />
+<img alt="Resume Archetype Selector Flowchart" src="content/flowcharts/resume_archetype_selector.svg" width="100%" />
 
 > [!NOTE]
 > If at least one non-sample file exists in `content/archetypes/`, all sample files will be excluded from the `list_archetypes` tool call result. A non-sample file is any `*.md` that does not end with `*.sample.md`.
@@ -77,7 +77,7 @@ make resume-arch c='path/to/input/job_description.txt --output path/to/output/ar
 
 This agent encapsulates the contents of `content/pii/` within its system prompt and will use that information to generate a **resume**. You may provide optional inputs, **job description** and/or **archetype**, to help tailor the generated **resume**.
 
-<img alt="Resume Drafter Flowchart" src="./.agents/flowcharts/resume_drafter.svg" width="100%" />
+<img alt="Resume Drafter Flowchart" src="content/flowcharts/resume_drafter.svg" width="100%" />
 
 Examples:
 
@@ -109,7 +109,7 @@ These agent commands are designed to provide checks and feedback for a resume. G
 
 Similar to the `resume_drafter` agent, this agent encapsulates the contents of `content/pii/` within its system prompt but will use that information to **fact-check** a **resume** and generate a report.
 
-<img alt="Resume Fact Checker Flowchart" src="./.agents/flowcharts/resume_fact_checker.svg" width="100%" />
+<img alt="Resume Fact Checker Flowchart" src="content/flowcharts/resume_fact_checker.svg" width="100%" />
 
 Examples:
 
@@ -124,7 +124,7 @@ make resume-fc c='path/to/input/resume.md path/to/output/resume_fact_check.md'
 
 This agent will perform a **job-alignment-check** for a given **resume** and **job description**, generating a report.
 
-<img alt="Resume Job Alignment Checker Flowchart" src="./.agents/flowcharts/resume_job_alignment_checker.svg" width="100%" />
+<img alt="Resume Job Alignment Checker Flowchart" src="content/flowcharts/resume_job_alignment_checker.svg" width="100%" />
 
 Examples:
 
@@ -139,7 +139,7 @@ make resume-jac c='path/to/input/resume.md path/to/input/job_description.txt pat
 
 This agent is responsible for accepting a **resume**, **resume fact-check**, and optionally a **resume job-alignment-check**, to generate an edited **resume** that is (hopefully) corrected and aligned.
 
-<img alt="Resume Editor Flowchart" src="./.agents/flowcharts/resume_editor.svg" width="100%" />
+<img alt="Resume Editor Flowchart" src="content/flowcharts/resume_editor.svg" width="100%" />
 
 Examples:
 
