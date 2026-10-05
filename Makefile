@@ -1,18 +1,18 @@
 # Executables (local)
-AWK             = awk
-CD_DOCKER       = cd docker
-DOCKER_COMP     = docker compose
-CD_DOCKER_COMP := $(CD_DOCKER) && $(DOCKER_COMP)
-ECHO            = echo
-GREP            = grep
-SED             = sed
-SORT            = sort
-TOUCH           = touch
+AWK            = awk
+CD_DOCKER      = cd docker
+CD_DOCKER_COMP = cd docker && docker compose
+ECHO           = echo
+GREP           = grep
+SED            = sed
+SORT           = sort
+TOUCH          = touch
 
 # Docker containers
 PHP_CONT    := $(CD_DOCKER_COMP) exec php
-NODE_CONT   := $(CD_DOCKER_COMP) exec node
+NODE_CONT   := $(CD_DOCKER_COMP) run --rm --quiet node
 OLLAMA_CONT := $(CD_DOCKER_COMP) exec ollama
+PANDOC_CONT := $(CD_DOCKER_COMP) run --rm --quiet pandoc
 
 # Executables
 PHP      := $(PHP_CONT) php
@@ -21,6 +21,7 @@ SYMFONY  := $(PHP) bin/console
 NPM      := $(NODE_CONT) npm
 NPX      := $(NODE_CONT) npx
 OLLAMA   := $(OLLAMA_CONT) ollama
+PANDOC   := $(PANDOC_CONT)
 
 # Misc
 .DEFAULT_GOAL = help
@@ -31,7 +32,7 @@ OLLAMA   := $(OLLAMA_CONT) ollama
                 composer vendor \
                 sf cc \
                 npm node_modules npx \
-                lint fix prettier prettier-check prettier-fix php-cs-fixer php-cs-fixer-check php-cs-fixer-fix \
+                lint fix prettier prettier-check prettier-fix php-cs-fixer php-cs-fixer-check php-cs-fixer-fix eslint eslint-check eslint-fix \
                 ollama ollama-pull skills \
                 own
 
@@ -65,6 +66,12 @@ resume-jac: ## Check resume for job alignment, pass the parameter "c=" to specif
 resume-edit: ## Edit resume with fact-check and optional job-alignment-check, pass the parameter "c=" to specify options and the input/output paths, example: make resume-edit c='var/resume_draft.md var/resume_fc.md var/resume_edit.md'
 	@$(eval c ?=)
 	@$(SYMFONY) app:resume:edit $(c)
+
+resume-export: ## Export resume markdown to docx, html, and pdf formats. Pass the parameter "c=" to specify resume input path and optional css style path (used with html/pdf exports), example: make resume-export c='var/resume.md'
+	@$(eval c ?=)
+	@$(PANDOC) $(word 1,$(c)) -o $(patsubst %.md,%.docx,$(word 1,$(c)))
+	@$(PANDOC) $(word 1,$(c)) -o $(patsubst %.md,%.html,$(word 1,$(c))) -f gfm -s -c $(or $(word 2,$(c)),assets/styles/resumes/resume.sample.css) --embed-resources --standalone
+	@$(NODE) node bin/render-pdf.mjs $(patsubst %.md,%.html,$(word 1,$(c))) $(patsubst %.md,%.pdf,$(word 1,$(c)))
 
 ## —— Docker 🐳 ————————————————————————————————————————————————————————————————
 bake: ## Bakes the Docker images, pass the parameter "c=" to specify options and targets, example: make bake c='--pull --no-cache php node'
@@ -121,21 +128,21 @@ npx: ## Run npx, pass the parameter "c=" to run a given command, example: make n
 
 ## —— Lint 🧹 ——————————————————————————————————————————————————————————————————
 lint: ## Check files for lint errors
-	@$(MAKE) -j 2 --output-sync prettier-check php-cs-fixer-check
+	@$(MAKE) -j 3 --output-sync prettier-check php-cs-fixer-check eslint-check
 
 fix: ## Fix files with lint errors
-	@$(MAKE) -j 2 --output-sync prettier-fix php-cs-fixer-fix
+	@$(MAKE) -j 3 --output-sync prettier-fix php-cs-fixer-fix eslint-fix
 
 prettier: ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
 	@$(eval c ?=)
 	@$(NPX) prettier $(c)
 
 prettier-check: ## Check files with prettier
-prettier-check: c=--check .
+prettier-check: c=--check "**/*.{css,json,md,yaml}"
 prettier-check: prettier
 
 prettier-fix: ## Fix files with prettier
-prettier-fix: c=--write .
+prettier-fix: c=--write "**/*.{css,json,md,yaml}"
 prettier-fix: prettier
 
 php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given command, example: make php-cs-fixer c='check'
@@ -150,6 +157,18 @@ php-cs-fixer-fix: ## Fix files with php-cs-fixer
 php-cs-fixer-fix: c=fix
 php-cs-fixer-fix: php-cs-fixer
 
+eslint: ## Run eslint, pass the parameter "c=" to run a given command, example: make eslint c='--cache .'
+	@$(eval c ?=)
+	@$(NPX) eslint $(c)
+
+eslint-check: ## Check files with eslint
+eslint-check: c=.
+eslint-check: eslint
+
+eslint-fix: ## Fix files with eslint
+eslint-fix: c=--fix .
+eslint-fix: eslint
+
 ## —— AI 🤖 ————————————————————————————————————————————————————————————————————
 ollama: ## Run ollama cli, pass the parameter "c=" to run a given command; example: make ollama c='pull qwen3:14b'
 	@$(eval c ?=)
@@ -161,9 +180,14 @@ ollama-pull: ## Pull the agent Ollama models currently assigned in the .env file
 		$(OLLAMA) pull $$model; \
 	done
 
-skills: ## Run skills cli. Pass the parameter "c=" to run a given command; example: make skills c='add phaserjs/phaser'
+skills: ## Run skills cli, pass the parameter "c=" to run a given command; example: make skills c='add phaserjs/phaser'
 	@$(eval c ?=)
 	@$(NPX) skills $(c)
+
+## —— Pandoc 🐼 ————————————————————————————————————————————————————————————————
+pandoc: ## Run pandoc, pass the parameter "c=" to specify arguments; example: make pandoc c='var/resume.md -o var/resume.docx'
+	@$(eval c ?=)
+	@$(PANDOC) $(c)
 
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker containers

@@ -1,7 +1,11 @@
 version: 2
 updates:
   - package-ecosystem: docker
-    directory: /
+    directories:
+      - /docker
+      - /docker/node
+      - /docker/ollama
+      - /docker/php
     schedule:
       interval: weekly
     commit-message:

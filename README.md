@@ -28,8 +28,24 @@ A resume generation system that leverages LLMs.
         ```
 8. Generate a general-purpose resume, based only on `content/pii/`, and write the result to `var/resume_draft.md`:
     ```shell
-    make resume-draft c='var/resume_draft.md' # Ollama
-    make resume-draft c='var/resume_draft.md --platform gemini' # Gemini
+    # Ollama
+    make resume-draft c='var/resume_draft.md'
+
+    # Gemini
+    make resume-draft c='var/resume_draft.md --platform gemini'
+    ```
+    Generate a resume tailored to an archetype created at `content/archetypes/archetype.md`, using `content/pii/`, and write the result to `var/resume_draft.archetype.md`:
+    ```shell
+    # Ollama
+    make resume-draft c='var/resume_draft.archetype.md --archetype archetype.md'
+
+    # Gemini
+    make resume-draft c='var/resume_draft.archetype.md --archetype archetype.md --platform gemini'
+    ```
+9. Export the resume to `docx`, `html`, and `pdf` formats:
+    ```shell
+    # Creates var/resume_draft.docx, var/resume_draft.html, and var/resume_draft.pdf
+    make resume-export c='var/resume_draft.md'
     ```
 
 ## Usage
@@ -44,6 +60,8 @@ The app is composed of five commands (two of which are optional). The commands a
 
 All commands support the `--platform ollama` and `--platform gemini` flags; by default, the `ollama` platform is used.
 
+Finally, support is provided to export the generated Markdown files via Pandoc.
+
 ### 1. Resume Archetype Selector (Optional)
 
 Given a **job description**, this agent compares it against a set of candidate **archetypes** (Markdown files located in `content/archetypes/`), and determines the best **archetype** (with corresponding rationale) that satisfies the **job description**. The agent will attempt to provide structured output (JSON), for example:
@@ -55,7 +73,7 @@ Given a **job description**, this agent compares it against a set of candidate *
 }
 ```
 
-<img alt="Resume Archetype Selector Flowchart" src="./.agents/flowcharts/resume_archetype_selector.svg" width="100%" />
+<img alt="Resume Archetype Selector Flowchart" src="assets/flowcharts/resume_archetype_selector.svg" width="100%" />
 
 > [!NOTE]
 > If at least one non-sample file exists in `content/archetypes/`, all sample files will be excluded from the `list_archetypes` tool call result. A non-sample file is any `*.md` that does not end with `*.sample.md`.
@@ -77,7 +95,7 @@ make resume-arch c='path/to/input/job_description.txt --output path/to/output/ar
 
 This agent encapsulates the contents of `content/pii/` within its system prompt and will use that information to generate a **resume**. You may provide optional inputs, **job description** and/or **archetype**, to help tailor the generated **resume**.
 
-<img alt="Resume Drafter Flowchart" src="./.agents/flowcharts/resume_drafter.svg" width="100%" />
+<img alt="Resume Drafter Flowchart" src="assets/flowcharts/resume_drafter.svg" width="100%" />
 
 Examples:
 
@@ -109,7 +127,7 @@ These agent commands are designed to provide checks and feedback for a resume. G
 
 Similar to the `resume_drafter` agent, this agent encapsulates the contents of `content/pii/` within its system prompt but will use that information to **fact-check** a **resume** and generate a report.
 
-<img alt="Resume Fact Checker Flowchart" src="./.agents/flowcharts/resume_fact_checker.svg" width="100%" />
+<img alt="Resume Fact Checker Flowchart" src="assets/flowcharts/resume_fact_checker.svg" width="100%" />
 
 Examples:
 
@@ -124,7 +142,7 @@ make resume-fc c='path/to/input/resume.md path/to/output/resume_fact_check.md'
 
 This agent will perform a **job-alignment-check** for a given **resume** and **job description**, generating a report.
 
-<img alt="Resume Job Alignment Checker Flowchart" src="./.agents/flowcharts/resume_job_alignment_checker.svg" width="100%" />
+<img alt="Resume Job Alignment Checker Flowchart" src="assets/flowcharts/resume_job_alignment_checker.svg" width="100%" />
 
 Examples:
 
@@ -139,7 +157,7 @@ make resume-jac c='path/to/input/resume.md path/to/input/job_description.txt pat
 
 This agent is responsible for accepting a **resume**, **resume fact-check**, and optionally a **resume job-alignment-check**, to generate an edited **resume** that is (hopefully) corrected and aligned.
 
-<img alt="Resume Editor Flowchart" src="./.agents/flowcharts/resume_editor.svg" width="100%" />
+<img alt="Resume Editor Flowchart" src="assets/flowcharts/resume_editor.svg" width="100%" />
 
 Examples:
 
@@ -153,6 +171,29 @@ make resume-edit c='path/to/input/resume.md path/to/input/resume_fact_check.md p
 
 > [!TIP]
 > `make resume-edit c='--help'`
+
+### Resume Export
+
+While Markdown is fine for editing/revising/iterating resume content, we usually want the final result as a PDF or DOCX. Additionally, the ability to customize or otherwise style how the converted Markdown is presented is a critical feature.
+
+To support the above, we leverage Pandoc with two main export paths:
+
+1. Markdown → DOCX
+2. Markdown → HTML
+
+To perform the HTML → PDF conversion, a [script](./bin/render-pdf.mjs) that leverages [puppeteer](https://www.npmjs.com/package/puppeteer) and headless chromium is used.
+
+To add custom styles, create git-ignored CSS files in `assets/styles/resumes/` and refer to `resume.sample.css` for guidance. By default, `resume.sample.css` is applied.
+
+Examples:
+
+```shell
+# Creates var/resume.{docx,html,pdf} files, html & pdf have default styles applied
+make resume-export c='var/resume.md'
+
+# Creates var/resume.{docx,html,pdf} files, html & pdf have custom styles applied
+make resume-export c='var/resume.md assets/styles/resumes/custom.css'
+```
 
 ## Content Structure
 
@@ -185,3 +226,7 @@ Application source code and content are licensed under the GNU Affero General Pu
 Docker FrankenPHP image is licensed under the MIT License. See [docker/php/LICENSE](./docker/php/LICENSE) for the full license text.
 
 Symfony is licensed under the MIT License. See https://github.com/symfony/symfony/blob/8.1/LICENSE for the full license text.
+
+---
+
+[.](https://www.youtube.com/watch?v=sl0GGrA73Es)
