@@ -36,7 +36,7 @@
      inkscape:window-x="-9"
      inkscape:window-y="-9"
      inkscape:window-maximized="1"
-     inkscape:current-layer="svg1"
+     inkscape:current-layer="layer1"
      showgrid="true">
     <inkscape:grid
        id="grid1"
@@ -103,7 +103,7 @@
      y="0"
      inkscape:label="Background" />
   <g
-     inkscape:label="Resume Archetype Selector Flowchart"
+     inkscape:label="Resume Drafter Flowchart"
      inkscape:groupmode="layer"
      id="layer1"
      transform="translate(-26.458286,-110.93696)">
@@ -154,7 +154,8 @@
     <g
        id="g9"
        style="stroke-width:0.264583;stroke-dasharray:none"
-       transform="translate(-0.37821404,-3.213056)">
+       transform="translate(-0.37821404,-3.213056)"
+       inkscape:label="Resume Drafter">
       <rect
          style="fill:#eebbdd;fill-opacity:1;stroke:#000000;stroke-width:0.396874;stroke-dasharray:none"
          id="rect1-8-1-1-4"
@@ -235,30 +236,25 @@
     <g
        id="g7"
        transform="translate(25.135418,116.22863)"
-       inkscape:label="Archetype Filename">
+       inkscape:label="Archetype">
       <rect
-         style="fill:#cceeff;fill-opacity:1;stroke:#000000;stroke-width:0.294558;stroke-dasharray:none"
+         style="fill:#cceeff;fill-opacity:1;stroke:#000000;stroke-width:0.20681;stroke-dasharray:none"
          id="rect1-8-19-2"
          width="28.809704"
-         height="10.436131"
+         height="5.1444645"
          x="1.4701471"
          y="32.085251" />
       <text
          xml:space="preserve"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.264583;stroke-dasharray:none"
-         x="15.874996"
+         x="15.874995"
          y="35.906799"
          id="text1-4"><tspan
            sodipodi:role="line"
            style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
-           x="15.874996"
+           x="15.874995"
            y="35.906799"
-           id="tspan2-5">Archetype</tspan><tspan
-           sodipodi:role="line"
-           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
-           x="15.874996"
-           y="40.316525"
-           id="tspan7">Filename</tspan></text>
+           id="tspan7">Archetype</tspan></text>
     </g>
     <g
        id="g28"

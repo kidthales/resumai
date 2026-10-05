@@ -78,6 +78,10 @@ These agent commands are designed to provide checks and feedback for a résumé.
 
 **TODO**
 
+`make resume-fc c='path/to/input/resume.md path/to/output/resume_fact_check.md'`
+
+<img alt="Résumé Fact Checker Flowchart" src="./.agents/flowcharts/resume_fact_checker.svg" width="100%" />
+
 > [!TIP]
 > `make resume-fc c='--help'`
 
