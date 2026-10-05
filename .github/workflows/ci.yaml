@@ -96,7 +96,7 @@ jobs:
       - name: Prettier
         id: prettier
         background: true
-        run: npx prettier --check .
+        run: npx prettier --check "**/*.{css,json,md,yaml}"
       - name: PHP CS Fixer
         id: php-cs-fixer
         background: true

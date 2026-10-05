@@ -1,0 +1,202 @@
+/*
+ * ResumAI
+ * Copyright (C) 2026  Tristan Bonsor
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/* Modern Executive Resume Stylesheet (HTML5 & Print PDF) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+    --primary-color: #0f172a; /* Deep Slate / Almost Black */
+    --secondary-color: #1e293b; /* Slate Heading */
+    --text-color: #334155; /* Charcoal Body Text */
+    --muted-color: #64748b; /* Muted Metadata / Subheadings */
+    --accent-color: #1d4ed8; /* Royal Blue Links */
+    --border-color: #cbd5e1; /* Subtle Slate Dividers */
+    --highlight-bg: #f1f5f9; /* Soft Badge Background */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial;
+    --font-mono: 'JetBrains Mono';
+}
+
+@page {
+    size: letter;
+    margin: 0.45in 0.55in;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans), sans-serif;
+    color: var(--text-color);
+    background-color: #ffffff;
+    line-height: 1.45;
+    font-size: 9.75pt;
+    margin: 0 auto;
+    padding: 0;
+    max-width: 8.5in;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Candidate Header */
+h1 {
+    font-size: 20pt;
+    font-weight: 800;
+    color: var(--primary-color);
+    letter-spacing: -0.025em;
+    margin: 0 0 4pt 0;
+    line-height: 1.1;
+    text-align: left;
+}
+
+/* Sub-header / Contact info */
+h1 + p {
+    font-size: 9.25pt;
+    color: var(--muted-color);
+    font-weight: 500;
+    margin: 0 0 12pt 0;
+    line-height: 1.4;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4pt;
+}
+
+h1 + p a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+h1 + p a:hover {
+    text-decoration: underline;
+}
+
+/* Section Headings */
+h2 {
+    font-size: 10.75pt;
+    font-weight: 700;
+    color: var(--primary-color);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1.25pt solid var(--border-color);
+    padding-bottom: 2.5pt;
+    margin: 12pt 0 6pt 0;
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+/* Company / Institution Headings */
+h3 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: var(--secondary-color);
+    margin: 8pt 0 2pt 0;
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+/* Job Title / Date line */
+h3 + p {
+    font-size: 9.5pt;
+    color: var(--muted-color);
+    font-weight: 600;
+    margin: 0 0 4pt 0;
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+/* Role / Job Blocks (Avoid awkward mid-job page splits) */
+.role-block,
+article,
+section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+/* Lists and Bullet Points */
+ul {
+    margin: 3pt 0 6pt 0;
+    padding-left: 14pt;
+}
+
+li {
+    margin-bottom: 3pt;
+    line-height: 1.38;
+    color: var(--text-color);
+}
+
+li::marker {
+    color: var(--muted-color);
+}
+
+strong {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+p {
+    margin: 3pt 0 4pt 0;
+}
+
+/* Code & Tech Tags */
+code {
+    font-family: var(--font-mono), monospace;
+    font-size: 8.5pt;
+    background-color: var(--highlight-bg);
+    padding: 1pt 3pt;
+    border-radius: 2pt;
+    color: var(--secondary-color);
+}
+
+/* Print Specific Refinements */
+@media print {
+    body {
+        max-width: none;
+        font-size: 9.5pt;
+        line-height: 1.38;
+    }
+
+    h1 {
+        font-size: 19pt;
+    }
+
+    h2 {
+        font-size: 10.5pt;
+        margin-top: 10pt;
+        margin-bottom: 5pt;
+        border-bottom: 1pt solid var(--border-color);
+    }
+
+    h3 {
+        font-size: 10pt;
+        margin-top: 7pt;
+        margin-bottom: 1.5pt;
+    }
+
+    li {
+        margin-bottom: 2.2pt;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    a {
+        color: var(--accent-color);
+        text-decoration: none;
+    }
+}

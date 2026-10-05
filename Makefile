@@ -67,6 +67,12 @@ resume-edit: ## Edit resume with fact-check and optional job-alignment-check, pa
 	@$(eval c ?=)
 	@$(SYMFONY) app:resume:edit $(c)
 
+resume-export: ## Export resume markdown to docx, html, and pdf formats. Pass the parameter "c=" to specify resume input path and optional css style path (used with html/pdf exports), example: make resume-export c='var/resume.md'
+	@$(eval c ?=)
+	@$(PANDOC) $(word 1,$(c)) -o $(patsubst %.md,%.docx,$(word 1,$(c)))
+	@$(PANDOC) $(word 1,$(c)) -o $(patsubst %.md,%.html,$(word 1,$(c))) -f gfm -s -c $(or $(word 2,$(c)),assets/styles/resumes/resume.sample.css) --embed-resources --standalone
+	@$(NODE) node bin/render-pdf.mjs $(patsubst %.md,%.html,$(word 1,$(c))) $(patsubst %.md,%.pdf,$(word 1,$(c)))
+
 ## —— Docker 🐳 ————————————————————————————————————————————————————————————————
 bake: ## Bakes the Docker images, pass the parameter "c=" to specify options and targets, example: make bake c='--pull --no-cache php node'
 	@$(eval c ?=)
@@ -156,11 +162,11 @@ eslint: ## Run eslint, pass the parameter "c=" to run a given command, example: 
 	@$(NPX) eslint $(c)
 
 eslint-check: ## Check files with eslint
-eslint-check: c=--cache .
+eslint-check: c=.
 eslint-check: eslint
 
 eslint-fix: ## Fix files with eslint
-eslint-fix: c=--cache --fix .
+eslint-fix: c=--fix .
 eslint-fix: eslint
 
 ## —— AI 🤖 ————————————————————————————————————————————————————————————————————

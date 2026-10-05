@@ -28,8 +28,24 @@ A resume generation system that leverages LLMs.
         ```
 8. Generate a general-purpose resume, based only on `content/pii/`, and write the result to `var/resume_draft.md`:
     ```shell
-    make resume-draft c='var/resume_draft.md' # Ollama
-    make resume-draft c='var/resume_draft.md --platform gemini' # Gemini
+    # Ollama
+    make resume-draft c='var/resume_draft.md'
+
+    # Gemini
+    make resume-draft c='var/resume_draft.md --platform gemini'
+    ```
+    Generate a resume tailored to an archetype created at `content/archetypes/archetype.md`, using `content/pii/`, and write the result to `var/resume_draft.archetype.md`:
+    ```shell
+    # Ollama
+    make resume-draft c='var/resume_draft.archetype.md --archetype archetype.md'
+
+    # Gemini
+    make resume-draft c='var/resume_draft.archetype.md --archetype archetype.md --platform gemini'
+    ```
+9. Export the resume to `docx`, `html`, and `pdf` formats:
+    ```shell
+    # Creates var/resume_draft.docx, var/resume_draft.html, and var/resume_draft.pdf
+    make resume-export c='var/resume_draft.md'
     ```
 
 ## Usage
@@ -43,6 +59,8 @@ The app is composed of five commands (two of which are optional). The commands a
 2. Unreliability of free-tier and local LLM service/output. _**TODO:** Service issues can be mitigated with backoff/retry logic._
 
 All commands support the `--platform ollama` and `--platform gemini` flags; by default, the `ollama` platform is used.
+
+Finally, support is provided to export the generated Markdown files via Pandoc.
 
 ### 1. Resume Archetype Selector (Optional)
 
@@ -154,6 +172,29 @@ make resume-edit c='path/to/input/resume.md path/to/input/resume_fact_check.md p
 > [!TIP]
 > `make resume-edit c='--help'`
 
+### Resume Export
+
+While Markdown is fine for editing/revising/iterating resume content, we usually want the final result as a PDF or DOCX. Additionally, the ability to customize or otherwise style how the converted Markdown is presented is a critical feature.
+
+To support the above, we leverage Pandoc with two main export paths:
+
+1. Markdown → DOCX
+2. Markdown → HTML
+
+To perform the HTML → PDF conversion, a [script](./bin/render-pdf.mjs) that leverages [puppeteer](https://www.npmjs.com/package/puppeteer) and headless chromium is used.
+
+To add custom styles, create git-ignored CSS files in `assets/styles/resumes/` and refer to `resume.sample.css` for guidance. By default, `resume.sample.css` is applied.
+
+Examples:
+
+```shell
+# Creates var/resume.{docx,html,pdf} files, html & pdf have default styles applied
+make resume-export c='var/resume.md'
+
+# Creates var/resume.{docx,html,pdf} files, html & pdf have custom styles applied
+make resume-export c='var/resume.md assets/styles/resumes/custom.css'
+```
+
 ## Content Structure
 
 ```
@@ -185,3 +226,7 @@ Application source code and content are licensed under the GNU Affero General Pu
 Docker FrankenPHP image is licensed under the MIT License. See [docker/php/LICENSE](./docker/php/LICENSE) for the full license text.
 
 Symfony is licensed under the MIT License. See https://github.com/symfony/symfony/blob/8.1/LICENSE for the full license text.
+
+---
+
+[.](https://www.youtube.com/watch?v=sl0GGrA73Es)
