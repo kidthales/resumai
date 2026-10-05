@@ -1,7 +1,6 @@
 services:
   php:
     image: ${IMAGES_PREFIX:-resumai}:dev-php-${IMAGES_TAG:-latest}
-    hostname: resumai-dev-php
     environment:
       FRANKENPHP_SITE_CONFIG: hot_reload
       FRANKENPHP_WORKER_CONFIG: watch
@@ -20,7 +19,6 @@ services:
   node:
     image: ${IMAGES_PREFIX:-resumai}:dev-node-${IMAGES_TAG:-latest}
     restart: unless-stopped
-    hostname: resumai-dev-node
     environment:
       TZ: ${APP_TIMEZONE:-UTC}
     volumes:
@@ -30,12 +28,22 @@ services:
   ollama:
     image: ${IMAGES_PREFIX:-resumai}:dev-ollama-${IMAGES_TAG:-latest}
     restart: unless-stopped
-    hostname: resumai-dev-ollama
     environment:
       TZ: ${APP_TIMEZONE:-UTC}
     volumes:
       - ollama_storage:/root/.ollama
       - ../modelfiles:/modelfiles:ro
+    tty: true
+
+  pandoc:
+    image: pandoc/core:3.11
+    restart: no
+    environment:
+      TZ: ${APP_TIMEZONE:-UTC}
+    volumes:
+      - ../:/data
+    command:
+      - --help
     tty: true
 
 volumes:

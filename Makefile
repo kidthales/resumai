@@ -1,18 +1,18 @@
 # Executables (local)
-AWK             = awk
-CD_DOCKER       = cd docker
-DOCKER_COMP     = docker compose
-CD_DOCKER_COMP := $(CD_DOCKER) && $(DOCKER_COMP)
-ECHO            = echo
-GREP            = grep
-SED             = sed
-SORT            = sort
-TOUCH           = touch
+AWK            = awk
+CD_DOCKER      = cd docker
+CD_DOCKER_COMP = cd docker && docker compose
+ECHO           = echo
+GREP           = grep
+SED            = sed
+SORT           = sort
+TOUCH          = touch
 
 # Docker containers
 PHP_CONT    := $(CD_DOCKER_COMP) exec php
 NODE_CONT   := $(CD_DOCKER_COMP) exec node
 OLLAMA_CONT := $(CD_DOCKER_COMP) exec ollama
+PANDOC_CONT := $(DOCKER_COMP) run --rm --quiet pandoc
 
 # Executables
 PHP      := $(PHP_CONT) php
@@ -21,6 +21,7 @@ SYMFONY  := $(PHP) bin/console
 NPM      := $(NODE_CONT) npm
 NPX      := $(NODE_CONT) npx
 OLLAMA   := $(OLLAMA_CONT) ollama
+PANDOC   := $(PANDOC_CONT)
 
 # Misc
 .DEFAULT_GOAL = help
@@ -161,9 +162,14 @@ ollama-pull: ## Pull the agent Ollama models currently assigned in the .env file
 		$(OLLAMA) pull $$model; \
 	done
 
-skills: ## Run skills cli. Pass the parameter "c=" to run a given command; example: make skills c='add phaserjs/phaser'
+skills: ## Run skills cli, pass the parameter "c=" to run a given command; example: make skills c='add phaserjs/phaser'
 	@$(eval c ?=)
 	@$(NPX) skills $(c)
+
+## —— Pandoc 🐼 ————————————————————————————————————————————————————————————————
+pandoc: ## Run pandoc, pass the parameter "c=" to specify arguments; example: make pandoc c='var/resume.md -o var/resume.docx'
+	@$(eval c ?=)
+	@$(PANDOC) $(c)
 
 ## —— Troubleshooting 🔎 ———————————————————————————————————————————————————————
 own: ## On Linux, set yourself as owner of files created by the Docker containers
