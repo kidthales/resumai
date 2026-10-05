@@ -4,6 +4,7 @@
 /.vscode/
 /coverage/
 /node_modules/
+/.eslintcache
 
 ###> symfony/framework-bundle ###
 /.env.local

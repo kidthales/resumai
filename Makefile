@@ -10,9 +10,9 @@ TOUCH          = touch
 
 # Docker containers
 PHP_CONT    := $(CD_DOCKER_COMP) exec php
-NODE_CONT   := $(CD_DOCKER_COMP) exec node
+NODE_CONT   := $(CD_DOCKER_COMP) run --rm --quiet node
 OLLAMA_CONT := $(CD_DOCKER_COMP) exec ollama
-PANDOC_CONT := $(DOCKER_COMP) run --rm --quiet pandoc
+PANDOC_CONT := $(CD_DOCKER_COMP) run --rm --quiet pandoc
 
 # Executables
 PHP      := $(PHP_CONT) php
@@ -32,7 +32,7 @@ PANDOC   := $(PANDOC_CONT)
                 composer vendor \
                 sf cc \
                 npm node_modules npx \
-                lint fix prettier prettier-check prettier-fix php-cs-fixer php-cs-fixer-check php-cs-fixer-fix \
+                lint fix prettier prettier-check prettier-fix php-cs-fixer php-cs-fixer-check php-cs-fixer-fix eslint eslint-check eslint-fix \
                 ollama ollama-pull skills \
                 own
 
@@ -122,21 +122,21 @@ npx: ## Run npx, pass the parameter "c=" to run a given command, example: make n
 
 ## —— Lint 🧹 ——————————————————————————————————————————————————————————————————
 lint: ## Check files for lint errors
-	@$(MAKE) -j 2 --output-sync prettier-check php-cs-fixer-check
+	@$(MAKE) -j 3 --output-sync prettier-check php-cs-fixer-check eslint-check
 
 fix: ## Fix files with lint errors
-	@$(MAKE) -j 2 --output-sync prettier-fix php-cs-fixer-fix
+	@$(MAKE) -j 3 --output-sync prettier-fix php-cs-fixer-fix eslint-fix
 
 prettier: ## Run prettier, pass the parameter "c=" to run a given command, example: make prettier c='--check .'
 	@$(eval c ?=)
 	@$(NPX) prettier $(c)
 
 prettier-check: ## Check files with prettier
-prettier-check: c=--check .
+prettier-check: c=--check "**/*.{css,json,md,yaml}"
 prettier-check: prettier
 
 prettier-fix: ## Fix files with prettier
-prettier-fix: c=--write .
+prettier-fix: c=--write "**/*.{css,json,md,yaml}"
 prettier-fix: prettier
 
 php-cs-fixer: ## Run php-cs-fixer, pass the parameter "c=" to run a given command, example: make php-cs-fixer c='check'
@@ -150,6 +150,18 @@ php-cs-fixer-check: php-cs-fixer
 php-cs-fixer-fix: ## Fix files with php-cs-fixer
 php-cs-fixer-fix: c=fix
 php-cs-fixer-fix: php-cs-fixer
+
+eslint: ## Run eslint, pass the parameter "c=" to run a given command, example: make eslint c='--cache .'
+	@$(eval c ?=)
+	@$(NPX) eslint $(c)
+
+eslint-check: ## Check files with eslint
+eslint-check: c=--cache .
+eslint-check: eslint
+
+eslint-fix: ## Fix files with eslint
+eslint-fix: c=--cache --fix .
+eslint-fix: eslint
 
 ## —— AI 🤖 ————————————————————————————————————————————————————————————————————
 ollama: ## Run ollama cli, pass the parameter "c=" to run a given command; example: make ollama c='pull qwen3:14b'

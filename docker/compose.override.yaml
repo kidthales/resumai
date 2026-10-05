@@ -18,11 +18,13 @@ services:
 
   node:
     image: ${IMAGES_PREFIX:-resumai}:dev-node-${IMAGES_TAG:-latest}
-    restart: unless-stopped
+    restart: no
     environment:
       TZ: ${APP_TIMEZONE:-UTC}
     volumes:
       - ../:/app
+    command:
+      - --help
     tty: true
 
   ollama:
