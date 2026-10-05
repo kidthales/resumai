@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="160.07291mm"
+   height="86.866211mm"
+   viewBox="0 0 160.07291 86.866207"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4 (86a8ad7, 2024-10-11)"
+   sodipodi:docname="resume_editor.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <title
+     id="title1">Resume Editor</title>
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     inkscape:zoom="2.823319"
+     inkscape:cx="403.24879"
+     inkscape:cy="202.06714"
+     inkscape:window-width="2560"
+     inkscape:window-height="1351"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1"
+     showgrid="true">
+    <inkscape:grid
+       id="grid1"
+       units="px"
+       originx="-26.458333"
+       originy="-110.93696"
+       spacingx="0.26458333"
+       spacingy="0.26458334"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="5"
+       enabled="true"
+       visible="true" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1">
+    <marker
+       style="overflow:visible"
+       id="marker33"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path33" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135" />
+    </marker>
+  </defs>
+  <rect
+     style="fill:#ffffeb;fill-opacity:1;stroke:none;stroke-width:0;stroke-dasharray:none"
+     id="rect3"
+     width="160.07291"
+     height="86.783333"
+     x="-6.7762636e-21"
+     y="0"
+     inkscape:label="Background" />
+  <g
+     inkscape:label="Resume Editor Flowchart"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-26.458333,-110.93696)">
+    <g
+       id="g4"
+       inkscape:label="Resume"
+       transform="translate(-0.05762342,15.888377)">
+      <rect
+         style="fill:#bbddbb;fill-opacity:1;stroke:#000000;stroke-width:0.130437;stroke-dasharray:none"
+         id="rect1-8-1-8"
+         width="23.739674"
+         height="5.2735543"
+         x="162.78397"
+         y="120.32494" />
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.54675px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.266005;stroke-dasharray:none"
+         x="173.74852"
+         y="125.00927"
+         id="text18"
+         transform="scale(1.0053761,0.99465264)"><tspan
+           sodipodi:role="line"
+           style="font-size:3.54675px;stroke-width:0.266005"
+           x="173.74852"
+           y="125.00927"
+           id="tspan10">Resume</tspan></text>
+    </g>
+    <g
+       id="g2"
+       inkscape:label="Output"
+       transform="translate(9.260412,9.260422)">
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52777px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-dasharray:none;stroke-opacity:1"
+         x="138.90625"
+         y="128.32292"
+         id="text32"><tspan
+           sodipodi:role="line"
+           id="tspan32"
+           style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-opacity:1"
+           x="138.90625"
+           y="128.32292">Output</tspan></text>
+      <path
+         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.533525;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#marker33)"
+         d="m 119.0625,129.64584 h 26.27271 6.56814"
+         id="path32-4" />
+    </g>
+    <g
+       id="g9"
+       style="stroke-width:0.264583;stroke-dasharray:none"
+       transform="translate(-0.37821404,-3.213056)"
+       inkscape:label="Resume Editor">
+      <rect
+         style="fill:#eebbdd;fill-opacity:1;stroke:#000000;stroke-width:0.297656;stroke-dasharray:none"
+         id="rect1-8-1-1-4"
+         width="29.467979"
+         height="29.467979"
+         x="162.06381"
+         y="9.5882235"
+         transform="rotate(45)" />
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52777px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.264583;stroke-dasharray:none"
+         x="107.53445"
+         y="139.47348"
+         id="text3"><tspan
+           sodipodi:role="line"
+           style="stroke-width:0.264583"
+           x="107.53445"
+           y="139.47348"
+           id="tspan5">Resume</tspan><tspan
+           sodipodi:role="line"
+           style="stroke-width:0.264583"
+           x="107.53445"
+           y="143.88319"
+           id="tspan4">Editor</tspan></text>
+    </g>
+    <g
+       id="g14"
+       inkscape:label="Optional Input">
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52777px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-dasharray:none;stroke-opacity:1"
+         x="116.41666"
+         y="168.01044"
+         id="text28-7"><tspan
+           sodipodi:role="line"
+           id="tspan28-6"
+           style="text-align:center;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-opacity:1"
+           x="116.41666"
+           y="168.01044">Optional</tspan><tspan
+           sodipodi:role="line"
+           style="text-align:center;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-opacity:1"
+           x="116.41666"
+           y="172.42015"
+           id="tspan14">Input</tspan></text>
+      <path
+         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.398962;stroke-dasharray:0.398962, 0.398962;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Triangle)"
+         d="m 107.54213,160.11787 v 14.62198 3.65549"
+         id="path32-2-1" />
+    </g>
+    <g
+       id="g28-8"
+       transform="translate(50.469249,54.041198)"
+       inkscape:label="Resume Job Alignment Check">
+      <rect
+         style="fill:#cceeff;fill-opacity:1;stroke:#000000;stroke-width:0.396853;stroke-dasharray:none"
+         id="rect1-8-19-8"
+         width="28.707314"
+         height="19.010979"
+         x="42.531761"
+         y="124.55257" />
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.264583;stroke-dasharray:none"
+         x="56.885414"
+         y="128.32292"
+         id="text1-2"><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
+           x="56.885414"
+           y="128.32292"
+           id="tspan2-4">Resume</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
+           x="56.885414"
+           y="132.73265"
+           id="tspan11-5">Job</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
+           x="56.885414"
+           y="137.14236"
+           id="tspan12">Alignment</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
+           x="56.885414"
+           y="141.55209"
+           id="tspan13">Check</tspan></text>
+    </g>
+    <g
+       id="g3"
+       inkscape:label="Input"
+       transform="translate(-7.9375016,9.260422)">
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52777px;font-family:'Noto Sans';-inkscape-font-specification:'Noto Sans';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-dasharray:none;stroke-opacity:1"
+         x="67.46875"
+         y="128.32292"
+         id="text28"><tspan
+           sodipodi:role="line"
+           id="tspan28"
+           style="text-align:center;text-anchor:middle;fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.264583;stroke-opacity:1"
+           x="67.46875"
+           y="128.32292">Inputs</tspan></text>
+      <path
+         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.433285;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+         d="m 41.010414,126.609 v 17.24609 4.31151"
+         id="path32-2"
+         transform="translate(7.9375005,-9.2604216)" />
+      <path
+         style="fill:#444444;fill-opacity:1;stroke:#444444;stroke-width:0.615058;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;marker-end:url(#Triangle)"
+         d="m 49.164558,129.64584 h 34.751689 8.687915"
+         id="path32" />
+    </g>
+    <g
+       id="g28"
+       transform="translate(-15.875,23.812507)"
+       inkscape:label="Resume Fact Check">
+      <rect
+         style="fill:#cceeff;fill-opacity:1;stroke:#000000;stroke-width:0.294462;stroke-dasharray:none"
+         id="rect1-8-19"
+         width="28.809704"
+         height="10.429357"
+         x="42.480564"
+         y="124.50137" />
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.264583;stroke-dasharray:none"
+         x="56.885414"
+         y="128.32292"
+         id="text1"><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
+           x="56.885414"
+           y="128.32292"
+           id="tspan2">Resume</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
+           x="56.885414"
+           y="132.73265"
+           id="tspan11">Fact Check</tspan></text>
+    </g>
+    <g
+       id="g7"
+       transform="translate(25.135415,89.623092)"
+       inkscape:label="Resume">
+      <rect
+         style="fill:#cceeff;fill-opacity:1;stroke:#000000;stroke-width:0.20681;stroke-dasharray:none"
+         id="rect1-8-19-2"
+         width="28.809704"
+         height="5.1444645"
+         x="1.4701471"
+         y="32.085251" />
+      <text
+         xml:space="preserve"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.264583;stroke-dasharray:none"
+         x="15.874995"
+         y="35.906799"
+         id="text1-4"><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:3.52778px;font-family:Michroma;-inkscape-font-specification:Michroma;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke-width:0.264583"
+           x="15.874995"
+           y="35.906799"
+           id="tspan7">Resume</tspan></text>
+    </g>
+  </g>
+  <metadata
+     id="metadata1">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>Resume Editor</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>
