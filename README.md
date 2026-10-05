@@ -89,6 +89,10 @@ These agent commands are designed to provide checks and feedback for a résumé.
 
 **TODO**
 
+`make resume-jac c='path/to/input/resume.md path/to/input/job_description.txt path/to/output/resume_job_alignment_check.md'`
+
+<img alt="Résumé Job Alignment Checker Flowchart" src="./.agents/flowcharts/resume_job_alignment_checker.svg" width="100%" />
+
 > [!TIP]
 > `make resume-jac c='--help'`
 
