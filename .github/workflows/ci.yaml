@@ -96,11 +96,15 @@ jobs:
       - name: Prettier
         id: prettier
         background: true
-        run: npx prettier --check .
+        run: npx prettier --check "**/*.{css,json,md,yaml}"
       - name: PHP CS Fixer
         id: php-cs-fixer
         background: true
         run: php vendor/bin/php-cs-fixer check
+      - name: ESLint
+        id: eslint
+        background: true
+        run: npx eslint .
 
       - name: Wait for linters
-        wait: [prettier, php-cs-fixer]
+        wait: [prettier, php-cs-fixer, eslint]

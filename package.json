@@ -1,12 +1,16 @@
 {
   "name": "@kidthales/resumai",
   "version": "0.1.0",
-  "description": "A resume and job application engineering system",
+  "description": "A resume generation system that leverages LLMs",
   "license": "AGPL-3.0-or-later",
   "author": "Tristan Bonsor <kidthales@agogpixel.com>",
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
     "prettier": "^3.9.8",
     "puppeteer": "^25.12.0",
     "skills": "^1.7.0"
