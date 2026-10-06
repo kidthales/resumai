@@ -1,6 +1,6 @@
 #syntax=docker/dockerfile:1
 
-FROM node:24-trixie-slim AS node_upstream
+FROM node:25-trixie-slim AS node_upstream
 
 FROM node_upstream AS app_base
 
