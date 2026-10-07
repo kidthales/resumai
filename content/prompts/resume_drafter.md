@@ -68,7 +68,7 @@ Generate the resume strictly adhering to the following Markdown schema:
 ```markdown
 # {{ candidate name }}
 
-{{ candidate location }} • {{ candidate email }} • {{ candidate phone }}
+{{ candidate location }} • {{ candidate email }} • {{ candidate phone }} • {{ candidate linkedin }} • {{ ...additional candidate links separated by • }}
 
 ## Professional Summary
 

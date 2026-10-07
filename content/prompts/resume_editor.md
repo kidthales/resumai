@@ -30,7 +30,7 @@ Generate the final edited resume strictly adhering to the following Markdown sch
 ```markdown
 # {{ candidate name }}
 
-{{ candidate location }} • {{ candidate email }} • {{ candidate phone }}
+{{ candidate location }} • {{ candidate email }} • {{ candidate phone }} • {{ candidate linkedin }} • {{ ...additional candidate links separated by • }}
 
 ## Professional Summary
 
