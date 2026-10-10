@@ -26,7 +26,7 @@ PANDOC   := $(PANDOC_CONT)
 # Misc
 .DEFAULT_GOAL = help
 .PHONY        : help start fresh-start stop \
-                resume-arch resume-draft resume-fc resume-jac resume-edit \
+                resume-arch resume-draft resume-fc resume-jac resume-edit resume-export \
                 bake up down logs \
                 test cov \
                 composer vendor \
@@ -34,6 +34,7 @@ PANDOC   := $(PANDOC_CONT)
                 npm node_modules npx \
                 lint fix prettier prettier-check prettier-fix php-cs-fixer php-cs-fixer-check php-cs-fixer-fix eslint eslint-check eslint-fix \
                 ollama ollama-pull skills \
+                pandoc \
                 own
 
 ## —— 📄 🤖 The ResumAI Makefile 🤖 📄 —————————————————————————————————————————
