@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - main-v2
   pull_request: ~
   workflow_dispatch: ~
 
@@ -16,95 +17,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tests:
-    name: Tests
+  frontend:
+    name: TypeScript & Vite Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          persist-credentials: false
+          node-version: "22"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck & build frontend
+        run: npm run build
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Build Docker images
-        uses: docker/bake-action@v7
-        with:
-          pull: true
-          load: true
-          targets: php
-          files: |
-            docker/docker-bake.hcl
-          set: |
-            *.cache-from=type=gha,scope=${{github.ref}}
-            *.cache-from=type=gha,scope=refs/heads/main
-            *.cache-to=type=gha,scope=${{github.ref}},mode=max
-
-      - name: Start services
-        run: cd docker && docker compose -f compose.yaml -f compose.ci.yaml up --wait --no-build
-
-      - name: Check HTTP reachability
-        run: curl -v --fail-with-body http://localhost
-      # Uncomment when the homepage is configured, or change the path to check
-      # - name: Check HTTPS reachability
-      #   run: curl -v --insecure --fail-with-body https://localhost
-      - name: Check Mercure reachability
-        run: curl -vI --insecure --fail-with-body https://localhost/.well-known/mercure?topic=test
-      # Uncomment if Doctrine ORM is installed
-      # - name: Create test database
-      #   run: docker compose exec -T php bin/console -e test doctrine:database:create
-      # Uncomment if Doctrine Migrations is installed
-      # - name: Run migrations
-      #   run: docker compose exec -T php bin/console -e test doctrine:migrations:migrate --no-interaction
-      # Uncomment if PHPUnit is installed
-      - name: Run PHPUnit
-        run: cd docker && docker compose exec -T php bin/phpunit
-      # Uncomment if Doctrine ORM is installed
-      # - name: Doctrine Schema Validator
-      #   run: docker compose exec -T php bin/console -e test doctrine:schema:validate
-
-  lint:
-    name: Lint
+  rust-core:
+    name: Rust Unit Tests & Clippy
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Setup Node
-        id: setup-node
-        background: true
-        uses: actions/setup-node@v7
-        with:
-          node-version: 'lts/*'
-      - name: Setup PHP
-        id: setup-php
-        background: true
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.5'
-
-      - name: Wait for setups
-        wait: [setup-node, setup-php]
-
-      - name: Install vendor/
-        run: composer install --no-progress --no-interaction
-      - name: Install node_modules
-        run: npm ci
-
-      - name: Prettier
-        id: prettier
-        background: true
-        run: npx prettier --check "**/*.{css,json,md,yaml}"
-      - name: PHP CS Fixer
-        id: php-cs-fixer
-        background: true
-        run: php vendor/bin/php-cs-fixer check
-      - name: ESLint
-        id: eslint
-        background: true
-        run: npx eslint .
-
-      - name: Wait for linters
-        wait: [prettier, php-cs-fixer, eslint]
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Linux WebKitGTK system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml

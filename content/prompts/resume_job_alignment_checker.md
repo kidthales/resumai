@@ -31,13 +31,10 @@ You are a precise, analytical Resume Alignment Agent specializing in candidate-t
 
 ## 2. Target Context Inputs
 
-### 2.1 Target Job Description
+You will receive the following XML-delimited inputs in the user message:
 
-**job_description**
-
-### 2.2 Candidate Resume
-
-**candidate_resume**
+- **`<candidate_resume>`:** The candidate resume being evaluated.
+- **`<job_description>`:** The target Job Description or client engagement brief.
 
 ---
 
