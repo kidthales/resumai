@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ResumAI Studio — Career &amp; Consulting Engineering</title>
+        <link rel="stylesheet" href="/src/styles/main.css" />
+    </head>
+    <body>
+        <div class="app-shell">
+            <!-- Top Studio Bar -->
+            <header class="topbar">
+                <div class="brand">
+                    <span class="brand-badge">R</span>
+                    <div>
+                        <h1>ResumAI Studio <span class="version-pill">v0.2 Tauri</span></h1>
+                        <p id="vault-path-label" class="subtitle">Loading local Career Vault...</p>
+                    </div>
+                </div>
+
+                <div class="topbar-center">
+                    <button id="tab-mode-pipeline" class="mode-btn active" type="button">
+                        ⚡ Pipeline &amp; Synthesis Studio
+                    </button>
+                    <button id="tab-mode-vault" class="mode-btn" type="button">🗂️ Career Vault Markdown Editor</button>
+                </div>
+
+                <div class="topbar-actions">
+                    <span id="active-provider-pill" class="provider-pill">Ollama • qwen2.5:14b</span>
+                    <button id="btn-open-settings" class="btn btn-secondary" type="button">
+                        ⚙️ AI Provider Settings
+                    </button>
+                </div>
+            </header>
+
+            <!-- Main 3-Pane Studio Grid -->
+            <main class="studio-grid">
+                <!-- LEFT PANE: Career Vault & Saved Applications Explorer -->
+                <aside class="sidebar">
+                    <div class="sidebar-section">
+                        <div class="section-header">
+                            <h2>Saved Applications</h2>
+                            <button
+                                id="btn-new-application"
+                                class="btn-mini"
+                                type="button"
+                                title="Start a clean pipeline workspace"
+                            >
+                                + New
+                            </button>
+                        </div>
+                        <ul id="applications-list" class="nav-list"></ul>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <div class="section-header">
+                            <h2>Candidate PII Vault</h2>
+                            <span class="hint-pill">100% Local</span>
+                        </div>
+                        <ul id="pii-list" class="nav-list"></ul>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <div class="section-header">
+                            <h2>Candidate Archetypes</h2>
+                            <button
+                                id="btn-new-archetype"
+                                class="btn-mini"
+                                type="button"
+                                title="Create a new custom archetype .md file"
+                            >
+                                + New
+                            </button>
+                        </div>
+                        <ul id="archetypes-list" class="nav-list"></ul>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <div class="section-header">
+                            <h2>CSS Resume Styles</h2>
+                            <button id="btn-new-style" class="btn-mini" type="button" title="Create a custom CSS theme">
+                                + New
+                            </button>
+                        </div>
+                        <ul id="styles-list" class="nav-list"></ul>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <div class="section-header">
+                            <h2>Agent System Prompts</h2>
+                        </div>
+                        <ul id="prompts-list" class="nav-list"></ul>
+                    </div>
+                </aside>
+
+                <!-- CENTER PANE: Pipeline Studio OR Vault Editor -->
+                <section class="center-workspace">
+                    <!-- VIEW 1: PIPELINE STUDIO -->
+                    <div id="view-pipeline" class="workspace-view active">
+                        <!-- Job / Client Engagement Input Panel -->
+                        <div class="card jd-card">
+                            <div class="jd-top-row">
+                                <div class="field-group flex-1">
+                                    <label for="input-run-title">Target Company / Client Engagement Title</label>
+                                    <input
+                                        id="input-run-title"
+                                        type="text"
+                                        placeholder="e.g. Acme Studio — Principal Systems Architect"
+                                    />
+                                </div>
+                                <div class="field-group">
+                                    <label for="select-archetype">Candidate Archetype Lens</label>
+                                    <select id="select-archetype">
+                                        <option value="">🤖 Auto-Select via Archetype Agent</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="field-group">
+                                <div class="label-row">
+                                    <label for="input-jd"
+                                        >Job Description / Client RFP Brief (Optional for general resume)</label
+                                    >
+                                    <span id="archetype-rationale-badge" class="rationale-badge hidden"></span>
+                                </div>
+                                <textarea
+                                    id="input-jd"
+                                    rows="5"
+                                    placeholder="Paste target Job Description, contract requirements, or client discovery brief here..."
+                                ></textarea>
+                            </div>
+
+                            <!-- Pipeline Execution Controls -->
+                            <div class="pipeline-controls">
+                                <button id="btn-run-full" class="btn btn-primary" type="button">
+                                    🚀 Run Full Pipeline (Parallel Checks + Export)
+                                </button>
+                                <div class="step-buttons">
+                                    <button
+                                        id="btn-step-arch"
+                                        class="btn btn-step"
+                                        type="button"
+                                        title="Stage 1: Select best archetype using tool calls"
+                                    >
+                                        1. Archetype
+                                    </button>
+                                    <button
+                                        id="btn-step-draft"
+                                        class="btn btn-step"
+                                        type="button"
+                                        title="Stage 2: Synthesize initial Markdown draft"
+                                    >
+                                        2. Draft
+                                    </button>
+                                    <button
+                                        id="btn-step-checks"
+                                        class="btn btn-step"
+                                        type="button"
+                                        title="Stage 3a & 3b: Run Fact-Check and Job-Alignment Check concurrently"
+                                    >
+                                        3. Parallel Checks
+                                    </button>
+                                    <button
+                                        id="btn-step-edit"
+                                        class="btn btn-step"
+                                        type="button"
+                                        title="Stage 4: Apply Fact-Check & Alignment revisions"
+                                    >
+                                        4. Edit Final
+                                    </button>
+                                    <button
+                                        id="btn-step-pitch"
+                                        class="btn btn-step"
+                                        type="button"
+                                        title="Stage 5: Generate verified Cover Letter or Consulting Proposal"
+                                    >
+                                        5. Cover / Pitch
+                                    </button>
+                                    <select
+                                        id="select-pitch-mode"
+                                        class="pitch-mode-select"
+                                        title="Choose Cover Letter or Consulting Pitch mode"
+                                    >
+                                        <option value="cover_letter">Cover Letter</option>
+                                        <option value="consulting_pitch">Consulting Pitch</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live Streaming Progress & .thonk Console -->
+                        <details id="thonk-drawer" class="card thonk-card" open>
+                            <summary class="thonk-summary">
+                                <div class="thonk-title-group">
+                                    <span id="agent-status-dot" class="status-dot idle"></span>
+                                    <strong id="agent-status-text">Ready — Select a stage or Run Full Pipeline</strong>
+                                </div>
+                                <span class="thonk-toggle-hint">Toggle .thonk Reasoning Stream</span>
+                            </summary>
+                            <div class="thonk-body">
+                                <pre id="thonk-stream-log" class="thonk-pre">
+Agent reasoning (.thonk) and tool calls will stream here in real time...</pre>
+                            </div>
+                        </details>
+
+                        <!-- Interactive [METRIC: ...] Placeholder Resolution & Write-Back Panel -->
+                        <div id="metrics-panel" class="card metrics-card hidden">
+                            <div class="metrics-header">
+                                <strong>🎯 Unresolved <code>[METRIC: ...]</code> Placeholders Detected</strong>
+                                <span
+                                    >Fill in your verified numbers to replace inline &amp; optionally save back to
+                                    <code>work_history.md</code></span
+                                >
+                            </div>
+                            <div id="metrics-list" class="metrics-list"></div>
+                        </div>
+
+                        <!-- Stage Artifact Tabs & Markdown Editor -->
+                        <div class="card artifacts-card">
+                            <div class="artifact-tabs-bar">
+                                <div class="artifact-tabs">
+                                    <button class="artifact-tab active" data-artifact="final" type="button">
+                                        ✨ Final Resume
+                                    </button>
+                                    <button class="artifact-tab" data-artifact="draft" type="button">
+                                        📝 Initial Draft
+                                    </button>
+                                    <button class="artifact-tab" data-artifact="fact_check" type="button">
+                                        🛡️ Fact-Check Audit
+                                    </button>
+                                    <button class="artifact-tab" data-artifact="alignment" type="button">
+                                        🎯 Job Alignment <span id="match-score-pill" class="score-pill hidden"></span>
+                                    </button>
+                                    <button class="artifact-tab" data-artifact="cover_letter" type="button">
+                                        ✉️ Cover Letter / Pitch
+                                    </button>
+                                </div>
+                                <div class="artifact-actions">
+                                    <input
+                                        id="input-user-notes"
+                                        class="notes-input"
+                                        type="text"
+                                        placeholder="Optional editorial instruction for Stage 4 Editor..."
+                                    />
+                                </div>
+                            </div>
+
+                            <textarea
+                                id="artifact-editor"
+                                class="markdown-editor"
+                                spellcheck="false"
+                                placeholder="Generated or edited Markdown for the selected stage appears here. Any edits immediately update the live paginated preview on the right..."
+                            ></textarea>
+                        </div>
+                    </div>
+
+                    <!-- VIEW 2: VAULT FILE MARKDOWN EDITOR -->
+                    <div id="view-vault" class="workspace-view">
+                        <div class="card vault-editor-card">
+                            <div class="vault-editor-header">
+                                <div>
+                                    <span id="vault-editor-category" class="category-badge">pii</span>
+                                    <strong id="vault-editor-filename">work_history.sample.md</strong>
+                                    <span id="vault-editor-hint" class="vault-hint"></span>
+                                </div>
+                                <div class="vault-editor-actions">
+                                    <button id="btn-promote-sample" class="btn btn-secondary hidden" type="button">
+                                        ✨ Save as Custom Override (.md)
+                                    </button>
+                                    <button id="btn-save-vault-file" class="btn btn-primary" type="button">
+                                        💾 Save Vault File
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea
+                                id="vault-file-textarea"
+                                class="markdown-editor full-height"
+                                spellcheck="false"
+                            ></textarea>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- RIGHT PANE: Live Paginated Resume Preview & Export Engine -->
+                <aside class="preview-pane">
+                    <div class="preview-toolbar">
+                        <div class="budget-group">
+                            <span class="budget-label">Page Budget:</span>
+                            <span id="page-budget-pill" class="budget-pill optimal">1.00 / 2.00 pages</span>
+                        </div>
+
+                        <div class="export-buttons">
+                            <button
+                                id="btn-print-pdf"
+                                class="btn btn-primary btn-sm"
+                                type="button"
+                                title="Print or Save as PDF using native WebView print engine"
+                            >
+                                🖨️ Print / PDF
+                            </button>
+                            <button
+                                id="btn-export-bundle"
+                                class="btn btn-secondary btn-sm"
+                                type="button"
+                                title="Export standalone .docx and .html via Rust ExportEngine"
+                            >
+                                📦 Export DOCX &amp; HTML
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Typography & CSS Theme Controls -->
+                    <div class="preview-controls-bar">
+                        <label class="control-item">
+                            <span>Theme</span>
+                            <select id="select-style-css"></select>
+                        </label>
+                        <label class="control-item">
+                            <span>Font <strong id="lbl-font-size">10pt</strong></span>
+                            <input id="slider-font-size" type="range" min="8.5" max="11.5" step="0.25" value="10" />
+                        </label>
+                        <label class="control-item">
+                            <span>Line <strong id="lbl-line-height">1.35</strong></span>
+                            <input
+                                id="slider-line-height"
+                                type="range"
+                                min="1.15"
+                                max="1.55"
+                                step="0.05"
+                                value="1.35"
+                            />
+                        </label>
+                        <label class="control-item">
+                            <span>Margin <strong id="lbl-margin">0.45in</strong></span>
+                            <input id="slider-margin" type="range" min="0.3" max="0.65" step="0.05" value="0.45" />
+                        </label>
+                    </div>
+
+                    <div id="export-status-banner" class="export-banner hidden"></div>
+
+                    <!-- Live Letter Paper Preview Frame -->
+                    <div class="paper-stage">
+                        <iframe id="preview-iframe" title="Live Paginated Resume Preview"></iframe>
+                    </div>
+                </aside>
+            </main>
+        </div>
+
+        <!-- AI Provider Settings Modal -->
+        <div id="settings-modal" class="modal-backdrop hidden">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <h2>⚙️ AI Inference Provider Settings</h2>
+                    <button id="btn-close-settings" class="btn-icon" type="button">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="field-group">
+                        <label for="cfg-platform">Active Agent Platform</label>
+                        <select id="cfg-platform">
+                            <option value="ollama">Local Ollama (100% On-Device Inference)</option>
+                            <option value="gemini">Google Gemini API (Cloud Flash / Flash-Lite)</option>
+                        </select>
+                    </div>
+
+                    <div class="field-group">
+                        <label for="cfg-ollama-url">Ollama Base URL</label>
+                        <input id="cfg-ollama-url" type="text" placeholder="http://localhost:11434" />
+                    </div>
+
+                    <div class="field-group">
+                        <label for="cfg-ollama-model">Ollama Model Name</label>
+                        <input id="cfg-ollama-model" type="text" placeholder="qwen2.5:14b-instruct-q5_K_M" />
+                    </div>
+
+                    <hr class="modal-divider" />
+
+                    <div class="field-group">
+                        <label for="cfg-gemini-key">Google Gemini API Key (Stored locally on your machine)</label>
+                        <input id="cfg-gemini-key" type="password" placeholder="AIzaSy..." />
+                    </div>
+
+                    <div class="jd-top-row">
+                        <div class="field-group flex-1">
+                            <label for="cfg-gemini-flash">Gemini Flash Model (Fact-Check &amp; Editor)</label>
+                            <input id="cfg-gemini-flash" type="text" value="gemini-3.5-flash" />
+                        </div>
+                        <div class="field-group flex-1">
+                            <label for="cfg-gemini-lite">Gemini Lite Model (Archetype, Draft &amp; Align)</label>
+                            <input id="cfg-gemini-lite" type="text" value="gemini-3.5-flash-lite" />
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="btn-save-settings" class="btn btn-primary" type="button">
+                        Save Provider Configuration
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>
