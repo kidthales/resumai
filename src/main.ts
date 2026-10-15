@@ -16,98 +16,12 @@ import {
     subscribeAgentStream,
     writeVaultFile
 } from './api';
-import type { ArtifactTabKey, LlmConfig, VaultOverview } from './types';
+import type { ArtifactTabKey } from './types';
+import { detectMetrics, replaceMetric } from './lib/metrics';
+import { calculatePageBudget } from './lib/pageBudget';
+import { SAMPLE_PREVIEW_MARKDOWN, StudioState, createDefaultState } from './lib/state';
 
-const SAMPLE_PREVIEW_MARKDOWN = `# Dr. Henry "Hank" McCoy
-
-Westchester County, NY • h.mccoy@krakoa.org • (555) 019-1963 • linkedin.com/in/hankmccoy
-
-## Professional Summary
-
-Principal Systems Architect and Technical Consultant with **20+ years** of experience designing fault-tolerant distributed telemetry networks, bio-organic gateway relays, and high-concurrency simulation engines. Proven track record leading cross-functional crisis engineering teams and delivering zero-downtime infrastructure at planetary scale.
-
-## Skills
-
-- **Systems & Languages:** Rust, C++, Python, TypeScript, Linux Kernel, Distributed Systems, Embedded Telemetry
-- **Architecture & Security:** Fault-Tolerant Mesh Relays, Telepathic Cryptography, High-Concurrency Simulation (Danger Room Holo-Matrix)
-- **Leadership & Consulting:** Principal Architecture Audits, Technical Due Diligence, Cross-Functional Team Mentorship
-
-## Professional Experience
-
-### Krakoan Habitat & Gateway Systems - Krakoa
-
-**Principal Architect - Bio-Organic Infrastructures** | Oct 2019 – Sep 2026
-
-- Accomplished **99.998% global transit availability**, as measured by real-time telemetry across 140+ habitat relays, by architecting fault-tolerant gateway synchronization protocols in Rust and Python.
-- Reduced anomalous neural feedback incidents by [METRIC: e.g. 45% reduction in latency/faults], as measured by quarterly security audits, by implementing automated bio-dome equilibrium circuit breakers.
-
-### Wakandan International Outreach - Birnin Zana, Wakanda
-
-**Senior Defense Systems & Anomaly Specialist** | Jan 2012 – Sep 2019
-
-- Accelerated anomaly containment response times by **62%**, as measured by perimeter grid diagnostics, by engineering automated vibranium-matrix kinetic dissipation arrays in C++.
-
-## Education
-
-- **Ph.D. in Biophysics & Genetic Systems** — Xavier Institute for Higher Learning
-`;
-
-interface StudioState {
-    overview: VaultOverview | null;
-    llmConfig: LlmConfig;
-    activeMode: 'pipeline' | 'vault';
-    activeArtifactTab: ArtifactTabKey;
-    artifacts: Record<ArtifactTabKey, string>;
-    matchScore: number | null;
-    selectedArchetype: string;
-    archetypeRationale: string;
-    activeStyleFile: string;
-    activeCssContent: string;
-    fontSizePt: number;
-    lineHeight: number;
-    marginIn: number;
-    vaultEditor: {
-        category: string;
-        filename: string;
-        customTargetFilename: string | null;
-    };
-    isRunning: boolean;
-}
-
-const state: StudioState = {
-    overview: null,
-    llmConfig: {
-        platform: 'ollama',
-        ollama_base_url: 'http://localhost:11434',
-        ollama_model: 'qwen2.5:14b-instruct-q5_K_M',
-        gemini_api_key: '',
-        gemini_flash_model: 'gemini-3.5-flash',
-        gemini_lite_model: 'gemini-3.5-flash-lite'
-    },
-    activeMode: 'pipeline',
-    activeArtifactTab: 'final',
-    artifacts: {
-        final: SAMPLE_PREVIEW_MARKDOWN,
-        draft: '',
-        fact_check: '',
-        alignment: '',
-        cover_letter: ''
-    },
-    matchScore: null,
-    selectedArchetype: '',
-    archetypeRationale: '',
-    activeStyleFile: 'resume.sample.css',
-    activeCssContent: '',
-    fontSizePt: 10,
-    lineHeight: 1.35,
-    marginIn: 0.45,
-    vaultEditor: {
-        category: 'pii',
-        filename: 'work_history.sample.md',
-        customTargetFilename: 'work_history.md'
-    },
-    isRunning: false
-};
+export const state: StudioState = createDefaultState();
 
 function el<T extends HTMLElement>(id: string): T {
     const node = document.getElementById(id);
@@ -156,9 +70,10 @@ function switchStudioMode(mode: 'pipeline' | 'vault'): void {
 }
 
 function switchArtifactTab(tab: ArtifactTabKey): void {
-    // Save current editor content before switching
     const editor = el<HTMLTextAreaElement>('artifact-editor');
-    state.artifacts[state.activeArtifactTab] = editor.value;
+    if (state.activeArtifactTab !== tab) {
+        state.artifacts[state.activeArtifactTab] = editor.value;
+    }
 
     state.activeArtifactTab = tab;
     document.querySelectorAll<HTMLButtonElement>('.artifact-tab').forEach((btn) => {
@@ -168,12 +83,6 @@ function switchArtifactTab(tab: ArtifactTabKey): void {
     editor.value = state.artifacts[tab] || '';
     renderLivePreview();
     renderMetricPlaceholders();
-}
-
-function detectMetrics(markdown: string): string[] {
-    const matches = markdown.match(/\[METRIC:[^\]]+\]/g);
-    if (!matches) return [];
-    return Array.from(new Set(matches));
 }
 
 function renderMetricPlaceholders(): void {
@@ -212,7 +121,7 @@ function renderMetricPlaceholders(): void {
             const val = input.value.trim();
             if (!val) return;
             const targetTab = state.activeArtifactTab;
-            state.artifacts[targetTab] = state.artifacts[targetTab].split(token).join(val);
+            state.artifacts[targetTab] = replaceMetric(state.artifacts[targetTab], token, val);
             el<HTMLTextAreaElement>('artifact-editor').value = state.artifacts[targetTab];
             renderLivePreview();
             renderMetricPlaceholders();
@@ -228,9 +137,11 @@ function renderMetricPlaceholders(): void {
             const roleTitle = el<HTMLInputElement>('input-run-title').value.trim();
             try {
                 await appendFactToWorkHistory(val, roleTitle || 'Verified Metric Update');
-                state.artifacts[state.activeArtifactTab] = state.artifacts[state.activeArtifactTab]
-                    .split(token)
-                    .join(val);
+                state.artifacts[state.activeArtifactTab] = replaceMetric(
+                    state.artifacts[state.activeArtifactTab],
+                    token,
+                    val
+                );
                 el<HTMLTextAreaElement>('artifact-editor').value = state.artifacts[state.activeArtifactTab];
                 renderLivePreview();
                 renderMetricPlaceholders();
@@ -302,19 +213,10 @@ function renderLivePreview(): void {
         try {
             const doc = iframe.contentDocument;
             if (!doc || !doc.body) return;
-            // 11 inches at 96 CSS DPI = 1056px per Letter page
-            const letterPagePx = 1056;
-            const totalHeight = doc.documentElement.scrollHeight;
-            const pages = Math.max(0.1, totalHeight / letterPagePx);
+            const budget = calculatePageBudget(doc.documentElement.scrollHeight);
             const pill = el<HTMLSpanElement>('page-budget-pill');
-            const pagesFormatted = pages.toFixed(2);
-
-            // Flag trailing spillover (e.g., 1.05..1.25 or 2.01..2.35)
-            const isSpillover = (pages > 1.02 && pages < 1.25) || pages > 2.02;
-            pill.className = `budget-pill ${isSpillover ? 'warning' : 'optimal'}`;
-            pill.textContent = isSpillover
-                ? `${pagesFormatted} pages (Overflow Warning!)`
-                : `${pagesFormatted} / 2.00 pages (Optimal)`;
+            pill.className = `budget-pill ${budget.isSpillover ? 'warning' : 'optimal'}`;
+            pill.textContent = budget.label;
         } catch {
             // Ignore cross-origin frame measurements if any
         }
@@ -956,8 +858,22 @@ function bindUiEvents(): void {
     });
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-    initStudio().catch((err) => {
-        setStatus('error', `Initialization error: ${String(err)}`);
+// Allow automated tests to control DOM lifecycle
+if (typeof window !== 'undefined' && !(window as any).__TAURI_TEST_ENV__) {
+    window.addEventListener('DOMContentLoaded', () => {
+        initStudio().catch((err) => {
+            setStatus('error', `Initialization error: ${String(err)}`);
+        });
     });
-});
+}
+
+export {
+    initStudio,
+    renderLivePreview,
+    bindUiEvents,
+    renderMetricPlaceholders,
+    openVaultFileInEditor,
+    refreshVaultOverview,
+    switchStudioMode,
+    switchArtifactTab
+};

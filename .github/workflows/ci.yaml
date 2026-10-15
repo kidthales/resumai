@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: TypeScript & Vite Build
+    name: Frontend Unit & Headless UI Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -30,11 +30,33 @@ jobs:
           cache: "npm"
       - name: Install dependencies
         run: npm ci
+      - name: Lint formatting
+        run: npm run lint
       - name: Typecheck & build frontend
         run: npm run build
+      - name: Run Vitest headless UI test suite
+        run: npm run test:unit
+
+  browser-e2e:
+    name: Browser Engine & Pixel Layout Tests (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright Chromium & dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright layout tests
+        run: npm run test:e2e
 
   rust-core:
-    name: Rust Unit Tests & Clippy
+    name: Rust Backend Unit & Workspace Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -45,5 +67,5 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      - name: Run Rust unit tests
+      - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
