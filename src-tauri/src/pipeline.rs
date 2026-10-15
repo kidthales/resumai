@@ -647,4 +647,42 @@ mod tests {
         assert_eq!(metrics.len(), 2);
         assert_eq!(metrics[0], "[METRIC: e.g. % latency reduction]");
     }
+
+    #[test]
+    fn test_load_application_workspace() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base_dir = std::env::temp_dir().join(format!("resumai_test_app_{nanos}"));
+        let vault = VaultManager::with_root(&base_dir);
+        let app_dir = vault.applications_dir().join("20261015-test-run");
+        std::fs::create_dir_all(&app_dir).unwrap();
+
+        let summary = ApplicationRunSummary {
+            slug: "20261015-test-run".to_string(),
+            created_at: "2026-10-15".to_string(),
+            title: "Test Run".to_string(),
+            archetype_filename: Some("backend.sample.md".to_string()),
+            match_score: Some(88),
+            status: "Complete".to_string(),
+            has_final_resume: true,
+            has_cover_letter: true,
+        };
+        std::fs::write(
+            app_dir.join("manifest.json"),
+            serde_json::to_string(&summary).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(app_dir.join("jd.txt"), "Senior Rust Engineer").unwrap();
+        std::fs::write(app_dir.join("resume_final.md"), "# Final Resume").unwrap();
+
+        let loaded = load_application_workspace(&vault, "20261015-test-run").unwrap();
+        assert_eq!(loaded.summary.title, "Test Run");
+        assert_eq!(loaded.job_description, "Senior Rust Engineer");
+        assert_eq!(loaded.final_resume_markdown, "# Final Resume");
+
+        let _ = std::fs::remove_dir_all(&base_dir);
+    }
 }
