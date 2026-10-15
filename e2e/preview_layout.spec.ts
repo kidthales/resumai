@@ -17,24 +17,33 @@ test.describe('Suite 6: Real Browser Layout, Typography Sliders & Page Budgeting
         await expect(expHeader).toBeVisible();
     });
 
-    test('TC-6.2: calculates Letter page budget pill and transitions between overflow warning and optimal', async ({
+    test('TC-6.2: calculates Letter page budget pill and transitions between optimal and overflow warning', async ({
         page
     }) => {
         const budgetPill = page.locator('#page-budget-pill');
         await expect(budgetPill).toBeVisible();
+        await expect(budgetPill).toHaveText(/\d+\.\d\d/);
 
-        // Initial sample resume at default 10pt font & 0.45in margin lands at ~1.05 pages (trailing overflow warning)
+        // 1. Force optimal budget by setting compact font size and line height
+        const fontSlider = page.locator('#slider-font-size');
+        const lineSlider = page.locator('#slider-line-height');
+
+        await fontSlider.fill('8.5');
+        await fontSlider.dispatchEvent('input');
+        await lineSlider.fill('1.15');
+        await lineSlider.dispatchEvent('input');
+
+        await expect(budgetPill).toHaveClass(/budget-pill optimal/);
+        await expect(budgetPill).toContainText('(Optimal)');
+
+        // 2. Trigger overflow warning (> 2.02 pages) by adding long multi-page content
+        const editor = page.locator('#artifact-editor');
+        const longResume = '# Overflow Test\n\n' + 'Paragraph content to force multi-page height.\n\n'.repeat(45);
+        await editor.fill(longResume);
+        await editor.dispatchEvent('input');
+
         await expect(budgetPill).toHaveClass(/budget-pill warning/);
         await expect(budgetPill).toContainText('(Overflow Warning!)');
-
-        // Adjust font slider down to 9.25pt to fit comfortably on 1 Letter page
-        const fontSlider = page.locator('#slider-font-size');
-        await fontSlider.fill('9.25');
-        await fontSlider.dispatchEvent('input');
-
-        // Verify budget pill recalculates dynamically to Optimal
-        await expect(budgetPill).toHaveClass(/budget-pill optimal/);
-        await expect(budgetPill).toContainText('/ 2.00 pages (Optimal)');
     });
 
     test('TC-6.3: live typography sliders update labels and re-render preview', async ({ page }) => {
