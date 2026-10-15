@@ -475,4 +475,64 @@ mod tests {
         assert!(VaultManager::validate_safe_filename("sub\\file.md").is_err());
         assert!(VaultManager::validate_safe_filename("valid_file.md").is_ok());
     }
+
+    #[test]
+    fn test_append_fact_to_work_history() {
+        let dir = create_temp_vault();
+        let vault = VaultManager::with_root(&dir);
+
+        fs::write(
+            vault.pii_dir().join("work_history.sample.md"),
+            "# Initial Work History\n- Role 1",
+        )
+        .unwrap();
+
+        let custom_file = vault
+            .append_fact_to_work_history(
+                "38% drop in P99 latency sustained across 15k req/s",
+                Some("Staff Distributed Systems Engineer"),
+            )
+            .unwrap();
+
+        assert!(std::path::Path::new(&custom_file).is_file());
+        let content = fs::read_to_string(&custom_file).unwrap();
+        assert!(content.contains(
+            "<!-- Added via ResumAI Knowledge Write-Back (Staff Distributed Systems Engineer) -->"
+        ));
+        assert!(content.contains("- 38% drop in P99 latency sustained across 15k req/s"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_list_applications() {
+        let dir = create_temp_vault();
+        let vault = VaultManager::with_root(&dir);
+
+        let app_dir = vault.applications_dir().join("20261015-acme-architect");
+        fs::create_dir_all(&app_dir).unwrap();
+
+        let summary = ApplicationRunSummary {
+            slug: "20261015-acme-architect".to_string(),
+            created_at: "2026-10-15".to_string(),
+            title: "Acme Systems — Principal Architect".to_string(),
+            archetype_filename: Some("staff_backend.sample.md".to_string()),
+            match_score: Some(92),
+            status: "Complete".to_string(),
+            has_final_resume: true,
+            has_cover_letter: false,
+        };
+        fs::write(
+            app_dir.join("manifest.json"),
+            serde_json::to_string(&summary).unwrap(),
+        )
+        .unwrap();
+
+        let list = vault.list_applications().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title, "Acme Systems — Principal Architect");
+        assert_eq!(list[0].match_score, Some(92));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

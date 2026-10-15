@@ -8,3 +8,5 @@
 /src-tauri/gen/
 /var/
 /.env.local
+/test-results/
+/playwright-report/
