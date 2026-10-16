@@ -196,6 +196,28 @@ export async function loadApplicationWorkspace(slug: string): Promise<LoadedAppl
     return invoke<LoadedApplicationWorkspace>('cmd_load_application', { slug });
 }
 
+export async function runRefinePageFit(
+    config: LlmConfig,
+    resumeMarkdown: string,
+    targetPages: number,
+    deltaLines: number
+): Promise<StageArtifactResult> {
+    if (!isTauriRuntime()) {
+        return {
+            markdown: resumeMarkdown,
+            thinking: 'Browser mock: Refinement simulated.',
+            model_used: 'browser-mock',
+            metric_placeholders: []
+        };
+    }
+    return invoke<StageArtifactResult>('cmd_refine_page_fit', {
+        config,
+        resumeMarkdown,
+        targetPages,
+        deltaLines
+    });
+}
+
 export async function subscribeAgentStream(handler: (payload: StreamEventPayload) => void): Promise<UnlistenFn> {
     if (!isTauriRuntime()) {
         return () => {};

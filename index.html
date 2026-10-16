@@ -287,6 +287,18 @@ Agent reasoning (.thonk) and tool calls will stream here in real time...</pre>
                         <div class="budget-group">
                             <span class="budget-label">Page Budget:</span>
                             <span id="page-budget-pill" class="budget-pill optimal">1.00 / 2.00 pages</span>
+                            <select id="select-target-pages" class="target-pages-select" title="Target Page Budget">
+                                <option value="1">Target: 1 Page</option>
+                                <option value="2" selected>Target: 2 Pages</option>
+                            </select>
+                            <button
+                                id="btn-auto-fit-page"
+                                class="btn btn-secondary btn-sm"
+                                type="button"
+                                title="Automatically tighten or expand phrasing with AI to fit target page budget exactly"
+                            >
+                                📐 Auto-Fit Budget
+                            </button>
                         </div>
 
                         <div class="export-buttons">
