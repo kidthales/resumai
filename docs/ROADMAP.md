@@ -26,20 +26,27 @@ Designed for rapid daily iteration across senior engineering job searches and te
 
 ---
 
-## Phase 2: Consulting & Interview Intelligence Expansion
+## Phase 2: Document Layout Polish & Page-Budget Optimization
 
 - [x] **Cover Letter & Consulting Proposal Generator**:
   - Synthesizes a grounded cover letter or fractional/consulting capability pitch tailored to the JD/RFP and selected archetype.
-- [ ] **Interview & Client Discovery Gap-Defense Brief**:
-  - Dedicated agent that converts the Job-Alignment Checker's *Critical & Secondary Skill Gaps* into a 1-page interview preparation sheet linking missing keywords to adjacent systems in `work_history.md`.
-- [ ] **Application & Consulting Lead CRM Board**:
-  - Status pipeline view (*Drafted* $\rightarrow$ *Applied / Pitched* $\rightarrow$ *Interviewing* $\rightarrow$ *Offer / Won* $\rightarrow$ *Archived*) with search and match-score analytics across `var/applications/`.
-- [ ] **Automated Page-Fit Feedback Loop**:
-  - Optional toggle allowing the Editor Agent to automatically condense or expand bullet count when the rendered page-budget meter detects a spill of `< 8` lines onto a trailing page.
+- [x] **Enhanced Pure-Rust OpenXML DOCX Layout Fidelity ([#21](https://github.com/kidthales/resumai/issues/21))**:
+  - Rich WordprocessingML generation: Markdown table parsing (`<w:tbl>`), borderless 2-column header layout grids, left-bordered callout boxes (`>`), and preserved inline formatting (`<w:b>`, `<w:i>`, `<w:rFonts>`).
+- [ ] **Automated Page-Fit Prompt Feedback Loop ([#23](https://github.com/kidthales/resumai/issues/23))**:
+  - Live feedback loop linking the Letter 1056px Page-Budget meter with the Editor Agent to automatically condense or expand bullet phrasing for exact 1.00 or 2.00 page budgets.
 
 ---
 
-## Phase 3: Non-Technical User Onboarding & Distribution
+## Phase 3: Consulting Intelligence & Application CRM (Deferred from Phase 2)
+
+- [ ] **Interview & Client Discovery Gap-Defense Brief ([#22](https://github.com/kidthales/resumai/issues/22))** *(Deferred from Phase 2)*:
+  - Dedicated agent that converts the Job-Alignment Checker's *Critical & Secondary Skill Gaps* into a 1-page interview preparation sheet linking missing keywords to adjacent systems in `work_history.md`.
+- [ ] **Application & Consulting Lead CRM Board ([#24](https://github.com/kidthales/resumai/issues/24))** *(Deferred from Phase 2)*:
+  - Status pipeline view (*Drafted* $\rightarrow$ *Applied / Pitched* $\rightarrow$ *Interviewing* $\rightarrow$ *Offer / Won* $\rightarrow$ *Archived*) with search and match-score analytics across `var/applications/`.
+
+---
+
+## Phase 4: Non-Technical User Onboarding & Distribution
 
 - [ ] **Guided Onboarding Wizard ("Import Existing Resume")**:
   - Drag-and-drop an existing `.pdf` or `.docx` resume (or LinkedIn profile PDF).
