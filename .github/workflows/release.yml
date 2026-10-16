@@ -1,0 +1,255 @@
+---
+name: Release
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Semantic Version Tag (e.g. v0.2.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Prepare Release Metadata & Container
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.resolve.outputs.release_id }}
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      release_url: ${{ steps.resolve.outputs.release_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve Release & Tag
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -e
+          if [ "$EVENT_NAME" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            REL_ID="${{ github.event.release.id }}"
+            REL_URL="${{ github.event.release.html_url }}"
+            echo "Triggered via published GitHub Release: $TAG (ID: $REL_ID)"
+          else
+            TAG="${INPUT_TAG:-$REF_NAME}"
+            if [ -z "$TAG" ] || [ "$TAG" = "main" ] || [ "$TAG" = "main-v2" ]; then
+              TAG=$(jq -r '.version' src-tauri/tauri.conf.json)
+              TAG="v$TAG"
+            fi
+            echo "Resolving tag: $TAG"
+
+            # Check if a GitHub release already exists for this tag
+            EXISTING=$(gh release view "$TAG" --json id,url 2>/dev/null || true)
+            if [ -n "$EXISTING" ]; then
+              REL_ID=$(echo "$EXISTING" | jq -r '.id')
+              REL_URL=$(echo "$EXISTING" | jq -r '.url')
+              echo "Found existing release for $TAG (ID: $REL_ID)"
+            else
+              echo "Creating ceremonial release for $TAG..."
+              CEREMONIAL_NOTES=$(cat << 'EOF'
+## ResumAI Studio __TAG__ — Production Desktop Release
+
+> **Local-First AI Resume & Consulting Proposal Engineering Studio**
+
+### 🌟 Architectural Leap
+- **Local-First Tauri v2**: Standalone desktop studio eliminating all Docker, container, and local web server dependencies.
+- **Zero-Container Export Engine**: Pure-Rust OpenXML `.docx` synthesis and standalone `.html` exports without Pandoc, Puppeteer, or external interpreters.
+
+### 🛡️ Privacy & Vault Invariants
+- **100% On-Device PII Vault**: Candidate profile, work history, archetypes, and custom CSS themes reside strictly on your local filesystem (`content/pii/`).
+- **Zero Cloud Telemetry**: Resume data and job descriptions are never transmitted to third-party databases.
+
+### 🤖 Anti-Hallucination Multi-Agent Pipeline
+- **Autonomous Archetype Selection**: LLM tool execution against active local candidate archetypes.
+- **Concurrent Audits**: `tokio::join!` parallel execution of grounded Fact-Checking and Job-Alignment gap analysis.
+- **Interactive Metric Write-Back Loop**: Interactive UI detection and one-click fact persistence into `content/pii/work_history.md`.
+
+### 📦 Distribution Artifacts
+Download the appropriate installer for your operating system below. Integrity checksums are provided in `SHA256SUMS.txt`.
+EOF
+              )
+              NOTES="${CEREMONIAL_NOTES//__TAG__/$TAG}"
+              gh release create "$TAG" \
+                --title "ResumAI Studio $TAG" \
+                --notes "$NOTES" \
+                --draft=false
+
+              CREATED=$(gh release view "$TAG" --json id,url)
+              REL_ID=$(echo "$CREATED" | jq -r '.id')
+              REL_URL=$(echo "$CREATED" | jq -r '.url')
+              echo "Created release: $REL_URL (ID: $REL_ID)"
+            fi
+          fi
+
+          echo "release_id=$REL_ID" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
+          echo "release_url=$REL_URL" >> "$GITHUB_OUTPUT"
+
+  build-tauri:
+    name: Build & Package Desktop Installers
+    needs: prepare-release
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            os_name: windows
+          - platform: ubuntu-22.04
+            os_name: linux
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Linux WebKitGTK system dependencies
+        if: matrix.os_name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Frontend & Tauri Bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ needs.prepare-release.outputs.tag_name }}
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+
+  finalize-release:
+    name: Generate Checksums & Finalize Release
+    needs: [prepare-release, build-tauri]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Release Assets & Compute Checksums
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+        run: |
+          set -e
+          mkdir -p dist-assets
+          echo "Downloading uploaded release assets for $TAG_NAME..."
+          gh release download "$TAG_NAME" --dir dist-assets
+
+          echo "Generating SHA256 checksums..."
+          cd dist-assets
+          rm -f SHA256SUMS.txt
+
+          if ls * 1> /dev/null 2>&1; then
+            sha256sum * > SHA256SUMS.txt
+            cat SHA256SUMS.txt
+            gh release upload "$TAG_NAME" SHA256SUMS.txt --clobber
+          else
+            echo "Warning: No release assets found to checksum."
+          fi
+
+  notify:
+    name: Notify Discord (#dev-ci-builds)
+    needs: [prepare-release, build-tauri, finalize-release]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch Discord Release Notification
+        shell: bash
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_CI_WEBHOOK }}
+          JOB_STATUS: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || 'success') }}
+          REPO_NAME: ${{ github.repository }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+          RELEASE_URL: ${{ needs.prepare-release.outputs.release_url }}
+          ACTOR: ${{ github.actor }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "Warning: No DISCORD_CI_WEBHOOK configured. Skipping notification."
+            exit 0
+          fi
+
+          if [ "$JOB_STATUS" = "success" ]; then
+            COLOR=4388484
+            STATUS_ICON="🚀"
+            TITLE="Release Published: $REPO_NAME $TAG_NAME"
+            DESC="Production desktop installers and SHA-256 checksums are now available on the release page."
+          elif [ "$JOB_STATUS" = "failure" ]; then
+            COLOR=15088454
+            STATUS_ICON="❌"
+            TITLE="Release Packaging Failed: $REPO_NAME $TAG_NAME"
+            DESC="One or more matrix packaging jobs failed during desktop installer compilation."
+          else
+            COLOR=13202208
+            STATUS_ICON="⚠️"
+            TITLE="Release Packaging Cancelled: $REPO_NAME $TAG_NAME"
+            DESC="Packaging workflow was cancelled before completion."
+          fi
+
+          RUN_URL="$SERVER_URL/$REPO_NAME/actions/runs/$RUN_ID"
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "username": "kidthales Release Automation",
+            "avatar_url": "https://github.com/kidthales.png",
+            "embeds": [
+              {
+                "title": "$STATUS_ICON $TITLE",
+                "color": $COLOR,
+                "description": "$DESC",
+                "url": "${RELEASE_URL:-$RUN_URL}",
+                "author": {
+                  "name": "kidthales Systems Release",
+                  "icon_url": "https://github.com/kidthales.png"
+                },
+                "fields": [
+                  { "name": "Repository", "value": "\`$REPO_NAME\`", "inline": true },
+                  { "name": "Release Tag", "value": "\`$TAG_NAME\`", "inline": true },
+                  { "name": "Triggered By", "value": "@$ACTOR", "inline": true },
+                  { "name": "Release Page", "value": "[View Release](${RELEASE_URL:-$RUN_URL})", "inline": true },
+                  { "name": "Workflow Run", "value": "[View Run]($RUN_URL)", "inline": true }
+                ],
+                "footer": {
+                  "text": "kidthales Automation • Antigravity",
+                  "icon_url": "https://github.com/kidthales.png"
+                },
+                "timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              }
+            ]
+          }
+          EOF
+          )
+
+          curl -s -S -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$WEBHOOK_URL" > /dev/null || echo "Warning: Discord webhook dispatch failed."
