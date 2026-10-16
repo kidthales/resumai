@@ -48,6 +48,7 @@ export interface StudioState {
     fontSizePt: number;
     lineHeight: number;
     marginIn: number;
+    targetPages: 1 | 2;
     vaultEditor: {
         category: string;
         filename: string;
@@ -84,6 +85,7 @@ export function createDefaultState(): StudioState {
         fontSizePt: 10,
         lineHeight: 1.35,
         marginIn: 0.45,
+        targetPages: 2,
         vaultEditor: {
             category: 'pii',
             filename: 'work_history.sample.md',

@@ -32,7 +32,7 @@ Designed for rapid daily iteration across senior engineering job searches and te
   - Synthesizes a grounded cover letter or fractional/consulting capability pitch tailored to the JD/RFP and selected archetype.
 - [x] **Enhanced Pure-Rust OpenXML DOCX Layout Fidelity ([#21](https://github.com/kidthales/resumai/issues/21))**:
   - Rich WordprocessingML generation: Markdown table parsing (`<w:tbl>`), borderless 2-column header layout grids, left-bordered callout boxes (`>`), and preserved inline formatting (`<w:b>`, `<w:i>`, `<w:rFonts>`).
-- [ ] **Automated Page-Fit Prompt Feedback Loop ([#23](https://github.com/kidthales/resumai/issues/23))**:
+- [x] **Automated Page-Fit Prompt Feedback Loop ([#23](https://github.com/kidthales/resumai/issues/23))**:
   - Live feedback loop linking the Letter 1056px Page-Budget meter with the Editor Agent to automatically condense or expand bullet phrasing for exact 1.00 or 2.00 page budgets.
 
 ---

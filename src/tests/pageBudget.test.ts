@@ -44,4 +44,22 @@ describe('Suite 6: Page-Budget Engine (Letter 1056px at 96 CSS DPI)', () => {
         expect(result.pagesFormatted).toBe('0.10');
         expect(result.isSpillover).toBe(false);
     });
+
+    it('TC-6.3: computes deltaLines and recommends refinement on 1-page overflow', () => {
+        // 1183px vs 1056px target (1 page) = 127px excess -> 127 / 18 ~= 7 lines
+        const result = calculatePageBudget(1183, 1, 18);
+        expect(result.targetPages).toBe(1);
+        expect(result.excessPx).toBe(127);
+        expect(result.deltaLines).toBe(7);
+        expect(result.needsRefinement).toBe(true);
+    });
+
+    it('TC-6.3: respects 2-page override and detects underflow', () => {
+        // 1500px with targetPages=2 (2112px target) = -612px excess -> -612 / 18 = -34 lines
+        const result = calculatePageBudget(1500, 2, 18);
+        expect(result.targetPages).toBe(2);
+        expect(result.excessPx).toBe(-612);
+        expect(result.deltaLines).toBe(-34);
+        expect(result.needsRefinement).toBe(true);
+    });
 });

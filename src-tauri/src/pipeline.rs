@@ -360,6 +360,45 @@ pub async fn edit_resume(
     })
 }
 
+pub async fn refine_page_fit(
+    app: Option<&AppHandle>,
+    vault: &VaultManager,
+    cfg: &LlmConfig,
+    resume_markdown: &str,
+    target_pages: u32,
+    delta_lines: i32,
+) -> Result<StageArtifactResult> {
+    let trimmed_resume = resume_markdown.trim();
+    if trimmed_resume.is_empty() {
+        bail!("Resume content cannot be empty for page-fit refinement.");
+    }
+
+    let system_prompt = vault.compile_prompt("page_fit_refinement")?;
+    let action_desc = if delta_lines > 0 {
+        format!("OVERFLOW: Need to trim approximately {delta_lines} line(s)")
+    } else if delta_lines < 0 {
+        let abs_lines = delta_lines.abs();
+        format!("UNDERFLOW: Need to expand/flesh out approximately {abs_lines} line(s)")
+    } else {
+        "OPTIMAL: Minimal adjustment needed".to_string()
+    };
+
+    let user_input = format!(
+        "Refine and optimize the following resume so that it renders within exactly {target_pages}.00 page(s) on Letter paper.\n\n<page_budget_telemetry>\nTarget Pages: {target_pages}.00\nLine Adjustment: {action_desc}\n</page_budget_telemetry>\n\n<candidate_resume>\n{trimmed_resume}\n</candidate_resume>\n\nOutput only the refined Markdown resume. Preserve all verified facts, company names, dates, metrics, and technical keywords. Do not include introductory text, explanations, or code fences."
+    );
+
+    let out = call_agent_streaming(app, cfg, AgentStage::PageFitOptimizer, &system_prompt, &user_input).await?;
+    let markdown = sanitize_markdown_fence(&out.result);
+    let metric_placeholders = extract_metric_placeholders(&markdown);
+
+    Ok(StageArtifactResult {
+        markdown,
+        thinking: out.thinking,
+        model_used: out.model_used,
+        metric_placeholders,
+    })
+}
+
 pub async fn generate_cover_letter(
     app: Option<&AppHandle>,
     vault: &VaultManager,
@@ -684,5 +723,14 @@ mod tests {
         assert_eq!(loaded.final_resume_markdown, "# Final Resume");
 
         let _ = std::fs::remove_dir_all(&base_dir);
+    }
+
+    #[tokio::test]
+    async fn test_refine_page_fit_empty_rejected() {
+        let vault = VaultManager::discover().unwrap();
+        let cfg = LlmConfig::default();
+        let result = refine_page_fit(None, &vault, &cfg, "   ", 1, 4).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty"));
     }
 }
