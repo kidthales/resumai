@@ -47,6 +47,21 @@ npm run tauri dev
 
 ---
 
+## 📦 Desktop Packaging & Releases
+
+Production desktop installers are automatically built and published via GitHub Actions (`.github/workflows/release.yml`):
+
+### Available Desktop Bundles
+- **Windows x64**: Single-click NSIS installer (`.exe`) and portable standalone executable.
+- **Linux x64**: Standalone `.AppImage` and `.deb` packages.
+- **Checksums**: SHA-256 verification manifest (`SHA256SUMS.txt`) attached to every release.
+
+### Release Mechanics
+- **Human Operator Flow (GitHub UI)**: Draft a release on the GitHub Releases page with your ceremonial release notes and click **Publish release**. The pipeline automatically compiles the Windows and Linux bundles, computes SHA-256 checksums, and attaches all assets directly to the published release.
+- **Autonomous Flow (Git / CLI)**: Pushing a semantic tag (e.g. `git tag v0.2.0 && git push origin v0.2.0`) or triggering `workflow_dispatch` auto-creates the release with structured ceremonial notes, builds installers, and dispatches release embeds to Discord `#dev-ci-builds`.
+
+---
+
 ## Career Vault Structure
 
 ```text
