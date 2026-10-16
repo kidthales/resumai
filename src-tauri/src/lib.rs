@@ -7,8 +7,9 @@ use export::export_resume_bundle;
 use llm::LlmConfig;
 use pipeline::{
     draft_resume, edit_resume, generate_cover_letter, load_application_workspace,
-    run_full_pipeline, run_parallel_checks, select_archetype, ArchetypeSelectionResult,
-    FullPipelineResult, LoadedApplicationWorkspace, ParallelChecksResult, StageArtifactResult,
+    refine_page_fit, run_full_pipeline, run_parallel_checks, select_archetype,
+    ArchetypeSelectionResult, FullPipelineResult, LoadedApplicationWorkspace, ParallelChecksResult,
+    StageArtifactResult,
 };
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -219,6 +220,27 @@ fn cmd_load_application(slug: String) -> Result<LoadedApplicationWorkspace, Stri
     load_application_workspace(&vault, &slug).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn cmd_refine_page_fit(
+    app: AppHandle,
+    config: LlmConfig,
+    resume_markdown: String,
+    target_pages: u32,
+    delta_lines: i32,
+) -> Result<StageArtifactResult, String> {
+    let vault = VaultManager::discover().map_err(|e| e.to_string())?;
+    refine_page_fit(
+        Some(&app),
+        &vault,
+        &config,
+        &resume_markdown,
+        target_pages,
+        delta_lines,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -237,6 +259,7 @@ pub fn run() {
             cmd_run_full_pipeline,
             cmd_export_resume,
             cmd_load_application,
+            cmd_refine_page_fit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ResumAI Studio Tauri application");

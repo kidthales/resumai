@@ -38,6 +38,7 @@ pub enum AgentStage {
     JobAlignmentChecker,
     ResumeEditor,
     CoverLetter,
+    PageFitOptimizer,
 }
 
 impl AgentStage {
@@ -49,13 +50,14 @@ impl AgentStage {
             Self::JobAlignmentChecker => "job_alignment_checker",
             Self::ResumeEditor => "resume_editor",
             Self::CoverLetter => "cover_letter",
+            Self::PageFitOptimizer => "page_fit_optimizer",
         }
     }
 
     pub fn temperature(&self) -> f64 {
         match self {
             Self::ArchetypeSelector | Self::FactChecker => 0.0,
-            Self::ResumeEditor => 0.15,
+            Self::ResumeEditor | Self::PageFitOptimizer => 0.15,
             Self::JobAlignmentChecker | Self::CoverLetter => 0.3,
             Self::ResumeDrafter => 0.35,
         }
@@ -65,7 +67,7 @@ impl AgentStage {
         match self {
             Self::ArchetypeSelector | Self::FactChecker => 0.1,
             Self::JobAlignmentChecker => 0.8,
-            Self::ResumeEditor | Self::CoverLetter => 0.85,
+            Self::ResumeEditor | Self::CoverLetter | Self::PageFitOptimizer => 0.85,
             Self::ResumeDrafter => 0.9,
         }
     }
@@ -73,7 +75,7 @@ impl AgentStage {
     pub fn top_k(&self) -> u32 {
         match self {
             Self::ArchetypeSelector | Self::FactChecker => 20,
-            Self::ResumeEditor => 30,
+            Self::ResumeEditor | Self::PageFitOptimizer => 30,
             Self::JobAlignmentChecker | Self::CoverLetter => 35,
             Self::ResumeDrafter => 40,
         }
@@ -84,7 +86,9 @@ impl AgentStage {
             Self::ArchetypeSelector | Self::ResumeDrafter | Self::JobAlignmentChecker => {
                 &cfg.gemini_lite_model
             }
-            Self::FactChecker | Self::ResumeEditor | Self::CoverLetter => &cfg.gemini_flash_model,
+            Self::FactChecker | Self::ResumeEditor | Self::CoverLetter | Self::PageFitOptimizer => {
+                &cfg.gemini_flash_model
+            }
         }
     }
 }

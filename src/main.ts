@@ -12,6 +12,7 @@ import {
     runFullPipeline,
     runGenerateCoverLetter,
     runParallelChecks,
+    runRefinePageFit,
     runSelectArchetype,
     subscribeAgentStream,
     writeVaultFile
@@ -213,10 +214,25 @@ function renderLivePreview(): void {
         try {
             const doc = iframe.contentDocument;
             if (!doc || !doc.body) return;
-            const budget = calculatePageBudget(doc.documentElement.scrollHeight);
+            const targetSelect = el<HTMLSelectElement>('select-target-pages');
+            const targetPages = (parseInt(targetSelect?.value || '2', 10) === 1 ? 1 : 2) as 1 | 2;
+            state.targetPages = targetPages;
+
+            const budget = calculatePageBudget(doc.documentElement.scrollHeight, targetPages);
             const pill = el<HTMLSpanElement>('page-budget-pill');
             pill.className = `budget-pill ${budget.isSpillover ? 'warning' : 'optimal'}`;
             pill.textContent = budget.label;
+
+            const autoFitBtn = el<HTMLButtonElement>('btn-auto-fit-page');
+            if (autoFitBtn) {
+                if (budget.needsRefinement) {
+                    autoFitBtn.classList.remove('btn-secondary');
+                    autoFitBtn.classList.add('btn-primary');
+                } else {
+                    autoFitBtn.classList.remove('btn-primary');
+                    autoFitBtn.classList.add('btn-secondary');
+                }
+            }
         } catch {
             // Ignore cross-origin frame measurements if any
         }
@@ -406,7 +422,8 @@ function setButtonsDisabled(disabled: boolean): void {
         'btn-step-draft',
         'btn-step-checks',
         'btn-step-edit',
-        'btn-step-pitch'
+        'btn-step-pitch',
+        'btn-auto-fit-page'
     ];
     ids.forEach((id) => {
         el<HTMLButtonElement>(id).disabled = disabled;
@@ -824,6 +841,64 @@ function bindUiEvents(): void {
             setStatus('idle', `Exported ${res.docx_path} and ${res.html_path}`);
         } catch (err) {
             setStatus('error', `Export failed: ${String(err)}`);
+        }
+    });
+
+    // Target Page Budget Selector
+    el('select-target-pages').addEventListener('change', (e) => {
+        const sel = e.target as HTMLSelectElement;
+        state.targetPages = (parseInt(sel.value, 10) === 1 ? 1 : 2) as 1 | 2;
+        renderLivePreview();
+    });
+
+    // Auto-Fit Page Budget Refinement Loop
+    el('btn-auto-fit-page').addEventListener('click', async () => {
+        if (state.isRunning) return;
+        const resumeMd = state.artifacts.final || state.artifacts[state.activeArtifactTab];
+        if (!resumeMd.trim()) {
+            setStatus('error', 'No resume markdown available to optimize for page budget.');
+            return;
+        }
+
+        const iframe = el<HTMLIFrameElement>('preview-iframe');
+        const doc = iframe.contentDocument;
+        const totalHeight = doc?.documentElement?.scrollHeight || 1056;
+        const budget = calculatePageBudget(totalHeight, state.targetPages);
+
+        if (Math.abs(budget.excessPx) <= 15) {
+            setStatus(
+                'idle',
+                `Resume is already optimally fitted to ${state.targetPages}.00 page(s) (${budget.pagesFormatted} pages)!`
+            );
+            return;
+        }
+
+        setButtonsDisabled(true);
+        const actionVerb =
+            budget.deltaLines > 0
+                ? `trimming ~${budget.deltaLines} lines`
+                : `expanding ~${Math.abs(budget.deltaLines)} lines`;
+        setStatus('running', `📐 Optimizing page budget: ${actionVerb} to fit ${state.targetPages}.00 page(s)...`);
+
+        const details = el<HTMLDetailsElement>('thonk-drawer');
+        details.open = true;
+        const log = el<HTMLPreElement>('thonk-stream-log');
+        log.textContent = `[PageFitOptimizer] Initiating refinement pass targeting ${state.targetPages}.00 page(s) (Delta: ${budget.deltaLines} lines, ${budget.excessPx}px)...\n`;
+
+        try {
+            const result = await runRefinePageFit(state.llmConfig, resumeMd, state.targetPages, budget.deltaLines);
+
+            state.artifacts.final = result.markdown;
+            if (state.activeArtifactTab === 'final') {
+                el<HTMLTextAreaElement>('artifact-editor').value = result.markdown;
+            }
+
+            renderLivePreview();
+            setStatus('idle', `✨ Page budget optimized to fit ${state.targetPages}.00 page(s)!`);
+        } catch (err) {
+            setStatus('error', `Page-fit optimization failed: ${String(err)}`);
+        } finally {
+            setButtonsDisabled(false);
         }
     });
 
