@@ -1,20 +1,23 @@
+@import '@kidthales/picotol/tokens';
+@import '@kidthales/picotol/palettes';
+
 :root {
-    --bg-app: #0b0f19;
-    --bg-panel: #111827;
-    --bg-card: #1e293b;
-    --bg-input: #0f172a;
-    --border-subtle: #334155;
-    --border-focus: #38bdf8;
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
-    --accent-primary: #0284c7;
-    --accent-hover: #0369a1;
-    --accent-cyan: #38bdf8;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --danger: #ef4444;
-    --font-ui: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-    --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+    --bg-app: #080d16;
+    --bg-panel: #0f1726;
+    --bg-card: color-mix(in srgb, var(--tol-hc-blue, #004488) 28%, #111827);
+    --bg-input: #0a101d;
+    --border-subtle: color-mix(in srgb, var(--tol-grey-700, #666666) 55%, #1e293b);
+    --border-focus: var(--tol-bright-cyan, #66ccee);
+    --text-main: var(--tol-white, #ffffff);
+    --text-muted: var(--tol-grey-300, #bbbbbb);
+    --accent-primary: var(--tol-vibrant-blue, #0077bb);
+    --accent-hover: var(--tol-hc-blue, #004488);
+    --accent-cyan: var(--tol-bright-cyan, #66ccee);
+    --success: var(--tol-light-mint, #44bb99);
+    --warning: var(--tol-hc-yellow, #ddaa33);
+    --danger: var(--tol-bright-red, #ee6677);
+    --font-ui: var(--pt-font-sans, 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif);
+    --font-mono: var(--pt-font-mono, 'Cascadia Code', 'JetBrains Mono', Consolas, monospace);
 }
 
 * {
@@ -730,20 +733,65 @@ textarea:focus {
 
 .control-item input[type='range'] {
     width: 64px;
+    accent-color: var(--accent-cyan);
+}
+
+.stepper-number {
+    width: 52px;
+    padding: 2px 4px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    text-align: right;
+    background: var(--bg-card);
+    color: var(--text-main);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    outline: none;
+}
+
+.stepper-number:focus {
+    border-color: var(--border-focus);
+}
+
+/* Resizable 3-Pane Split Layout */
+.split-pane-container {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+    width: 100%;
+}
+
+.split-gutter {
+    width: 5px;
+    cursor: col-resize;
+    background: var(--border-subtle);
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+    user-select: none;
+}
+
+.split-gutter:hover,
+.split-gutter.dragging {
+    background: var(--accent-cyan);
 }
 
 .export-banner {
     padding: 6px 12px;
-    background: rgba(16, 185, 129, 0.15);
-    border-bottom: 1px solid rgba(16, 185, 129, 0.35);
-    color: #34d399;
+    background: rgba(68, 187, 153, 0.15);
+    border-bottom: 1px solid rgba(68, 187, 153, 0.35);
+    color: var(--success);
     font-family: var(--font-mono);
     font-size: 11px;
 }
 
 .paper-stage {
     flex: 1;
-    background: #334155;
+    background: #1e293b;
     padding: 14px;
     overflow: auto;
     display: flex;
@@ -759,15 +807,27 @@ textarea:focus {
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
 }
 
-/* Modal */
+/* Modal (<dialog> and backdrop) */
 .modal-backdrop {
     position: fixed;
     inset: 0;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: none;
     background: rgba(0, 0, 0, 0.65);
+    color: var(--text-main);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 100;
+}
+
+.modal-backdrop::backdrop {
+    background: rgba(0, 0, 0, 0.65);
 }
 
 .modal-card {
