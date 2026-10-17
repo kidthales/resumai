@@ -1,8 +1,11 @@
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vitest/config';
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+    plugins: [svelte(), svelteTesting()],
     clearScreen: false,
     server: {
         port: 1420,
@@ -26,3 +29,4 @@ export default defineConfig({
         include: ['src/tests/**/*.test.ts']
     }
 });
+
