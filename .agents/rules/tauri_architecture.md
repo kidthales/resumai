@@ -1,5 +1,5 @@
 ---
-description: Tauri v2 Rust backend and Vanilla TypeScript frontend architecture invariants for ResumAI
+description: Tauri v2 Rust backend, Svelte 5 (Runes), and @kidthales/picotol frontend architecture invariants for ResumAI
 globs: ["src/**/*", "src-tauri/**/*", "content/**/*"]
 ---
 
@@ -35,3 +35,12 @@ globs: ["src/**/*", "src-tauri/**/*", "content/**/*"]
   - Strictly enforce preservation of all facts, metrics, percentages, dates, employer names, and bullet items.
   - Only compress or expand phrasing, conjunctions, and sentence structure to achieve the requested line delta.
 
+## 6. Svelte 5 (Runes) & `@kidthales/picotol` Frontend Invariants
+- **Zero-Runtime Reactive State (`src/lib/state.svelte.ts`)**: All shared studio state lives in the `ResumaiState` class using Svelte 5 `$state` and `$derived` runes.
+- **Avoid `store_rune_conflict` in `.svelte` Components**: Never import the shared state singleton under the identifier `state` inside a `.svelte` file that also uses the `$state(...)` rune (Svelte 5 treats `$state` as an ambiguous store auto-subscription on `state`). Always alias the import:
+  ```ts
+  import { state as studio } from "../lib/state.svelte";
+  ```
+- **Synchronous DOM Flushing (`flushSync`)**: Wrap synchronous UI state transitions (`setTab`, `setTheme`, `toggleConsole`, etc.) and command lifecycle updates in `flushSync()` from `'svelte'` so both interactive users and synchronous Vitest DOM assertions observe immediate DOM updates without requiring microtask ticks.
+- **Design Tokens & Accessibility (`@kidthales/picotol`)**: Import `@kidthales/picotol/tokens` and `@kidthales/picotol/palettes` in `src/styles/main.css` from the vendored tarball (`file:./vendor/kidthales-picotol-0.1.0.tgz`). Map semantic state colors to Paul Tol CVD-safe tokens (`--tol-vibrant-blue`, `--tol-vibrant-teal`, `--tol-vibrant-orange`, `--tol-vibrant-red`, `--tol-vibrant-cyan`).
+- **Vite 6 & Vitest Client Resolution**: Keep `@sveltejs/vite-plugin-svelte` on `^5.0.0` while using `vite@^6.1.0`, and include `svelteTesting()` from `@testing-library/svelte/vite` in `vite.config.ts` so Vitest mounts Svelte 5 components using the browser bundle in `happy-dom`.
