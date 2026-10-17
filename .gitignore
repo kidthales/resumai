@@ -1,27 +1,12 @@
-/.agents/skills/
 /.idea/
 /.junie/
 /.vscode/
 /coverage/
+/dist/
 /node_modules/
-/.eslintcache
-
-###> symfony/framework-bundle ###
-/.env.local
-/.env.local.php
-/.env.*.local
-/config/secrets/prod/prod.decrypt.private.php
-/public/bundles/
+/src-tauri/target/
+/src-tauri/gen/
 /var/
-/vendor/
-###< symfony/framework-bundle ###
-
-###> friendsofphp/php-cs-fixer ###
-/.php-cs-fixer.php
-/.php-cs-fixer.cache
-###< friendsofphp/php-cs-fixer ###
-
-###> phpunit/phpunit ###
-/phpunit.xml
-/.phpunit.cache/
-###< phpunit/phpunit ###
+/.env.local
+/test-results/
+/playwright-report/

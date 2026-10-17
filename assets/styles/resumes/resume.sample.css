@@ -164,6 +164,46 @@ code {
     color: var(--secondary-color);
 }
 
+/* Tables & Callouts */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4pt 0 6pt 0;
+}
+
+table.table-borderless td,
+table.table-borderless th {
+    border: none;
+    padding: 2pt 0;
+}
+
+table.table-matrix td,
+table.table-matrix th {
+    border-top: 1pt solid var(--border-color);
+    border-bottom: 1pt solid var(--border-color);
+    padding: 3pt 6pt;
+    font-size: 9.25pt;
+}
+
+table.table-matrix th {
+    font-weight: 700;
+    color: var(--primary-color);
+    background-color: var(--highlight-bg);
+}
+
+blockquote {
+    margin: 6pt 0;
+    padding: 4pt 10pt;
+    border-left: 3pt solid #004D40;
+    background-color: #f8fafc;
+    color: var(--secondary-color);
+    font-style: italic;
+}
+
+blockquote p {
+    margin: 0;
+}
+
 /* Print Specific Refinements */
 @media print {
     body {

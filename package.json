@@ -1,18 +1,41 @@
 {
   "name": "@kidthales/resumai",
-  "version": "0.1.0",
-  "description": "A resume generation system that leverages LLMs",
+  "version": "0.2.0",
+  "description": "Local-first AI resume & consulting proposal engineering studio (Tauri v2 + Svelte 5 + @kidthales/picotol)",
   "license": "AGPL-3.0-or-later",
   "author": "Tristan Bonsor <kidthales@agogpixel.com>",
   "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "test:backend": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:e2e": "playwright test",
+    "test:all": "npm run test:unit && npm run test:e2e && npm run test:backend",
+    "test:live": "npm run test:unit -- --testNamePattern=\"(live)\"",
+    "lint": "prettier --check \"src/**/*.{ts,css}\" \"index.html\"",
+    "format": "prettier --write \"src/**/*.{ts,css}\" \"index.html\""
+  },
+  "dependencies": {
+    "@kidthales/picotol": "file:vendor/kidthales-picotol-0.1.0.tgz",
+    "@tauri-apps/api": "^2.2.0",
+    "marked": "^15.0.6"
+  },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.7",
-    "eslint": "^10.12.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.6",
-    "prettier": "^3.9.9",
-    "puppeteer": "^25.12.0",
-    "skills": "^1.7.0"
+    "@playwright/test": "^1.64.1",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@tauri-apps/cli": "^2.2.0",
+    "@testing-library/svelte": "^5.4.2",
+    "happy-dom": "^21.0.1",
+    "prettier": "^3.5.0",
+    "svelte": "^5.57.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^5.0.5"
   }
 }

@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - main-v2
   pull_request: ~
   workflow_dispatch: ~
 
@@ -16,95 +17,135 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tests:
-    name: Tests
+  frontend:
+    name: Frontend Unit & Headless UI Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          persist-credentials: false
+          node-version: "22"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint formatting
+        run: npm run lint
+      - name: Typecheck & build frontend
+        run: npm run build
+      - name: Run Vitest headless UI test suite
+        run: npm run test:unit
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Build Docker images
-        uses: docker/bake-action@v7
-        with:
-          pull: true
-          load: true
-          targets: php
-          files: |
-            docker/docker-bake.hcl
-          set: |
-            *.cache-from=type=gha,scope=${{github.ref}}
-            *.cache-from=type=gha,scope=refs/heads/main
-            *.cache-to=type=gha,scope=${{github.ref}},mode=max
-
-      - name: Start services
-        run: cd docker && docker compose -f compose.yaml -f compose.ci.yaml up --wait --no-build
-
-      - name: Check HTTP reachability
-        run: curl -v --fail-with-body http://localhost
-      # Uncomment when the homepage is configured, or change the path to check
-      # - name: Check HTTPS reachability
-      #   run: curl -v --insecure --fail-with-body https://localhost
-      - name: Check Mercure reachability
-        run: curl -vI --insecure --fail-with-body https://localhost/.well-known/mercure?topic=test
-      # Uncomment if Doctrine ORM is installed
-      # - name: Create test database
-      #   run: docker compose exec -T php bin/console -e test doctrine:database:create
-      # Uncomment if Doctrine Migrations is installed
-      # - name: Run migrations
-      #   run: docker compose exec -T php bin/console -e test doctrine:migrations:migrate --no-interaction
-      # Uncomment if PHPUnit is installed
-      - name: Run PHPUnit
-        run: cd docker && docker compose exec -T php bin/phpunit
-      # Uncomment if Doctrine ORM is installed
-      # - name: Doctrine Schema Validator
-      #   run: docker compose exec -T php bin/console -e test doctrine:schema:validate
-
-  lint:
-    name: Lint
+  browser-e2e:
+    name: Browser Engine & Pixel Layout Tests (Playwright)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Setup Node
-        id: setup-node
-        background: true
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
-      - name: Setup PHP
-        id: setup-php
-        background: true
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.5'
-
-      - name: Wait for setups
-        wait: [setup-node, setup-php]
-
-      - name: Install vendor/
-        run: composer install --no-progress --no-interaction
-      - name: Install node_modules
+          node-version: "22"
+          cache: "npm"
+      - name: Install dependencies
         run: npm ci
+      - name: Install Playwright Chromium & dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright layout tests
+        run: npm run test:e2e
 
-      - name: Prettier
-        id: prettier
-        background: true
-        run: npx prettier --check "**/*.{css,json,md,yaml}"
-      - name: PHP CS Fixer
-        id: php-cs-fixer
-        background: true
-        run: php vendor/bin/php-cs-fixer check
-      - name: ESLint
-        id: eslint
-        background: true
-        run: npx eslint .
+  rust-core:
+    name: Rust Backend Unit & Workspace Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Linux WebKitGTK system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      - name: Wait for linters
-        wait: [prettier, php-cs-fixer, eslint]
+  notify:
+    name: Notify Discord (#dev-ci-builds)
+    needs: [frontend, browser-e2e, rust-core]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch Discord Webhook
+        shell: bash
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_CI_WEBHOOK }}
+          JOB_STATUS: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || 'success') }}
+          REPO_NAME: ${{ github.repository }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "Warning: No DISCORD_CI_WEBHOOK configured. Skipping notification."
+            exit 0
+          fi
+
+          if [ "$JOB_STATUS" = "success" ]; then
+            COLOR=4388484
+            STATUS_ICON="✅"
+            TITLE="CI Suite Passed: $REPO_NAME"
+          elif [ "$JOB_STATUS" = "failure" ]; then
+            COLOR=15088454
+            STATUS_ICON="❌"
+            TITLE="CI Suite Failed: $REPO_NAME"
+          else
+            COLOR=13202208
+            STATUS_ICON="⚠️"
+            TITLE="CI Suite Cancelled: $REPO_NAME"
+          fi
+
+          SHORT_SHA=$(echo "$COMMIT_SHA" | cut -c1-7)
+          RUN_URL="$SERVER_URL/$REPO_NAME/actions/runs/$RUN_ID"
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "username": "kidthales CI/CD",
+            "avatar_url": "https://github.com/kidthales.png",
+            "embeds": [
+              {
+                "title": "$STATUS_ICON $TITLE",
+                "color": $COLOR,
+                "description": "CI test suite (Frontend, Playwright E2E, Rust Core) completed for branch \`$BRANCH_NAME\`.",
+                "url": "$RUN_URL",
+                "author": {
+                  "name": "kidthales Systems CI",
+                  "icon_url": "https://github.com/kidthales.png"
+                },
+                "fields": [
+                  { "name": "Repository", "value": "\`$REPO_NAME\`", "inline": true },
+                  { "name": "Branch", "value": "\`$BRANCH_NAME\`", "inline": true },
+                  { "name": "Triggered By", "value": "@$ACTOR", "inline": true },
+                  { "name": "Workflow", "value": "$WORKFLOW_NAME", "inline": true },
+                  { "name": "Commit", "value": "[\`$SHORT_SHA\`]($SERVER_URL/$REPO_NAME/commit/$COMMIT_SHA)", "inline": true },
+                  { "name": "Run Details", "value": "[View Run]($RUN_URL)", "inline": true }
+                ],
+                "footer": {
+                  "text": "kidthales Automation • Antigravity",
+                  "icon_url": "https://github.com/kidthales.png"
+                },
+                "timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              }
+            ]
+          }
+          EOF
+          )
+
+          curl -s -S -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$WEBHOOK_URL" > /dev/null || echo "Warning: Discord webhook dispatch failed."
+
