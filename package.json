@@ -24,7 +24,7 @@
   "dependencies": {
     "@kidthales/picotol": "file:vendor/kidthales-picotol-0.1.0.tgz",
     "@tauri-apps/api": "^2.2.0",
-    "marked": "^15.0.6"
+    "marked": "^18.1.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
