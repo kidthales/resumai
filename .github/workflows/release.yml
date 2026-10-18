@@ -64,26 +64,26 @@ jobs:
             else
               echo "Creating ceremonial release for $TAG..."
               CEREMONIAL_NOTES=$(cat << 'EOF'
-## ResumAI Studio __TAG__ — Production Desktop Release
+              ## ResumAI Studio __TAG__ — Production Desktop Release
 
-> **Local-First AI Resume & Consulting Proposal Engineering Studio**
+              > **Local-First AI Resume & Consulting Proposal Engineering Studio**
 
-### 🌟 Architectural Leap
-- **Local-First Tauri v2**: Standalone desktop studio eliminating all Docker, container, and local web server dependencies.
-- **Zero-Container Export Engine**: Pure-Rust OpenXML `.docx` synthesis and standalone `.html` exports without Pandoc, Puppeteer, or external interpreters.
+              ### 🌟 Architectural Leap
+              - **Local-First Tauri v2**: Standalone desktop studio eliminating all Docker, container, and local web server dependencies.
+              - **Zero-Container Export Engine**: Pure-Rust OpenXML `.docx` synthesis and standalone `.html` exports without Pandoc, Puppeteer, or external interpreters.
 
-### 🛡️ Privacy & Vault Invariants
-- **100% On-Device PII Vault**: Candidate profile, work history, archetypes, and custom CSS themes reside strictly on your local filesystem (`content/pii/`).
-- **Zero Cloud Telemetry**: Resume data and job descriptions are never transmitted to third-party databases.
+              ### 🛡️ Privacy & Vault Invariants
+              - **100% On-Device PII Vault**: Candidate profile, work history, archetypes, and custom CSS themes reside strictly on your local filesystem (`content/pii/`).
+              - **Zero Cloud Telemetry**: Resume data and job descriptions are never transmitted to third-party databases.
 
-### 🤖 Anti-Hallucination Multi-Agent Pipeline
-- **Autonomous Archetype Selection**: LLM tool execution against active local candidate archetypes.
-- **Concurrent Audits**: `tokio::join!` parallel execution of grounded Fact-Checking and Job-Alignment gap analysis.
-- **Interactive Metric Write-Back Loop**: Interactive UI detection and one-click fact persistence into `content/pii/work_history.md`.
+              ### 🤖 Anti-Hallucination Multi-Agent Pipeline
+              - **Autonomous Archetype Selection**: LLM tool execution against active local candidate archetypes.
+              - **Concurrent Audits**: `tokio::join!` parallel execution of grounded Fact-Checking and Job-Alignment gap analysis.
+              - **Interactive Metric Write-Back Loop**: Interactive UI detection and one-click fact persistence into `content/pii/work_history.md`.
 
-### 📦 Distribution Artifacts
-Download the appropriate installer for your operating system below. Integrity checksums are provided in `SHA256SUMS.txt`.
-EOF
+              ### 📦 Distribution Artifacts
+              Download the appropriate installer for your operating system below. Integrity checksums are provided in `SHA256SUMS.txt`.
+              EOF
               )
               NOTES="${CEREMONIAL_NOTES//__TAG__/$TAG}"
               gh release create "$TAG" \
