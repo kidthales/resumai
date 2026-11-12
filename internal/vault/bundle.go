@@ -835,7 +835,9 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			for _, rid := range existingRoleIDs {
 				if !incomingRoleIDs[rid] {
 					var remainingFacts int
-					_ = tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM career_facts WHERE role_id = ?;`, rid).Scan(&remainingFacts)
+					if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM career_facts WHERE role_id = ?;`, rid).Scan(&remainingFacts); err != nil {
+						return fmt.Errorf("tx check remaining facts for role %s: %w", rid, err)
+					}
 					if remainingFacts == 0 {
 						if _, err := tx.ExecContext(ctx, `DELETE FROM roles WHERE id = ?;`, rid); err != nil {
 							return fmt.Errorf("tx delete role %s: %w", rid, err)
@@ -867,7 +869,9 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			for _, oid := range existingOrgIDs {
 				if !incomingOrgIDs[oid] {
 					var remainingRoles int
-					_ = tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM roles WHERE org_id = ?;`, oid).Scan(&remainingRoles)
+					if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM roles WHERE org_id = ?;`, oid).Scan(&remainingRoles); err != nil {
+						return fmt.Errorf("tx check remaining roles for org %s: %w", oid, err)
+					}
 					if remainingRoles == 0 {
 						if _, err := tx.ExecContext(ctx, `DELETE FROM organizations WHERE id = ?;`, oid); err != nil {
 							return fmt.Errorf("tx delete org %s: %w", oid, err)
