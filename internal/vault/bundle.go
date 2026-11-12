@@ -718,14 +718,13 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 				for _, f := range r.Facts {
 					eState := domain.EpistemicState(f.EpistemicState)
 					if eState == "" {
-						eState = domain.EpistemicRawNote
+						if f.Verified {
+							eState = domain.EpistemicVerified
+						} else {
+							eState = domain.EpistemicRawNote
+						}
 					}
-					isVerified := f.Verified
-					if isVerified {
-						eState = domain.EpistemicVerified
-					} else if eState == domain.EpistemicVerified {
-						isVerified = true
-					}
+					isVerified := (eState == domain.EpistemicVerified)
 					verifiedInt := 0
 					if isVerified {
 						verifiedInt = 1

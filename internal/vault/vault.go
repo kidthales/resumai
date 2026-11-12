@@ -35,6 +35,11 @@ func Open(dsn string) (*CareerVault, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
+	// Enforce single connection for embedded SQLite to prevent table lock contention
+	// and ensure per-connection pragmas apply to all operations.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
 	// Pragmas for performance and correctness
 	pragmas := []string{
 		"PRAGMA foreign_keys = ON;",
@@ -342,7 +347,23 @@ func (v *CareerVault) ListOrganizations(ctx context.Context) ([]*domain.Organiza
 }
 
 // DeleteOrganization deletes an organization and cascading child roles/facts.
+// Guard: If any child facts under this organization are cited in a Submitted application,
+// returns domain.ErrCannotDeleteSubmittedFact to prevent cascade deletion of provenance.
 func (v *CareerVault) DeleteOrganization(ctx context.Context, id string) error {
+	var citedCount int
+	checkQuery := `
+	SELECT COUNT(1) FROM application_citations ac
+	JOIN applications a ON a.id = ac.application_id
+	JOIN career_facts f ON f.id = ac.fact_id
+	JOIN roles r ON r.id = f.role_id
+	WHERE r.org_id = ? AND a.state = 'Submitted';`
+	if err := v.db.QueryRowContext(ctx, checkQuery, id).Scan(&citedCount); err != nil {
+		return fmt.Errorf("check cited org facts: %w", err)
+	}
+	if citedCount > 0 {
+		return domain.ErrCannotDeleteSubmittedFact
+	}
+
 	res, err := v.db.ExecContext(ctx, `DELETE FROM organizations WHERE id = ?;`, id)
 	if err != nil {
 		return fmt.Errorf("delete organization: %w", err)
@@ -483,7 +504,22 @@ func (v *CareerVault) ListRolesByOrg(ctx context.Context, orgID string) ([]*doma
 }
 
 // DeleteRole deletes a role and cascading facts.
+// Guard: If any child facts under this role are cited in a Submitted application,
+// returns domain.ErrCannotDeleteSubmittedFact to prevent cascade deletion of provenance.
 func (v *CareerVault) DeleteRole(ctx context.Context, id string) error {
+	var citedCount int
+	checkQuery := `
+	SELECT COUNT(1) FROM application_citations ac
+	JOIN applications a ON a.id = ac.application_id
+	JOIN career_facts f ON f.id = ac.fact_id
+	WHERE f.role_id = ? AND a.state = 'Submitted';`
+	if err := v.db.QueryRowContext(ctx, checkQuery, id).Scan(&citedCount); err != nil {
+		return fmt.Errorf("check cited role facts: %w", err)
+	}
+	if citedCount > 0 {
+		return domain.ErrCannotDeleteSubmittedFact
+	}
+
 	res, err := v.db.ExecContext(ctx, `DELETE FROM roles WHERE id = ?;`, id)
 	if err != nil {
 		return fmt.Errorf("delete role: %w", err)
@@ -506,18 +542,18 @@ func (v *CareerVault) SaveCareerFact(ctx context.Context, fact *domain.CareerFac
 		return errors.New("career fact RoleID cannot be empty")
 	}
 	if fact.EpistemicState == "" {
-		fact.EpistemicState = domain.EpistemicRawNote
+		if fact.Verified {
+			fact.EpistemicState = domain.EpistemicVerified
+		} else {
+			fact.EpistemicState = domain.EpistemicRawNote
+		}
 	}
 	if err := fact.EpistemicState.Validate(); err != nil {
 		return err
 	}
 
-	// Epistemic state sync: if verified, epistemic state must be verified
-	if fact.Verified {
-		fact.EpistemicState = domain.EpistemicVerified
-	} else if fact.EpistemicState == domain.EpistemicVerified {
-		fact.Verified = true
-	}
+	// Epistemic state is the primary source of truth for verification
+	fact.Verified = (fact.EpistemicState == domain.EpistemicVerified)
 
 	now := time.Now().UTC()
 	if fact.CreatedAt.IsZero() {

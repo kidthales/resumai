@@ -276,10 +276,15 @@ func TestSubmittedFactSoftArchiveGuard(t *testing.T) {
 		t.Fatalf("advance application to submitted failed: %v", err)
 	}
 
-	// Invariant: Deleting fact2 MUST fail because it is cited in a Submitted application!
-	err := v.DeleteCareerFact(ctx, fact2.ID)
-	if !errors.Is(err, domain.ErrCannotDeleteSubmittedFact) {
-		t.Fatalf("expected ErrCannotDeleteSubmittedFact, got: %v", err)
+	// Invariant: Deleting fact2, its role, or its org MUST fail because fact2 is cited in a Submitted application!
+	if err := v.DeleteCareerFact(ctx, fact2.ID); !errors.Is(err, domain.ErrCannotDeleteSubmittedFact) {
+		t.Fatalf("expected ErrCannotDeleteSubmittedFact on DeleteCareerFact, got: %v", err)
+	}
+	if err := v.DeleteRole(ctx, role.ID); !errors.Is(err, domain.ErrCannotDeleteSubmittedFact) {
+		t.Fatalf("expected ErrCannotDeleteSubmittedFact on DeleteRole, got: %v", err)
+	}
+	if err := v.DeleteOrganization(ctx, org.ID); !errors.Is(err, domain.ErrCannotDeleteSubmittedFact) {
+		t.Fatalf("expected ErrCannotDeleteSubmittedFact on DeleteOrganization, got: %v", err)
 	}
 
 	// Soft-archive should succeed instead
@@ -341,5 +346,53 @@ func TestEducationAndArchetypes(t *testing.T) {
 	}
 	if gotArch.Name != arch.Name || len(gotArch.CoreCompetencies) != 3 {
 		t.Errorf("archetype mismatch: got %+v", gotArch)
+	}
+}
+
+func TestEpistemicStatePrecedence(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	org := &domain.Organization{ID: "org-prec", Name: "Precedence Corp"}
+	_ = v.SaveOrganization(ctx, org)
+	role := &domain.Role{ID: "role-prec", OrgID: org.ID, Title: "Engineer", Category: "work"}
+	_ = v.SaveRole(ctx, role)
+
+	// 1. Create a fact with Verified = true
+	fact := &domain.CareerFact{
+		ID:             "fact-prec-1",
+		RoleID:         role.ID,
+		Details:        "Verified fact details.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	}
+	if err := v.SaveCareerFact(ctx, fact); err != nil {
+		t.Fatalf("save verified fact failed: %v", err)
+	}
+
+	saved, err := v.GetCareerFact(fact.ID)
+	if err != nil {
+		t.Fatalf("get fact failed: %v", err)
+	}
+	if saved.EpistemicState != domain.EpistemicVerified || !saved.Verified {
+		t.Fatalf("expected verified fact, got state=%s, verified=%v", saved.EpistemicState, saved.Verified)
+	}
+
+	// 2. Now update EpistemicState to raw_note without changing Verified (leave Verified true in struct)
+	fact.EpistemicState = domain.EpistemicRawNote
+	// Note: fact.Verified is still true here in memory!
+	if err := v.SaveCareerFact(ctx, fact); err != nil {
+		t.Fatalf("save updated fact failed: %v", err)
+	}
+
+	updated, err := v.GetCareerFact(fact.ID)
+	if err != nil {
+		t.Fatalf("get fact after downgrade failed: %v", err)
+	}
+	if updated.EpistemicState != domain.EpistemicRawNote {
+		t.Errorf("expected EpistemicRawNote, got %s", updated.EpistemicState)
+	}
+	if updated.Verified {
+		t.Errorf("expected Verified to be false when EpistemicState is raw_note, got true")
 	}
 }

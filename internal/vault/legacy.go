@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/kidthales/resumai/internal/domain"
 	"gopkg.in/yaml.v3"
@@ -1144,10 +1145,23 @@ func parseArchetypeFile(path string) (*domain.Archetype, error) {
 
 	if arch.Name == "" {
 		arch.Name = strings.ReplaceAll(arch.ID, "_", " ")
-		arch.Name = strings.Title(strings.ReplaceAll(arch.Name, "-", " "))
+		arch.Name = titleCase(strings.ReplaceAll(arch.Name, "-", " "))
 	}
 
 	return arch, nil
+}
+
+func titleCase(s string) string {
+	words := strings.Fields(s)
+	for i, w := range words {
+		if len(w) == 0 {
+			continue
+		}
+		runes := []rune(w)
+		runes[0] = unicode.ToUpper(runes[0])
+		words[i] = string(runes)
+	}
+	return strings.Join(words, " ")
 }
 
 // --- Text Utility Helpers ---
