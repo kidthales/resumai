@@ -160,11 +160,29 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		_ = os.Remove(logisticsPath)
 	}
 
-	// 3. Organizations -> Roles -> Facts
+	// 3. Organizations -> Roles -> Facts (bulk queries to avoid N+1 SQLite overhead under -race)
 	orgs, err := v.ListOrganizations(ctx)
 	if err != nil {
 		return fmt.Errorf("dump list organizations: %w", err)
 	}
+	allRoles, err := v.ListRoles(ctx)
+	if err != nil {
+		return fmt.Errorf("dump list roles: %w", err)
+	}
+	allFacts, err := v.ListCareerFacts(ctx)
+	if err != nil {
+		return fmt.Errorf("dump list facts: %w", err)
+	}
+
+	rolesByOrg := make(map[string][]*domain.Role, len(orgs))
+	for _, r := range allRoles {
+		rolesByOrg[r.OrgID] = append(rolesByOrg[r.OrgID], r)
+	}
+	factsByRole := make(map[string][]*domain.CareerFact, len(allRoles))
+	for _, f := range allFacts {
+		factsByRole[f.RoleID] = append(factsByRole[f.RoleID], f)
+	}
+
 	orgDir := filepath.Join(cleanDir, "organizations")
 	if err := cleanYAMLDir(orgDir); err != nil {
 		return fmt.Errorf("clean organizations dir: %w", err)
@@ -173,10 +191,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 
 	seenOrgSlugs := make(map[string]int)
 	for _, org := range orgs {
-		roles, err := v.ListRolesByOrg(ctx, org.ID)
-		if err != nil {
-			return fmt.Errorf("dump list roles for org %s: %w", org.ID, err)
-		}
+		roles := rolesByOrg[org.ID]
 
 		bOrg := BundleOrganization{
 			ID:       org.ID,
@@ -186,10 +201,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		}
 
 		for _, r := range roles {
-			facts, err := v.ListCareerFactsByRole(ctx, r.ID)
-			if err != nil {
-				return fmt.Errorf("dump list facts for role %s: %w", r.ID, err)
-			}
+			facts := factsByRole[r.ID]
 
 			bRole := BundleRole{
 				ID:        r.ID,
@@ -279,6 +291,10 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	if err != nil {
 		return fmt.Errorf("dump list applications: %w", err)
 	}
+	citationsByApp, err := v.listAllCitationsByApp(ctx)
+	if err != nil {
+		return fmt.Errorf("dump list application citations: %w", err)
+	}
 	appDir := filepath.Join(cleanDir, "applications")
 	if err := cleanYAMLDir(appDir); err != nil {
 		return fmt.Errorf("clean applications dir: %w", err)
@@ -287,10 +303,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 
 	seenAppSlugs := make(map[string]int)
 	for _, app := range apps {
-		citations, err := v.GetCitationsForApp(ctx, app.ID)
-		if err != nil {
-			return fmt.Errorf("dump citations for app %s: %w", app.ID, err)
-		}
+		citations := citationsByApp[app.ID]
 		bApp := BundleApplication{
 			ID:                 app.ID,
 			RoleTitle:          app.RoleTitle,
@@ -308,6 +321,27 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	}
 
 	return nil
+}
+
+func (v *CareerVault) listAllCitationsByApp(ctx context.Context) (map[string][]string, error) {
+	rows, err := v.db.QueryContext(ctx, `SELECT application_id, fact_id FROM application_citations ORDER BY application_id ASC, fact_id ASC;`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string][]string)
+	for rows.Next() {
+		var appID, factID string
+		if err := rows.Scan(&appID, &factID); err != nil {
+			return nil, err
+		}
+		out[appID] = append(out[appID], factID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Load imports a structured YAML directory bundle into the CareerVault.

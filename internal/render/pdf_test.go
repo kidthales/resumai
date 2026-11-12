@@ -137,6 +137,20 @@ func TestCalculateLayoutTelemetry_PureCalculations(t *testing.T) {
 	if telemetry2.LastPageFillRatio != 0.25 {
 		t.Errorf("expected LastPageFillRatio 0.25, got %f", telemetry2.LastPageFillRatio)
 	}
+
+	// Custom PageConfig (0.6in vertical margins = 115.2px marginY, 1056px total pageHeight)
+	customPage := render.PageConfig{
+		Size:         "letter",
+		MarginTop:    "0.6in",
+		MarginBottom: "0.6in",
+	}
+	telemetry3 := render.CalculateLayoutTelemetry(800.0, 0, 1, bullets, customPage)
+	if telemetry3.UsablePageHeightPX != 940.8 {
+		t.Errorf("expected UsablePageHeightPX 940.8 for 0.6in margins, got %f", telemetry3.UsablePageHeightPX)
+	}
+	if telemetry3.PageHeightPX != 1056.0 {
+		t.Errorf("expected PageHeightPX 1056.0, got %f", telemetry3.PageHeightPX)
+	}
 }
 
 func TestPDFPrinter_Print_LiveChromium(t *testing.T) {

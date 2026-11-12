@@ -1,8 +1,11 @@
 package render
 
 import (
+	"io"
 	"math"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseDimensionToPX(t *testing.T) {
@@ -147,6 +150,72 @@ func TestPageGeometryPX(t *testing.T) {
 		}
 		if marginY != 192.0 {
 			t.Errorf("expected 192px marginY, got %v", marginY)
+		}
+	})
+}
+
+func TestChromiumLaunchArgs(t *testing.T) {
+	args := chromiumLaunchArgs("/tmp/resumai-test-profile")
+	joined := strings.Join(args, " ")
+
+	requiredFlags := []string{
+		"--headless=new",
+		"--remote-debugging-port=0",
+		"--no-sandbox",
+		"--disable-setuid-sandbox",
+		"--disable-dev-shm-usage",
+		"--disable-software-rasterizer",
+		"--user-data-dir=/tmp/resumai-test-profile",
+	}
+
+	for _, flag := range requiredFlags {
+		if !strings.Contains(joined, flag) {
+			t.Errorf("expected chromiumLaunchArgs to include %q, got %v", flag, args)
+		}
+	}
+}
+
+func TestExtractDevToolsPort(t *testing.T) {
+	t.Run("extracts port and drains remaining stderr", func(t *testing.T) {
+		stderrInput := "Fontconfig warning: ignoring UTF-8\nDevTools listening on ws://127.0.0.1:41923/devtools/browser/abc-123\nTrailing log line\n"
+		port, err := extractDevToolsPort(strings.NewReader(stderrInput), 2*time.Second)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if port != 41923 {
+			t.Errorf("expected port 41923, got %d", port)
+		}
+	})
+
+	t.Run("includes collected stderr when stream closes without port", func(t *testing.T) {
+		stderrInput := "[0101/000000.000:ERROR:zygote_host_impl_linux.cc] Running as root without --no-sandbox is not supported.\n"
+		_, err := extractDevToolsPort(strings.NewReader(stderrInput), 2*time.Second)
+		if err == nil {
+			t.Fatal("expected error when stderr closes without devtools port")
+		}
+		if !strings.Contains(err.Error(), "Running as root without --no-sandbox") {
+			t.Errorf("expected error to include stderr diagnostics, got: %v", err)
+		}
+	})
+
+	t.Run("includes collected stderr on timeout", func(t *testing.T) {
+		pr, pw := io.Pipe()
+		defer pr.Close()
+		defer pw.Close()
+
+		go func() {
+			_, _ = pw.Write([]byte("[0101/000000.000:WARNING:dbus] D-Bus connection stalled\n"))
+		}()
+
+		_, err := extractDevToolsPort(pr, 80*time.Millisecond)
+		if err == nil {
+			t.Fatal("expected timeout error")
+		}
+		if !strings.Contains(err.Error(), "timeout waiting for chromium devtools port") {
+			t.Errorf("expected timeout message, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "D-Bus connection stalled") {
+			t.Errorf("expected timeout error to include collected stderr output, got: %v", err)
 		}
 	})
 }

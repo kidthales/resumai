@@ -253,23 +253,12 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	defer os.RemoveAll(tmpUserDataDir)
 
 	// 3. Launch host Chromium with modern headless mode
-	args := []string{
-		"--headless=new",
-		"--remote-debugging-port=0",
-		"--disable-gpu",
-		"--no-first-run",
-		"--no-default-browser-check",
-		"--disable-background-networking",
-		"--disable-extensions",
-		"--disable-sync",
-		"--disable-translate",
-		"--metrics-recording-only",
-		"--mute-audio",
-		"--user-data-dir=" + tmpUserDataDir,
-		"about:blank",
-	}
+	args := chromiumLaunchArgs(tmpUserDataDir)
 
 	cmd := exec.CommandContext(ctx, p.chromiumPath, args...)
+	if runtime.GOOS == "linux" {
+		cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=/dev/null")
+	}
 
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
@@ -288,8 +277,12 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 		}
 	}()
 
-	// 4. Read DevTools listening port/URL from stderr
-	port, err := extractDevToolsPort(stderrPipe, 10*time.Second)
+	// 4. Read DevTools listening port/URL from stderr using configured printer timeout
+	portTimeout := p.timeout
+	if portTimeout <= 0 {
+		portTimeout = 30 * time.Second
+	}
+	port, err := extractDevToolsPort(stderrPipe, portTimeout)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse devtools port from chromium: %w", err)
 	}
@@ -643,15 +636,21 @@ func buildTelemetryScript(targetPages int, page PageConfig) string {
 
 // CalculateLayoutTelemetry provides a pure calculation model for layout metrics
 // from raw geometric inputs, enabling headless/mock validation without browser execution.
-func CalculateLayoutTelemetry(contentHeight, usableHeight float64, targetPages int, bullets []BulletTelemetry) LayoutTelemetry {
+func CalculateLayoutTelemetry(contentHeight, usableHeight float64, targetPages int, bullets []BulletTelemetry, page ...PageConfig) LayoutTelemetry {
+	var cfg PageConfig
+	if len(page) > 0 {
+		cfg = page[0]
+	}
+	configuredPageHeight, marginY := pageGeometryPX(cfg)
+
 	if usableHeight <= 0 {
-		usableHeight = 960.0
+		usableHeight = configuredPageHeight - marginY
 	}
 	if targetPages <= 0 {
 		targetPages = 1
 	}
 
-	pageHeight := usableHeight + 96.0
+	pageHeight := usableHeight + marginY
 	allowedHeight := float64(targetPages) * usableHeight
 	overflow := 0.0
 	if contentHeight > allowedHeight {
@@ -778,30 +777,87 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
+// chromiumLaunchArgs builds the headless Chromium CLI invocation arguments,
+// including container/CI sandbox and shared-memory flags required on Linux runners.
+func chromiumLaunchArgs(userDataDir string) []string {
+	args := []string{
+		"--headless=new",
+		"--remote-debugging-port=0",
+		"--disable-gpu",
+		"--no-sandbox",
+		"--disable-setuid-sandbox",
+		"--disable-dev-shm-usage",
+		"--disable-software-rasterizer",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-background-networking",
+		"--disable-extensions",
+		"--disable-sync",
+		"--disable-translate",
+		"--metrics-recording-only",
+		"--mute-audio",
+		"--password-store=basic",
+		"--use-mock-keychain",
+		"--user-data-dir=" + userDataDir,
+	}
+	if runtime.GOOS == "linux" {
+		args = append(args, "--no-zygote")
+	}
+	args = append(args, "about:blank")
+	return args
+}
+
 // extractDevToolsPort parses the ephemeral port from Chromium's initial stderr output.
 func extractDevToolsPort(r io.Reader, timeout time.Duration) (int, error) {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	scanner := bufio.NewScanner(r)
 	portChan := make(chan int, 1)
 	errChan := make(chan error, 1)
+
+	var stderrMu sync.Mutex
+	var stderrLines []string
+	recordLine := func(line string) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			return
+		}
+		stderrMu.Lock()
+		if len(stderrLines) < 50 {
+			stderrLines = append(stderrLines, trimmed)
+		}
+		stderrMu.Unlock()
+	}
+	formatStderr := func() string {
+		stderrMu.Lock()
+		defer stderrMu.Unlock()
+		if len(stderrLines) == 0 {
+			return "no stderr output"
+		}
+		return strings.Join(stderrLines, " | ")
+	}
 
 	re := regexp.MustCompile(`(?:DevTools listening on ws://(?:127\.0\.0\.1|localhost):|127\.0\.0\.1:)(\d+)`)
 
 	go func() {
 		for scanner.Scan() {
 			line := scanner.Text()
+			recordLine(line)
 			matches := re.FindStringSubmatch(line)
 			if len(matches) > 1 {
 				p, err := strconv.Atoi(matches[1])
 				if err == nil {
 					portChan <- p
+					_, _ = io.Copy(io.Discard, r)
 					return
 				}
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			errChan <- err
+			errChan <- fmt.Errorf("%w (stderr: %s)", err, formatStderr())
 		} else {
-			errChan <- errors.New("chromium stderr closed without reporting devtools listening address")
+			errChan <- fmt.Errorf("chromium stderr closed without reporting devtools listening address (stderr: %s)", formatStderr())
 		}
 	}()
 
@@ -811,7 +867,7 @@ func extractDevToolsPort(r io.Reader, timeout time.Duration) (int, error) {
 	case err := <-errChan:
 		return 0, err
 	case <-time.After(timeout):
-		return 0, errors.New("timeout waiting for chromium devtools port")
+		return 0, fmt.Errorf("timeout waiting for chromium devtools port after %v (stderr: %s)", timeout, formatStderr())
 	}
 }
 

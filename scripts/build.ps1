@@ -3,8 +3,9 @@
     Builds the ResumAI production binary with single-source versioning and lock rotation.
 .DESCRIPTION
     Cleans up any stale bin/*.old* and bin/*~ artifacts left over from previous builds,
-    extracts git metadata, compiles bin/resumai.exe with stripped symbol table and injected
-    version information, and installs to %USERPROFILE%\go\bin\resumai.exe with lock rotation.
+    extracts git metadata, compiles bin/resumai(.exe) with stripped symbol table and injected
+    version information, and installs to %USERPROFILE%\go\bin\resumai.exe (or ~/go/bin/resumai)
+    with lock rotation.
 #>
 [CmdletBinding()]
 param(
@@ -13,9 +14,13 @@ param(
     [switch]$SkipGlobal
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Split-Path -Parent $ScriptDir
+
+$IsWin = ($PSVersionTable.PSEdition -eq "Desktop") -or ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows))
+$ExeName = if ($IsWin) { "resumai.exe" } else { "resumai" }
 
 # 1. Automatic cleanup for stale rotated artifacts in local bin
 $BinDir = Join-Path $RootDir $OutputDir
@@ -48,10 +53,10 @@ if (-not $SkipTests) {
 }
 
 # 4. Compile local binary with lock rotation
-$TargetExe = Join-Path $BinDir "resumai.exe"
+$TargetExe = Join-Path $BinDir $ExeName
 if (Test-Path $TargetExe) {
     # If the binary is locked by a running process (e.g. MCP server), rotate it to .old
-    $StaleTarget = Join-Path $BinDir ("resumai.exe.old." + (Get-Random))
+    $StaleTarget = Join-Path $BinDir ("$ExeName.old." + (Get-Random))
     Move-Item -Path $TargetExe -Destination $StaleTarget -Force -ErrorAction SilentlyContinue
 }
 Write-Host "==> Compiling $TargetExe ($Version @ $Commit)..." -ForegroundColor Cyan
@@ -60,16 +65,17 @@ if ($LASTEXITCODE -ne 0) {
     throw "Build failed for resumai ($TargetExe)."
 }
 
-# 5. Compile / Install to %USERPROFILE%\go\bin\resumai.exe with lock rotation
+# 5. Compile / Install to GOPATH/bin with lock rotation
 if (-not $SkipGlobal) {
-    $GoPathBin = if ($env:GOPATH) { Join-Path $env:GOPATH "bin" } else { Join-Path $env:USERPROFILE "go\bin" }
+    $HomeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+    $GoPathBin = if ($env:GOPATH) { Join-Path $env:GOPATH "bin" } else { Join-Path (Join-Path $HomeDir "go") "bin" }
     if (-not (Test-Path $GoPathBin)) {
         New-Item -ItemType Directory -Path $GoPathBin -Force | Out-Null
     }
 
-    $GlobalExe = Join-Path $GoPathBin "resumai.exe"
+    $GlobalExe = Join-Path $GoPathBin $ExeName
     if (Test-Path $GlobalExe) {
-        $StaleGlobal = Join-Path $GoPathBin ("resumai.exe.old." + (Get-Random))
+        $StaleGlobal = Join-Path $GoPathBin ("$ExeName.old." + (Get-Random))
         Move-Item -Path $GlobalExe -Destination $StaleGlobal -Force -ErrorAction SilentlyContinue
     }
 
@@ -77,7 +83,7 @@ if (-not $SkipGlobal) {
     Copy-Item -Path $TargetExe -Destination $GlobalExe -Force
 
     # Best-effort cleanup of stale rotated binaries in GOPATH/bin
-    Get-ChildItem -Path $GoPathBin -Filter "resumai.exe.old*" -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $GoPathBin -Filter "$ExeName.old*" -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 # 6. Best-effort cleanup of rotated stale binaries in local bin
