@@ -430,3 +430,192 @@ func TestDumpLoadPerformanceBenchmark(t *testing.T) {
 		t.Errorf("load exceeded 250ms SLA: took %v", loadDuration)
 	}
 }
+
+func TestDumpCleansStaleEntityYAMLFiles(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	// Seed 2 of each entity
+	orgA := &domain.Organization{ID: "org-alpha", Name: "Alpha Corp"}
+	orgB := &domain.Organization{ID: "org-beta", Name: "Beta Corp"}
+	_ = v.SaveOrganization(ctx, orgA)
+	_ = v.SaveOrganization(ctx, orgB)
+
+	edu1 := &domain.Education{ID: "edu-1", Institution: "University 1"}
+	edu2 := &domain.Education{ID: "edu-2", Institution: "University 2"}
+	_ = v.SaveEducation(ctx, edu1)
+	_ = v.SaveEducation(ctx, edu2)
+
+	arch1 := &domain.Archetype{ID: "arch-1", Name: "Archetype 1"}
+	arch2 := &domain.Archetype{ID: "arch-2", Name: "Archetype 2"}
+	_ = v.SaveArchetype(ctx, arch1)
+	_ = v.SaveArchetype(ctx, arch2)
+
+	app1 := &domain.JobApplication{ID: "app-1", RoleTitle: "Role 1", Company: "Company 1"}
+	app2 := &domain.JobApplication{ID: "app-2", RoleTitle: "Role 2", Company: "Company 2"}
+	_ = v.SaveApplication(ctx, app1)
+	_ = v.SaveApplication(ctx, app2)
+
+	bundleDir := filepath.Join(t.TempDir(), "dump-clean-test")
+
+	// First Dump: all entities written
+	if err := v.Dump(ctx, bundleDir, vault.DumpOptions{IncludePII: false}); err != nil {
+		t.Fatalf("first dump failed: %v", err)
+	}
+
+	assertFileExists := func(path string, shouldExist bool) {
+		t.Helper()
+		_, err := os.Stat(path)
+		exists := err == nil
+		if exists != shouldExist {
+			t.Errorf("file %s expected exist=%v, got=%v", filepath.Base(path), shouldExist, exists)
+		}
+	}
+
+	assertFileExists(filepath.Join(bundleDir, "organizations", "org-alpha.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "organizations", "org-beta.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "education", "edu-1.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "education", "edu-2.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "archetypes", "arch-1.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "archetypes", "arch-2.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "applications", "app-1.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "applications", "app-2.yaml"), true)
+
+	// Now delete entity 2 from each category
+	if err := v.DeleteOrganization(ctx, "org-beta"); err != nil {
+		t.Fatalf("delete org-beta: %v", err)
+	}
+	if err := v.DeleteEducation(ctx, "edu-2"); err != nil {
+		t.Fatalf("delete edu-2: %v", err)
+	}
+	if err := v.DeleteArchetype(ctx, "arch-2"); err != nil {
+		t.Fatalf("delete arch-2: %v", err)
+	}
+	if err := v.DeleteApplication(ctx, "app-2"); err != nil {
+		t.Fatalf("delete app-2: %v", err)
+	}
+
+	// Re-dump into the exact same bundle directory
+	if err := v.Dump(ctx, bundleDir, vault.DumpOptions{IncludePII: false}); err != nil {
+		t.Fatalf("second dump failed: %v", err)
+	}
+
+	// Invariant: Deleted entities MUST have their stale YAML files pruned from disk!
+	assertFileExists(filepath.Join(bundleDir, "organizations", "org-alpha.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "organizations", "org-beta.yaml"), false)
+	assertFileExists(filepath.Join(bundleDir, "education", "edu-1.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "education", "edu-2.yaml"), false)
+	assertFileExists(filepath.Join(bundleDir, "archetypes", "arch-1.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "archetypes", "arch-2.yaml"), false)
+	assertFileExists(filepath.Join(bundleDir, "applications", "app-1.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "applications", "app-2.yaml"), false)
+}
+
+func TestSoftArchiveProvenanceGuardOnSimultaneousSubmissionAndFactRemoval(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	// 1. Setup org, role, fact
+	org := &domain.Organization{ID: "org-stark", Name: "Stark Industries"}
+	_ = v.SaveOrganization(ctx, org)
+
+	role := &domain.Role{ID: "role-chief-eng", OrgID: org.ID, Title: "Chief Engineer"}
+	_ = v.SaveRole(ctx, role)
+
+	fact := &domain.CareerFact{
+		ID:             "fact-arc-reactor",
+		RoleID:         role.ID,
+		Headline:       "Miniaturized Arc Reactor",
+		Details:        "Built miniaturized clean energy reactor.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	}
+	_ = v.SaveCareerFact(ctx, fact)
+
+	// 2. Setup application in Triaged/Draft state citing the fact
+	app := &domain.JobApplication{
+		ID:        "app-avengers",
+		RoleTitle: "Lead Technology Officer",
+		Company:   "Avengers Initiative",
+		State:     domain.StateTriaged,
+	}
+	_ = v.SaveApplication(ctx, app)
+	_ = v.RecordApplicationCitations(ctx, app.ID, []string{fact.ID})
+
+	// 3. Dump bundle
+	bundleDir := filepath.Join(t.TempDir(), "simultaneous-sub-bundle")
+	if err := v.Dump(ctx, bundleDir, vault.DumpOptions{IncludePII: false}); err != nil {
+		t.Fatalf("dump failed: %v", err)
+	}
+
+	// 4. Modify the bundle on disk:
+	// - Remove fact-arc-reactor from org-stark.yaml
+	// - Set state to 'Submitted' in app-avengers.yaml while keeping citation of fact-arc-reactor
+	orgPath := filepath.Join(bundleDir, "organizations", "org-stark.yaml")
+	newOrgYAML := `id: org-stark
+name: Stark Industries
+roles:
+  - id: role-chief-eng
+    title: Chief Engineer
+    category: work
+    facts:
+      - id: fact-nanotech-suit
+        headline: Nanotech Armor
+        details: Deployed bleeding-edge nanotech armor.
+        epistemic_state: verified
+        verified: true
+`
+	if err := os.WriteFile(orgPath, []byte(newOrgYAML), 0644); err != nil {
+		t.Fatalf("write new org yaml: %v", err)
+	}
+
+	appPath := filepath.Join(bundleDir, "applications", "app-avengers.yaml")
+	newAppYAML := `id: app-avengers
+role_title: Lead Technology Officer
+company: Avengers Initiative
+state: Submitted
+citations:
+  - fact-arc-reactor
+`
+	if err := os.WriteFile(appPath, []byte(newAppYAML), 0644); err != nil {
+		t.Fatalf("write new app yaml: %v", err)
+	}
+
+	// 5. Load bundle into vault
+	// This exercises:
+	// - Application updated to Submitted in same transaction
+	// - Fact missing from organizations/
+	// - Soft-archive reconciliation must recognize incoming application's Submitted state
+	// - fact-arc-reactor must NOT be deleted; it must be soft-archived to preserve citation provenance!
+	if err := v.Load(ctx, bundleDir); err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	// 6. Assertions
+	// Fact was soft-archived
+	archivedFact, err := v.GetCareerFact(fact.ID)
+	if err != nil {
+		t.Fatalf("fact must not be deleted: %v", err)
+	}
+	if archivedFact.EpistemicState != domain.EpistemicArchived || archivedFact.Verified {
+		t.Errorf("expected fact to be archived, got state=%s, verified=%v", archivedFact.EpistemicState, archivedFact.Verified)
+	}
+
+	// Application is Submitted
+	gotApp, err := v.GetApplication(app.ID)
+	if err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if gotApp.State != domain.StateSubmitted {
+		t.Errorf("expected app state Submitted, got %s", gotApp.State)
+	}
+
+	// Citation link is intact
+	cits, err := v.GetCitationsForApp(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("get citations: %v", err)
+	}
+	if len(cits) != 1 || cits[0] != fact.ID {
+		t.Errorf("expected citation to fact-arc-reactor preserved, got: %v", cits)
+	}
+}

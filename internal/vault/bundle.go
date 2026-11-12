@@ -144,6 +144,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return fmt.Errorf("dump logistics: %w", err)
 	}
+	logisticsPath := filepath.Join(cleanDir, "logistics.yaml")
 	if logistics != nil {
 		bLog := BundleLogistics{
 			TargetTitle:        logistics.TargetTitle,
@@ -153,9 +154,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			TargetCompensation: logistics.TargetCompensation,
 			NoticePeriodDays:   logistics.NoticePeriodDays,
 		}
-		if err := writeYAML(filepath.Join(cleanDir, "logistics.yaml"), bLog); err != nil {
+		if err := writeYAML(logisticsPath, bLog); err != nil {
 			return fmt.Errorf("write logistics.yaml: %w", err)
 		}
+	} else {
+		_ = os.Remove(logisticsPath)
 	}
 
 	// 3. Organizations -> Roles -> Facts
@@ -164,9 +167,10 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		return fmt.Errorf("dump list organizations: %w", err)
 	}
 	orgDir := filepath.Join(cleanDir, "organizations")
-	if err := os.MkdirAll(orgDir, 0755); err != nil {
-		return fmt.Errorf("create organizations dir: %w", err)
+	if err := cleanYAMLDir(orgDir); err != nil {
+		return fmt.Errorf("clean organizations dir: %w", err)
 	}
+	_ = os.Remove(filepath.Join(cleanDir, "organizations.yaml"))
 
 	for _, org := range orgs {
 		roles, err := v.ListRolesByOrg(ctx, org.ID)
@@ -224,9 +228,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		return fmt.Errorf("dump list education: %w", err)
 	}
 	eduDir := filepath.Join(cleanDir, "education")
-	if err := os.MkdirAll(eduDir, 0755); err != nil {
-		return fmt.Errorf("create education dir: %w", err)
+	if err := cleanYAMLDir(eduDir); err != nil {
+		return fmt.Errorf("clean education dir: %w", err)
 	}
+	_ = os.Remove(filepath.Join(cleanDir, "education.yaml"))
+
 	for _, edu := range edus {
 		bEdu := BundleEducation{
 			ID:           edu.ID,
@@ -252,9 +258,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		return fmt.Errorf("dump list archetypes: %w", err)
 	}
 	archDir := filepath.Join(cleanDir, "archetypes")
-	if err := os.MkdirAll(archDir, 0755); err != nil {
-		return fmt.Errorf("create archetypes dir: %w", err)
+	if err := cleanYAMLDir(archDir); err != nil {
+		return fmt.Errorf("clean archetypes dir: %w", err)
 	}
+	_ = os.Remove(filepath.Join(cleanDir, "archetypes.yaml"))
+
 	for _, a := range archs {
 		bArch := BundleArchetype{
 			ID:               a.ID,
@@ -279,9 +287,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		return fmt.Errorf("dump list applications: %w", err)
 	}
 	appDir := filepath.Join(cleanDir, "applications")
-	if err := os.MkdirAll(appDir, 0755); err != nil {
-		return fmt.Errorf("create applications dir: %w", err)
+	if err := cleanYAMLDir(appDir); err != nil {
+		return fmt.Errorf("clean applications dir: %w", err)
 	}
+	_ = os.Remove(filepath.Join(cleanDir, "applications.yaml"))
+
 	for _, app := range apps {
 		citations, err := v.GetCitationsForApp(ctx, app.ID)
 		if err != nil {
@@ -473,6 +483,20 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 	return v.WithTx(ctx, func(tx *sql.Tx) error {
 		nowStr := time.Now().UTC().Format(time.RFC3339)
 
+		// Precompute fact IDs cited by incoming Submitted applications in memory.
+		incomingSubmittedFactCitations := make(map[string]bool)
+		for _, app := range appsLoaded {
+			st := app.State
+			if st == "" {
+				st = string(domain.StateTriaged)
+			}
+			if st == string(domain.StateSubmitted) || st == "Submitted" {
+				for _, cid := range app.Citations {
+					incomingSubmittedFactCitations[cid] = true
+				}
+			}
+		}
+
 		// A. PII (Only updated if pii.yaml was present in bundle)
 		if piiLoaded != nil {
 			queryPII := `
@@ -533,7 +557,171 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 		}
 
-		// C. Organizations, Roles, Facts Reconciliation with Soft-Archive Guard
+		// C. Education
+		hasEduSection := dirExists(eduDir) || fileExists(filepath.Join(cleanDir, "education.yaml"))
+		if hasEduSection {
+			incomingEduIDs := make(map[string]bool)
+			for _, edu := range edusLoaded {
+				incomingEduIDs[edu.ID] = true
+			}
+			rows, err := tx.QueryContext(ctx, `SELECT id FROM education;`)
+			if err != nil {
+				return err
+			}
+			var existingEduIDs []string
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					existingEduIDs = append(existingEduIDs, id)
+				}
+			}
+			rows.Close()
+
+			for _, id := range existingEduIDs {
+				if !incomingEduIDs[id] {
+					if _, err := tx.ExecContext(ctx, `DELETE FROM education WHERE id = ?;`, id); err != nil {
+						return fmt.Errorf("delete education %s: %w", id, err)
+					}
+				}
+			}
+
+			eduStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO education (id, institution, degree, field_of_study, location, duration, honors, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				institution = excluded.institution,
+				degree = excluded.degree,
+				field_of_study = excluded.field_of_study,
+				location = excluded.location,
+				duration = excluded.duration,
+				honors = excluded.honors,
+				updated_at = excluded.updated_at;`)
+			if err != nil {
+				return err
+			}
+			defer eduStmt.Close()
+
+			for _, edu := range edusLoaded {
+				if _, err := eduStmt.ExecContext(ctx, edu.ID, edu.Institution, edu.Degree, edu.FieldOfStudy, edu.Location, edu.Duration, edu.Honors, nowStr, nowStr); err != nil {
+					return fmt.Errorf("exec save edu %s: %w", edu.ID, err)
+				}
+			}
+		}
+
+		// D. Archetypes
+		hasArchSection := dirExists(archDir) || fileExists(filepath.Join(cleanDir, "archetypes.yaml"))
+		if hasArchSection {
+			incomingArchIDs := make(map[string]bool)
+			for _, a := range archsLoaded {
+				incomingArchIDs[a.ID] = true
+			}
+			rows, err := tx.QueryContext(ctx, `SELECT id FROM archetypes;`)
+			if err != nil {
+				return err
+			}
+			var existingArchIDs []string
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					existingArchIDs = append(existingArchIDs, id)
+				}
+			}
+			rows.Close()
+
+			for _, id := range existingArchIDs {
+				if !incomingArchIDs[id] {
+					if _, err := tx.ExecContext(ctx, `DELETE FROM archetypes WHERE id = ?;`, id); err != nil {
+						return fmt.Errorf("delete archetype %s: %w", id, err)
+					}
+				}
+			}
+
+			archStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO archetypes (id, name, profile_overview, core_competencies, strategic_impact, target_roles, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				name = excluded.name,
+				profile_overview = excluded.profile_overview,
+				core_competencies = excluded.core_competencies,
+				strategic_impact = excluded.strategic_impact,
+				target_roles = excluded.target_roles,
+				updated_at = excluded.updated_at;`)
+			if err != nil {
+				return err
+			}
+			defer archStmt.Close()
+
+			for _, a := range archsLoaded {
+				compJSON, _ := json.Marshal(a.CoreCompetencies)
+				stratJSON, _ := json.Marshal(a.StrategicImpact)
+				rolesJSON, _ := json.Marshal(a.TargetRoles)
+				if _, err := archStmt.ExecContext(ctx, a.ID, a.Name, a.ProfileOverview, string(compJSON), string(stratJSON), string(rolesJSON), nowStr, nowStr); err != nil {
+					return fmt.Errorf("exec save archetype %s: %w", a.ID, err)
+				}
+			}
+		}
+
+		// E. Applications (Upsert application records before reconciling career facts)
+		if hasApplicationsSection {
+			incomingAppIDs := make(map[string]bool)
+			for _, app := range appsLoaded {
+				incomingAppIDs[app.ID] = true
+			}
+
+			rows, err := tx.QueryContext(ctx, `SELECT id FROM applications;`)
+			if err != nil {
+				return err
+			}
+			var existingAppIDs []string
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					existingAppIDs = append(existingAppIDs, id)
+				}
+			}
+			rows.Close()
+
+			for _, id := range existingAppIDs {
+				if !incomingAppIDs[id] {
+					if _, err := tx.ExecContext(ctx, `DELETE FROM applications WHERE id = ?;`, id); err != nil {
+						return fmt.Errorf("delete application %s: %w", id, err)
+					}
+				}
+			}
+
+			appStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO applications (id, role_title, company, raw_jd, state, rejection_rationale, archetype_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				role_title = excluded.role_title,
+				company = excluded.company,
+				raw_jd = excluded.raw_jd,
+				state = excluded.state,
+				rejection_rationale = excluded.rejection_rationale,
+				archetype_id = excluded.archetype_id,
+				updated_at = excluded.updated_at;`)
+			if err != nil {
+				return err
+			}
+			defer appStmt.Close()
+
+			for _, app := range appsLoaded {
+				st := app.State
+				if st == "" {
+					st = string(domain.StateTriaged)
+				}
+				var archID sql.NullString
+				if app.ArchetypeID != "" {
+					archID = sql.NullString{String: app.ArchetypeID, Valid: true}
+				}
+
+				if _, err := appStmt.ExecContext(ctx, app.ID, app.RoleTitle, app.Company, app.RawJD, st, app.RejectionRationale, archID, nowStr, nowStr); err != nil {
+					return fmt.Errorf("exec save application %s: %w", app.ID, err)
+				}
+			}
+		}
+
+		// F. Organizations, Roles, Facts Reconciliation with Soft-Archive Guard
 		incomingFactIDs := make(map[string]bool)
 		incomingRoleIDs := make(map[string]bool)
 		incomingOrgIDs := make(map[string]bool)
@@ -569,18 +757,26 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 
 			for _, fid := range existingFactIDs {
 				if !incomingFactIDs[fid] {
-					// Check if cited in a Submitted application
-					var citedInSubmitted int
-					checkQuery := `
-					SELECT COUNT(1)
-					FROM application_citations ac
-					JOIN applications a ON ac.application_id = a.id
-					WHERE ac.fact_id = ? AND a.state = 'Submitted';`
-					if err := tx.QueryRowContext(ctx, checkQuery, fid).Scan(&citedInSubmitted); err != nil {
-						return fmt.Errorf("tx check submitted fact citation %s: %w", fid, err)
+					// Check if cited in a Submitted application:
+					// 1. In memory from incoming bundle applications
+					// 2. In database from applications currently in Submitted state
+					isCitedInSubmitted := incomingSubmittedFactCitations[fid]
+					if !isCitedInSubmitted {
+						var citedInSubmitted int
+						checkQuery := `
+						SELECT COUNT(1)
+						FROM application_citations ac
+						JOIN applications a ON ac.application_id = a.id
+						WHERE ac.fact_id = ? AND a.state = 'Submitted';`
+						if err := tx.QueryRowContext(ctx, checkQuery, fid).Scan(&citedInSubmitted); err != nil {
+							return fmt.Errorf("tx check submitted fact citation %s: %w", fid, err)
+						}
+						if citedInSubmitted > 0 {
+							isCitedInSubmitted = true
+						}
 					}
 
-					if citedInSubmitted > 0 {
+					if isCitedInSubmitted {
 						// INVARIANT: Do not delete! Soft-archive to preserve provenance!
 						archiveQuery := `
 						UPDATE career_facts
@@ -738,154 +934,8 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 		}
 
-		// D. Education
-		hasEduSection := dirExists(eduDir) || fileExists(filepath.Join(cleanDir, "education.yaml"))
-		if hasEduSection {
-			incomingEduIDs := make(map[string]bool)
-			for _, edu := range edusLoaded {
-				incomingEduIDs[edu.ID] = true
-			}
-			rows, err := tx.QueryContext(ctx, `SELECT id FROM education;`)
-			if err != nil {
-				return err
-			}
-			var existingEduIDs []string
-			for rows.Next() {
-				var id string
-				if err := rows.Scan(&id); err == nil {
-					existingEduIDs = append(existingEduIDs, id)
-				}
-			}
-			rows.Close()
-
-			for _, id := range existingEduIDs {
-				if !incomingEduIDs[id] {
-					if _, err := tx.ExecContext(ctx, `DELETE FROM education WHERE id = ?;`, id); err != nil {
-						return fmt.Errorf("delete education %s: %w", id, err)
-					}
-				}
-			}
-
-			eduStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO education (id, institution, degree, field_of_study, location, duration, honors, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				institution = excluded.institution,
-				degree = excluded.degree,
-				field_of_study = excluded.field_of_study,
-				location = excluded.location,
-				duration = excluded.duration,
-				honors = excluded.honors,
-				updated_at = excluded.updated_at;`)
-			if err != nil {
-				return err
-			}
-			defer eduStmt.Close()
-
-			for _, edu := range edusLoaded {
-				if _, err := eduStmt.ExecContext(ctx, edu.ID, edu.Institution, edu.Degree, edu.FieldOfStudy, edu.Location, edu.Duration, edu.Honors, nowStr, nowStr); err != nil {
-					return fmt.Errorf("exec save edu %s: %w", edu.ID, err)
-				}
-			}
-		}
-
-		// E. Archetypes
-		hasArchSection := dirExists(archDir) || fileExists(filepath.Join(cleanDir, "archetypes.yaml"))
-		if hasArchSection {
-			incomingArchIDs := make(map[string]bool)
-			for _, a := range archsLoaded {
-				incomingArchIDs[a.ID] = true
-			}
-			rows, err := tx.QueryContext(ctx, `SELECT id FROM archetypes;`)
-			if err != nil {
-				return err
-			}
-			var existingArchIDs []string
-			for rows.Next() {
-				var id string
-				if err := rows.Scan(&id); err == nil {
-					existingArchIDs = append(existingArchIDs, id)
-				}
-			}
-			rows.Close()
-
-			for _, id := range existingArchIDs {
-				if !incomingArchIDs[id] {
-					if _, err := tx.ExecContext(ctx, `DELETE FROM archetypes WHERE id = ?;`, id); err != nil {
-						return fmt.Errorf("delete archetype %s: %w", id, err)
-					}
-				}
-			}
-
-			archStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO archetypes (id, name, profile_overview, core_competencies, strategic_impact, target_roles, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				name = excluded.name,
-				profile_overview = excluded.profile_overview,
-				core_competencies = excluded.core_competencies,
-				strategic_impact = excluded.strategic_impact,
-				target_roles = excluded.target_roles,
-				updated_at = excluded.updated_at;`)
-			if err != nil {
-				return err
-			}
-			defer archStmt.Close()
-
-			for _, a := range archsLoaded {
-				compJSON, _ := json.Marshal(a.CoreCompetencies)
-				stratJSON, _ := json.Marshal(a.StrategicImpact)
-				rolesJSON, _ := json.Marshal(a.TargetRoles)
-				if _, err := archStmt.ExecContext(ctx, a.ID, a.Name, a.ProfileOverview, string(compJSON), string(stratJSON), string(rolesJSON), nowStr, nowStr); err != nil {
-					return fmt.Errorf("exec save archetype %s: %w", a.ID, err)
-				}
-			}
-		}
-
-		// F. Applications & Citations
+		// G. Application Citations Reconciliation
 		if hasApplicationsSection {
-			incomingAppIDs := make(map[string]bool)
-			for _, app := range appsLoaded {
-				incomingAppIDs[app.ID] = true
-			}
-
-			rows, err := tx.QueryContext(ctx, `SELECT id FROM applications;`)
-			if err != nil {
-				return err
-			}
-			var existingAppIDs []string
-			for rows.Next() {
-				var id string
-				if err := rows.Scan(&id); err == nil {
-					existingAppIDs = append(existingAppIDs, id)
-				}
-			}
-			rows.Close()
-
-			for _, id := range existingAppIDs {
-				if !incomingAppIDs[id] {
-					if _, err := tx.ExecContext(ctx, `DELETE FROM applications WHERE id = ?;`, id); err != nil {
-						return fmt.Errorf("delete application %s: %w", id, err)
-					}
-				}
-			}
-
-			appStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO applications (id, role_title, company, raw_jd, state, rejection_rationale, archetype_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				role_title = excluded.role_title,
-				company = excluded.company,
-				raw_jd = excluded.raw_jd,
-				state = excluded.state,
-				rejection_rationale = excluded.rejection_rationale,
-				archetype_id = excluded.archetype_id,
-				updated_at = excluded.updated_at;`)
-			if err != nil {
-				return err
-			}
-			defer appStmt.Close()
-
 			citStmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO application_citations (application_id, fact_id) VALUES (?, ?);`)
 			if err != nil {
 				return err
@@ -893,20 +943,6 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			defer citStmt.Close()
 
 			for _, app := range appsLoaded {
-				st := app.State
-				if st == "" {
-					st = string(domain.StateTriaged)
-				}
-				var archID sql.NullString
-				if app.ArchetypeID != "" {
-					archID = sql.NullString{String: app.ArchetypeID, Valid: true}
-				}
-
-				if _, err := appStmt.ExecContext(ctx, app.ID, app.RoleTitle, app.Company, app.RawJD, st, app.RejectionRationale, archID, nowStr, nowStr); err != nil {
-					return fmt.Errorf("exec save application %s: %w", app.ID, err)
-				}
-
-				// Citations
 				if _, err := tx.ExecContext(ctx, `DELETE FROM application_citations WHERE application_id = ?;`, app.ID); err != nil {
 					return fmt.Errorf("delete old citations for app %s: %w", app.ID, err)
 				}
@@ -948,6 +984,22 @@ func fileExists(path string) bool {
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func cleanYAMLDir(dir string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	files, err := listYAMLFiles(dir)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if err := os.Remove(f); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func listYAMLFiles(dir string) ([]string, error) {
