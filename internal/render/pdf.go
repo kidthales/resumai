@@ -352,6 +352,8 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	var pageCfg PageConfig
 	if p.htmlRenderer != nil && p.htmlRenderer.Theme() != nil {
 		pageCfg = p.htmlRenderer.Theme().Page
+	} else if p.theme != nil {
+		pageCfg = p.theme.Page
 	}
 	telemetryScript := buildTelemetryScript(targetPages, pageCfg)
 	evalParams := map[string]interface{}{
@@ -378,15 +380,16 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	// 11. Optionally generate PDF via Page.printToPDF
 	var pdfBytes []byte
 	if generatePDF {
+		paperWidth, paperHeight, marginTop, marginBottom, marginLeft, marginRight := pageGeometryInches(pageCfg)
 		printParams := map[string]interface{}{
 			"printBackground":   true,
 			"preferCSSPageSize": true,
-			"paperWidth":        8.5,
-			"paperHeight":       11.0,
-			"marginTop":         0.5,
-			"marginBottom":      0.5,
-			"marginLeft":        0.5,
-			"marginRight":       0.5,
+			"paperWidth":        paperWidth,
+			"paperHeight":       paperHeight,
+			"marginTop":         marginTop,
+			"marginBottom":      marginBottom,
+			"marginLeft":        marginLeft,
+			"marginRight":       marginRight,
 			"generateTaggedPDF": true,
 		}
 
@@ -418,6 +421,9 @@ func parseDimensionToPX(dim string, defaultPX float64) float64 {
 	if dim == "" {
 		return defaultPX
 	}
+	if dim == "0" {
+		return 0.0
+	}
 	if strings.HasSuffix(dim, "in") {
 		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "in"), 64); err == nil {
 			return v * 96.0
@@ -446,6 +452,43 @@ func parseDimensionToPX(dim string, defaultPX float64) float64 {
 	return defaultPX
 }
 
+// parseDimensionToInches converts CSS dimension strings to inches.
+func parseDimensionToInches(dim string, defaultInches float64) float64 {
+	dim = strings.TrimSpace(strings.ToLower(dim))
+	if dim == "" {
+		return defaultInches
+	}
+	if dim == "0" {
+		return 0.0
+	}
+	if strings.HasSuffix(dim, "in") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "in"), 64); err == nil {
+			return v
+		}
+	}
+	if strings.HasSuffix(dim, "pt") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "pt"), 64); err == nil {
+			return v / 72.0
+		}
+	}
+	if strings.HasSuffix(dim, "mm") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "mm"), 64); err == nil {
+			return v / 25.4
+		}
+	}
+	if strings.HasSuffix(dim, "cm") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "cm"), 64); err == nil {
+			return v / 2.54
+		}
+	}
+	if strings.HasSuffix(dim, "px") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "px"), 64); err == nil {
+			return v / 96.0
+		}
+	}
+	return defaultInches
+}
+
 // pageGeometryPX computes physical page height and vertical margins in pixels at 96 DPI.
 func pageGeometryPX(page PageConfig) (pageHeight, marginY float64) {
 	pageHeight = 1056.0 // US Letter default at 96 DPI: 11in = 1056px
@@ -457,6 +500,22 @@ func pageGeometryPX(page PageConfig) (pageHeight, marginY float64) {
 	botPX := parseDimensionToPX(page.MarginBottom, 48.0) // default 0.5in = 48px
 	marginY = topPX + botPX
 	return pageHeight, marginY
+}
+
+// pageGeometryInches computes physical paper dimensions and margins in inches for CDP printToPDF.
+func pageGeometryInches(page PageConfig) (width, height, top, bottom, left, right float64) {
+	width = 8.5   // default US Letter width in inches
+	height = 11.0 // default US Letter height in inches
+	if strings.EqualFold(strings.TrimSpace(page.Size), "a4") {
+		width = 210.0 / 25.4  // A4 width: 210mm ≈ 8.27in
+		height = 297.0 / 25.4 // A4 height: 297mm ≈ 11.69in
+	}
+
+	top = parseDimensionToInches(page.MarginTop, 0.5)
+	bottom = parseDimensionToInches(page.MarginBottom, 0.5)
+	left = parseDimensionToInches(page.MarginLeft, 0.5)
+	right = parseDimensionToInches(page.MarginRight, 0.5)
+	return width, height, top, bottom, left, right
 }
 
 // buildTelemetryScript compiles the in-browser JavaScript evaluation payload.
