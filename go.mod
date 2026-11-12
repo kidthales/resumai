@@ -1,6 +1,8 @@
 module github.com/kidthales/resumai
 
-go 1.26.0
+go 1.26.7
+
+toolchain go1.27.4
 
 require (
 	gopkg.in/yaml.v3 v3.0.1
