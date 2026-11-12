@@ -59,6 +59,15 @@ if ($CI) {
     }
 }
 
+$GateResults = [ordered]@{
+    "gate1_gofmt"       = "not-applicable"
+    "gate2_go_vet"      = "not-applicable"
+    "gate3_unit_tests"  = "not-applicable"
+    "gate4_race_detect" = "not-applicable"
+    "gate5_pwsh_ast"    = "not-applicable"
+    "gate6_build"       = "not-applicable"
+}
+
 Write-Host "Starting ResumAI local CI runner in $RootDir..." -ForegroundColor Cyan
 
 # -------------------------------------------------------------
@@ -71,6 +80,7 @@ if ($unformatted) {
     $unformatted | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
     throw "Go formatting check failed. Run 'gofmt -w .' to fix."
 }
+$GateResults["gate1_gofmt"] = "pass"
 Write-Host "All Go source files formatted properly." -ForegroundColor Green
 Exit-CiGate
 
@@ -82,6 +92,7 @@ go -C $RootDir vet ./...
 if ($LASTEXITCODE -ne 0) {
     throw "go vet failed."
 }
+$GateResults["gate2_go_vet"] = "pass"
 Write-Host "go vet passed cleanly." -ForegroundColor Green
 Exit-CiGate
 
@@ -93,6 +104,7 @@ go -C $RootDir test -v ./...
 if ($LASTEXITCODE -ne 0) {
     throw "Unit/boundary tests failed."
 }
+$GateResults["gate3_unit_tests"] = "pass"
 Write-Host "All unit and boundary tests passed." -ForegroundColor Green
 Exit-CiGate
 
@@ -101,16 +113,19 @@ Exit-CiGate
 # -------------------------------------------------------------
 Enter-CiGate "Gate 4: Race Detection"
 if ($SkipRace) {
+    $GateResults["gate4_race_detect"] = "not-applicable"
     Write-Host "Skipping race detector as requested (-SkipRace)." -ForegroundColor DarkGray
 } else {
     $hasGcc = Get-Command "gcc" -ErrorAction SilentlyContinue
     if (-not $hasGcc -and -not $CI) {
+        $GateResults["gate4_race_detect"] = "not-applicable"
         Write-Host "Notice: gcc not found in PATH; skipping race detector in local non-CI mode." -ForegroundColor DarkYellow
     } else {
         go -C $RootDir test -race ./...
         if ($LASTEXITCODE -ne 0) {
             throw "Race detection tests failed."
         }
+        $GateResults["gate4_race_detect"] = "pass"
         Write-Host "Race detection passed cleanly." -ForegroundColor Green
     }
 }
@@ -131,6 +146,7 @@ foreach ($file in $psFiles) {
         throw "PowerShell AST validation failed for $($file.Name)."
     }
 }
+$GateResults["gate5_pwsh_ast"] = "pass"
 Write-Host "All $($psFiles.Count) PowerShell scripts passed AST validation." -ForegroundColor Green
 Exit-CiGate
 
@@ -139,6 +155,7 @@ Exit-CiGate
 # -------------------------------------------------------------
 Enter-CiGate "Gate 6: Build & Version Verification"
 if ($SkipBuild) {
+    $GateResults["gate6_build"] = "not-applicable"
     Write-Host "Skipping build verification as requested (-SkipBuild)." -ForegroundColor DarkGray
 } else {
     $BuildScript = Join-Path $RootDir "scripts\build.ps1"
@@ -146,8 +163,15 @@ if ($SkipBuild) {
     if ($LASTEXITCODE -ne 0) {
         throw "Build script execution failed."
     }
+    $GateResults["gate6_build"] = "pass"
 }
 Exit-CiGate
+
+Write-Host "`nGate Summary:" -ForegroundColor Cyan
+foreach ($k in $GateResults.Keys) {
+    $v = "$($GateResults[$k])".ToUpperInvariant()
+    Write-Host "  [${k}: $v]"
+}
 
 Write-Host "`n[CI SUCCESS] All ResumAI CI gates passed 100% green." -ForegroundColor Green
 exit 0
