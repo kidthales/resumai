@@ -172,6 +172,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	}
 	_ = os.Remove(filepath.Join(cleanDir, "organizations.yaml"))
 
+	seenOrgSlugs := make(map[string]int)
 	for _, org := range orgs {
 		roles, err := v.ListRolesByOrg(ctx, org.ID)
 		if err != nil {
@@ -213,10 +214,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			bOrg.Roles = append(bOrg.Roles, bRole)
 		}
 
-		fileSlug := slugify(org.ID)
-		if fileSlug == "" || fileSlug == "item" {
-			fileSlug = slugify(org.Name)
-		}
+		fileSlug := uniqueFileSlug(org.ID, org.Name, seenOrgSlugs)
 		if err := writeYAML(filepath.Join(orgDir, fileSlug+".yaml"), bOrg); err != nil {
 			return fmt.Errorf("write org yaml (%s): %w", org.ID, err)
 		}
@@ -233,6 +231,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	}
 	_ = os.Remove(filepath.Join(cleanDir, "education.yaml"))
 
+	seenEduSlugs := make(map[string]int)
 	for _, edu := range edus {
 		bEdu := BundleEducation{
 			ID:           edu.ID,
@@ -243,10 +242,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			Duration:     edu.Duration,
 			Honors:       edu.Honors,
 		}
-		fileSlug := slugify(edu.ID)
-		if fileSlug == "" || fileSlug == "item" {
-			fileSlug = slugify(edu.Institution)
-		}
+		fileSlug := uniqueFileSlug(edu.ID, edu.Institution, seenEduSlugs)
 		if err := writeYAML(filepath.Join(eduDir, fileSlug+".yaml"), bEdu); err != nil {
 			return fmt.Errorf("write education yaml (%s): %w", edu.ID, err)
 		}
@@ -263,6 +259,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	}
 	_ = os.Remove(filepath.Join(cleanDir, "archetypes.yaml"))
 
+	seenArchSlugs := make(map[string]int)
 	for _, a := range archs {
 		bArch := BundleArchetype{
 			ID:               a.ID,
@@ -272,10 +269,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			StrategicImpact:  a.StrategicImpact,
 			TargetRoles:      a.TargetRoles,
 		}
-		fileSlug := slugify(a.ID)
-		if fileSlug == "" || fileSlug == "item" {
-			fileSlug = slugify(a.Name)
-		}
+		fileSlug := uniqueFileSlug(a.ID, a.Name, seenArchSlugs)
 		if err := writeYAML(filepath.Join(archDir, fileSlug+".yaml"), bArch); err != nil {
 			return fmt.Errorf("write archetype yaml (%s): %w", a.ID, err)
 		}
@@ -292,6 +286,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	}
 	_ = os.Remove(filepath.Join(cleanDir, "applications.yaml"))
 
+	seenAppSlugs := make(map[string]int)
 	for _, app := range apps {
 		citations, err := v.GetCitationsForApp(ctx, app.ID)
 		if err != nil {
@@ -307,10 +302,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			ArchetypeID:        app.ArchetypeID,
 			Citations:          citations,
 		}
-		fileSlug := slugify(app.ID)
-		if fileSlug == "" || fileSlug == "item" {
-			fileSlug = slugify(app.Company + "-" + app.RoleTitle)
-		}
+		fileSlug := uniqueFileSlug(app.ID, app.Company+"-"+app.RoleTitle, seenAppSlugs)
 		if err := writeYAML(filepath.Join(appDir, fileSlug+".yaml"), bApp); err != nil {
 			return fmt.Errorf("write application yaml (%s): %w", app.ID, err)
 		}
@@ -1045,4 +1037,28 @@ func slugify(s string) string {
 		return "item"
 	}
 	return res
+}
+
+func uniqueFileSlug(raw string, fallback string, seen map[string]int) string {
+	fileSlug := slugify(raw)
+	if fileSlug == "" || fileSlug == "item" {
+		fileSlug = slugify(fallback)
+	}
+	if seen == nil {
+		return fileSlug
+	}
+	candidate := fileSlug
+	if seen[candidate] > 0 {
+		count := seen[fileSlug] + 1
+		for {
+			candidate = fmt.Sprintf("%s-%d", fileSlug, count)
+			if seen[candidate] == 0 {
+				break
+			}
+			count++
+		}
+		seen[fileSlug] = count
+	}
+	seen[candidate]++
+	return candidate
 }

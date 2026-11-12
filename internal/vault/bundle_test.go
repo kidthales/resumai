@@ -619,3 +619,114 @@ citations:
 		t.Errorf("expected citation to fact-arc-reactor preserved, got: %v", cits)
 	}
 }
+
+func TestDumpSlugCollisionDisambiguation(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	// 1. Setup two organizations whose IDs normalize to the exact same slug: "org-acme"
+	org1 := &domain.Organization{ID: "org:acme", Name: "Acme Colon Division"}
+	org2 := &domain.Organization{ID: "org/acme", Name: "Acme Slash Division"}
+	if err := v.SaveOrganization(ctx, org1); err != nil {
+		t.Fatalf("save org1: %v", err)
+	}
+	if err := v.SaveOrganization(ctx, org2); err != nil {
+		t.Fatalf("save org2: %v", err)
+	}
+
+	// 2. Setup education entities with colliding slugs
+	edu1 := &domain.Education{ID: "edu:mit", Institution: "MIT Colon"}
+	edu2 := &domain.Education{ID: "edu/mit", Institution: "MIT Slash"}
+	if err := v.SaveEducation(ctx, edu1); err != nil {
+		t.Fatalf("save edu1: %v", err)
+	}
+	if err := v.SaveEducation(ctx, edu2); err != nil {
+		t.Fatalf("save edu2: %v", err)
+	}
+
+	// 3. Setup archetypes with colliding slugs
+	arch1 := &domain.Archetype{ID: "arch:infra", Name: "Infra Colon"}
+	arch2 := &domain.Archetype{ID: "arch/infra", Name: "Infra Slash"}
+	if err := v.SaveArchetype(ctx, arch1); err != nil {
+		t.Fatalf("save arch1: %v", err)
+	}
+	if err := v.SaveArchetype(ctx, arch2); err != nil {
+		t.Fatalf("save arch2: %v", err)
+	}
+
+	// 4. Setup applications with colliding slugs
+	app1 := &domain.JobApplication{ID: "app:sre", RoleTitle: "SRE Colon", Company: "Acme"}
+	app2 := &domain.JobApplication{ID: "app/sre", RoleTitle: "SRE Slash", Company: "Acme"}
+	if err := v.SaveApplication(ctx, app1); err != nil {
+		t.Fatalf("save app1: %v", err)
+	}
+	if err := v.SaveApplication(ctx, app2); err != nil {
+		t.Fatalf("save app2: %v", err)
+	}
+
+	// 5. Dump bundle
+	bundleDir := filepath.Join(t.TempDir(), "slug-collision-bundle")
+	if err := v.Dump(ctx, bundleDir, vault.DumpOptions{IncludePII: false}); err != nil {
+		t.Fatalf("dump failed: %v", err)
+	}
+
+	assertFileExists := func(path string, shouldExist bool) {
+		t.Helper()
+		_, err := os.Stat(path)
+		exists := err == nil
+		if exists != shouldExist {
+			t.Errorf("file %s expected exist=%v, got=%v", filepath.Base(path), shouldExist, exists)
+		}
+	}
+
+	// Assert disambiguated files exist on disk
+	assertFileExists(filepath.Join(bundleDir, "organizations", "org-acme.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "organizations", "org-acme-2.yaml"), true)
+
+	assertFileExists(filepath.Join(bundleDir, "education", "edu-mit.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "education", "edu-mit-2.yaml"), true)
+
+	assertFileExists(filepath.Join(bundleDir, "archetypes", "arch-infra.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "archetypes", "arch-infra-2.yaml"), true)
+
+	assertFileExists(filepath.Join(bundleDir, "applications", "app-sre.yaml"), true)
+	assertFileExists(filepath.Join(bundleDir, "applications", "app-sre-2.yaml"), true)
+
+	// 6. Load into fresh vault and ensure both distinct entities roundtrip cleanly
+	v2 := newTestVault(t)
+	if err := v2.Load(ctx, bundleDir); err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	loadedOrgs, err := v2.ListOrganizations(ctx)
+	if err != nil {
+		t.Fatalf("list orgs: %v", err)
+	}
+	if len(loadedOrgs) != 2 {
+		t.Fatalf("expected 2 organizations, got %d", len(loadedOrgs))
+	}
+
+	loadedEdus, err := v2.ListEducation(ctx)
+	if err != nil {
+		t.Fatalf("list edus: %v", err)
+	}
+	if len(loadedEdus) != 2 {
+		t.Fatalf("expected 2 education records, got %d", len(loadedEdus))
+	}
+
+	loadedArchs, err := v2.ListArchetypes(ctx)
+	if err != nil {
+		t.Fatalf("list archs: %v", err)
+	}
+	if len(loadedArchs) != 2 {
+		t.Fatalf("expected 2 archetypes, got %d", len(loadedArchs))
+	}
+
+	loadedApps, err := v2.ListApplications(ctx)
+	if err != nil {
+		t.Fatalf("list apps: %v", err)
+	}
+	if len(loadedApps) != 2 {
+		t.Fatalf("expected 2 applications, got %d", len(loadedApps))
+	}
+}
