@@ -257,7 +257,7 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 
 	cmd := exec.CommandContext(ctx, p.chromiumPath, args...)
 	if runtime.GOOS == "linux" {
-		cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=/dev/null")
+		cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null")
 	}
 
 	stderrPipe, err := cmd.StderrPipe()
@@ -888,65 +888,98 @@ func extractDevToolsPort(r io.Reader, timeout time.Duration) (int, error) {
 	}
 }
 
-// getPageWebSocketURL queries Chromium's HTTP discovery API to find an active page target.
+// getPageWebSocketURL queries Chromium's HTTP discovery API to find an active page target,
+// retrying briefly with backoff to accommodate process startup on loaded hosts.
 func getPageWebSocketURL(ctx context.Context, port int) (string, error) {
 	endpoint := fmt.Sprintf("http://127.0.0.1:%d/json/list", port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return "", err
+	client := &http.Client{Timeout: 3 * time.Second}
+
+	var lastErr error
+	deadline := time.Now().Add(10 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err == nil {
+			resp, err := client.Do(req)
+			if err == nil {
+				func() {
+					defer resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						var targets []struct {
+							ID                   string `json:"id"`
+							Type                 string `json:"type"`
+							WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+						}
+						if err := json.NewDecoder(resp.Body).Decode(&targets); err == nil {
+							for _, t := range targets {
+								if t.Type == "page" && t.WebSocketDebuggerURL != "" {
+									lastErr = nil
+									return
+								}
+							}
+						}
+					}
+				}()
+				// If we found a valid target, re-fetch or decode directly
+			} else {
+				lastErr = err
+			}
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status from /json/list: %d", resp.StatusCode)
-	}
+		// Direct attempt to read and return target
+		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err == nil {
+			resp2, err := client.Do(req2)
+			if err == nil {
+				defer resp2.Body.Close()
+				if resp2.StatusCode == http.StatusOK {
+					var targets []struct {
+						ID                   string `json:"id"`
+						Type                 string `json:"type"`
+						WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+					}
+					if err := json.NewDecoder(resp2.Body).Decode(&targets); err == nil {
+						for _, t := range targets {
+							if t.Type == "page" && t.WebSocketDebuggerURL != "" {
+								return t.WebSocketDebuggerURL, nil
+							}
+						}
+						// If targets exists but no page, try to create one via /json/new
+						newEndpoint := fmt.Sprintf("http://127.0.0.1:%d/json/new?about:blank", port)
+						putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, newEndpoint, nil)
+						if err == nil {
+							newResp, err := client.Do(putReq)
+							if err == nil {
+								defer newResp.Body.Close()
+								var newTarget struct {
+									WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+								}
+								if err := json.NewDecoder(newResp.Body).Decode(&newTarget); err == nil && newTarget.WebSocketDebuggerURL != "" {
+									return newTarget.WebSocketDebuggerURL, nil
+								}
+							}
+						}
+					}
+				}
+			} else {
+				lastErr = err
+			}
+		}
 
-	var targets []struct {
-		ID                   string `json:"id"`
-		Type                 string `json:"type"`
-		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&targets); err != nil {
-		return "", fmt.Errorf("failed to decode /json/list: %w", err)
-	}
-
-	for _, t := range targets {
-		if t.Type == "page" && t.WebSocketDebuggerURL != "" {
-			return t.WebSocketDebuggerURL, nil
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(100 * time.Millisecond):
 		}
 	}
 
-	// If no page exists yet, create one
-	newEndpoint := fmt.Sprintf("http://127.0.0.1:%d/json/new?about:blank", port)
-	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, newEndpoint, nil)
-	if err != nil {
-		return "", err
+	if lastErr != nil {
+		return "", fmt.Errorf("retries exhausted connecting to /json/list: %w", lastErr)
 	}
-	newResp, err := client.Do(putReq)
-	if err != nil {
-		return "", err
-	}
-	defer newResp.Body.Close()
-
-	var newTarget struct {
-		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-	}
-	if err := json.NewDecoder(newResp.Body).Decode(&newTarget); err != nil {
-		return "", fmt.Errorf("failed to decode /json/new: %w", err)
-	}
-
-	if newTarget.WebSocketDebuggerURL == "" {
-		return "", errors.New("created target had empty webSocketDebuggerUrl")
-	}
-
-	return newTarget.WebSocketDebuggerURL, nil
+	return "", errors.New("no page target discovered in /json/list")
 }
 
 // cdpWebSocket provides a minimal, dependency-free RFC 6455 WebSocket client for CDP.

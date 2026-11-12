@@ -178,7 +178,7 @@ func TestPDFPrinter_Print_LiveChromium(t *testing.T) {
 	}
 
 	printer, err := render.NewPDFPrinter(
-		render.WithTimeout(20*time.Second),
+		render.WithTimeout(30*time.Second),
 		render.WithTargetPages(1),
 	)
 	if err != nil {
@@ -250,7 +250,7 @@ func TestPDFPrinter_ExtractTelemetry_HTML(t *testing.T) {
 		t.Skip("skipping live chromium telemetry test: chromium binary not found on host")
 	}
 
-	printer, err := render.NewPDFPrinter(render.WithTimeout(20 * time.Second))
+	printer, err := render.NewPDFPrinter(render.WithTimeout(30 * time.Second))
 	if err != nil {
 		t.Fatalf("failed to initialize PDFPrinter: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestPDFPrinter_Render_PIIAirGapped(t *testing.T) {
 		t.Skip("skipping live chromium PII test: chromium binary not found on host")
 	}
 
-	printer, err := render.NewPDFPrinter(render.WithTimeout(20 * time.Second))
+	printer, err := render.NewPDFPrinter(render.WithTimeout(30 * time.Second))
 	if err != nil {
 		t.Fatalf("failed to initialize PDFPrinter: %v", err)
 	}
