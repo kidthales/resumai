@@ -590,7 +590,7 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 		// C. Education
 		hasEduSection := dirExists(eduDir) || fileExists(filepath.Join(cleanDir, "education.yaml"))
 		if hasEduSection {
-			incomingEduIDs := make(map[string]bool)
+			incomingEduIDs := make(map[string]bool, len(edusLoaded))
 			for _, edu := range edusLoaded {
 				incomingEduIDs[edu.ID] = true
 			}
@@ -598,14 +598,16 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			if err != nil {
 				return err
 			}
-			var existingEduIDs []string
+			var staleEduIDs []string
 			for rows.Next() {
 				var id string
 				if err := rows.Scan(&id); err != nil {
 					rows.Close()
 					return fmt.Errorf("scan education id: %w", err)
 				}
-				existingEduIDs = append(existingEduIDs, id)
+				if !incomingEduIDs[id] {
+					staleEduIDs = append(staleEduIDs, id)
+				}
 			}
 			if err := rows.Err(); err != nil {
 				rows.Close()
@@ -613,9 +615,14 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 			rows.Close()
 
-			for _, id := range existingEduIDs {
-				if !incomingEduIDs[id] {
-					if _, err := tx.ExecContext(ctx, `DELETE FROM education WHERE id = ?;`, id); err != nil {
+			if len(staleEduIDs) > 0 {
+				delEduStmt, err := tx.PrepareContext(ctx, `DELETE FROM education WHERE id = ?;`)
+				if err != nil {
+					return err
+				}
+				defer delEduStmt.Close()
+				for _, id := range staleEduIDs {
+					if _, err := delEduStmt.ExecContext(ctx, id); err != nil {
 						return fmt.Errorf("delete education %s: %w", id, err)
 					}
 				}
@@ -647,7 +654,7 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 		// D. Archetypes
 		hasArchSection := dirExists(archDir) || fileExists(filepath.Join(cleanDir, "archetypes.yaml"))
 		if hasArchSection {
-			incomingArchIDs := make(map[string]bool)
+			incomingArchIDs := make(map[string]bool, len(archsLoaded))
 			for _, a := range archsLoaded {
 				incomingArchIDs[a.ID] = true
 			}
@@ -655,14 +662,16 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			if err != nil {
 				return err
 			}
-			var existingArchIDs []string
+			var staleArchIDs []string
 			for rows.Next() {
 				var id string
 				if err := rows.Scan(&id); err != nil {
 					rows.Close()
 					return fmt.Errorf("scan archetype id: %w", err)
 				}
-				existingArchIDs = append(existingArchIDs, id)
+				if !incomingArchIDs[id] {
+					staleArchIDs = append(staleArchIDs, id)
+				}
 			}
 			if err := rows.Err(); err != nil {
 				rows.Close()
@@ -670,9 +679,14 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 			rows.Close()
 
-			for _, id := range existingArchIDs {
-				if !incomingArchIDs[id] {
-					if _, err := tx.ExecContext(ctx, `DELETE FROM archetypes WHERE id = ?;`, id); err != nil {
+			if len(staleArchIDs) > 0 {
+				delArchStmt, err := tx.PrepareContext(ctx, `DELETE FROM archetypes WHERE id = ?;`)
+				if err != nil {
+					return err
+				}
+				defer delArchStmt.Close()
+				for _, id := range staleArchIDs {
+					if _, err := delArchStmt.ExecContext(ctx, id); err != nil {
 						return fmt.Errorf("delete archetype %s: %w", id, err)
 					}
 				}
@@ -714,7 +728,7 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 
 		// E. Applications (Upsert application records before reconciling career facts)
 		if hasApplicationsSection {
-			incomingAppIDs := make(map[string]bool)
+			incomingAppIDs := make(map[string]bool, len(appsLoaded))
 			for _, app := range appsLoaded {
 				incomingAppIDs[app.ID] = true
 			}
@@ -723,14 +737,16 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			if err != nil {
 				return err
 			}
-			var existingAppIDs []string
+			var staleAppIDs []string
 			for rows.Next() {
 				var id string
 				if err := rows.Scan(&id); err != nil {
 					rows.Close()
 					return fmt.Errorf("scan application id: %w", err)
 				}
-				existingAppIDs = append(existingAppIDs, id)
+				if !incomingAppIDs[id] {
+					staleAppIDs = append(staleAppIDs, id)
+				}
 			}
 			if err := rows.Err(); err != nil {
 				rows.Close()
@@ -738,9 +754,14 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 			rows.Close()
 
-			for _, id := range existingAppIDs {
-				if !incomingAppIDs[id] {
-					if _, err := tx.ExecContext(ctx, `DELETE FROM applications WHERE id = ?;`, id); err != nil {
+			if len(staleAppIDs) > 0 {
+				delAppStmt, err := tx.PrepareContext(ctx, `DELETE FROM applications WHERE id = ?;`)
+				if err != nil {
+					return err
+				}
+				defer delAppStmt.Close()
+				for _, id := range staleAppIDs {
+					if _, err := delAppStmt.ExecContext(ctx, id); err != nil {
 						return fmt.Errorf("delete application %s: %w", id, err)
 					}
 				}
@@ -816,40 +837,68 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 			factRows.Close()
 
+			// Bulk-query all fact IDs cited by Submitted applications in the database
+			dbSubmittedCitations := make(map[string]bool)
+			citRows, err := tx.QueryContext(ctx, `
+				SELECT DISTINCT ac.fact_id
+				FROM application_citations ac
+				JOIN applications a ON ac.application_id = a.id
+				WHERE a.state = 'Submitted';
+			`)
+			if err != nil {
+				return fmt.Errorf("tx query submitted fact citations: %w", err)
+			}
+			for citRows.Next() {
+				var cid string
+				if err := citRows.Scan(&cid); err != nil {
+					citRows.Close()
+					return err
+				}
+				dbSubmittedCitations[cid] = true
+			}
+			if err := citRows.Err(); err != nil {
+				citRows.Close()
+				return fmt.Errorf("iterate submitted citation rows: %w", err)
+			}
+			citRows.Close()
+
+			var factsToArchive []string
+			var factsToDelete []string
 			for _, fid := range existingFactIDs {
 				if !incomingFactIDs[fid] {
-					// Check if cited in a Submitted application:
-					// 1. In memory from incoming bundle applications
-					// 2. In database from applications currently in Submitted state
-					isCitedInSubmitted := incomingSubmittedFactCitations[fid]
-					if !isCitedInSubmitted {
-						var citedInSubmitted int
-						checkQuery := `
-						SELECT COUNT(1)
-						FROM application_citations ac
-						JOIN applications a ON ac.application_id = a.id
-						WHERE ac.fact_id = ? AND a.state = 'Submitted';`
-						if err := tx.QueryRowContext(ctx, checkQuery, fid).Scan(&citedInSubmitted); err != nil {
-							return fmt.Errorf("tx check submitted fact citation %s: %w", fid, err)
-						}
-						if citedInSubmitted > 0 {
-							isCitedInSubmitted = true
-						}
-					}
-
-					if isCitedInSubmitted {
-						// INVARIANT: Do not delete! Soft-archive to preserve provenance!
-						archiveQuery := `
-						UPDATE career_facts
-						SET epistemic_state = ?, verified = 0, updated_at = ?
-						WHERE id = ?;`
-						if _, err := tx.ExecContext(ctx, archiveQuery, string(domain.EpistemicArchived), nowStr, fid); err != nil {
-							return fmt.Errorf("tx soft-archive fact %s: %w", fid, err)
-						}
+					if incomingSubmittedFactCitations[fid] || dbSubmittedCitations[fid] {
+						factsToArchive = append(factsToArchive, fid)
 					} else {
-						if _, err := tx.ExecContext(ctx, `DELETE FROM career_facts WHERE id = ?;`, fid); err != nil {
-							return fmt.Errorf("tx delete missing fact %s: %w", fid, err)
-						}
+						factsToDelete = append(factsToDelete, fid)
+					}
+				}
+			}
+
+			if len(factsToArchive) > 0 {
+				archiveStmt, err := tx.PrepareContext(ctx, `
+					UPDATE career_facts
+					SET epistemic_state = ?, verified = 0, updated_at = ?
+					WHERE id = ?;`)
+				if err != nil {
+					return fmt.Errorf("prepare archive fact stmt: %w", err)
+				}
+				defer archiveStmt.Close()
+				for _, fid := range factsToArchive {
+					if _, err := archiveStmt.ExecContext(ctx, string(domain.EpistemicArchived), nowStr, fid); err != nil {
+						return fmt.Errorf("tx soft-archive fact %s: %w", fid, err)
+					}
+				}
+			}
+
+			if len(factsToDelete) > 0 {
+				delFactStmt, err := tx.PrepareContext(ctx, `DELETE FROM career_facts WHERE id = ?;`)
+				if err != nil {
+					return fmt.Errorf("prepare delete fact stmt: %w", err)
+				}
+				defer delFactStmt.Close()
+				for _, fid := range factsToDelete {
+					if _, err := delFactStmt.ExecContext(ctx, fid); err != nil {
+						return fmt.Errorf("tx delete missing fact %s: %w", fid, err)
 					}
 				}
 			}
@@ -874,16 +923,43 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 			roleRows.Close()
 
+			// Bulk-query remaining fact counts grouped by role_id
+			roleFactCounts := make(map[string]int)
+			rfRows, err := tx.QueryContext(ctx, `SELECT role_id, COUNT(1) FROM career_facts GROUP BY role_id;`)
+			if err != nil {
+				return fmt.Errorf("tx query role fact counts: %w", err)
+			}
+			for rfRows.Next() {
+				var rid string
+				var cnt int
+				if err := rfRows.Scan(&rid, &cnt); err != nil {
+					rfRows.Close()
+					return err
+				}
+				roleFactCounts[rid] = cnt
+			}
+			if err := rfRows.Err(); err != nil {
+				rfRows.Close()
+				return fmt.Errorf("iterate role fact count rows: %w", err)
+			}
+			rfRows.Close()
+
+			var rolesToDelete []string
 			for _, rid := range existingRoleIDs {
-				if !incomingRoleIDs[rid] {
-					var remainingFacts int
-					if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM career_facts WHERE role_id = ?;`, rid).Scan(&remainingFacts); err != nil {
-						return fmt.Errorf("tx check remaining facts for role %s: %w", rid, err)
-					}
-					if remainingFacts == 0 {
-						if _, err := tx.ExecContext(ctx, `DELETE FROM roles WHERE id = ?;`, rid); err != nil {
-							return fmt.Errorf("tx delete role %s: %w", rid, err)
-						}
+				if !incomingRoleIDs[rid] && roleFactCounts[rid] == 0 {
+					rolesToDelete = append(rolesToDelete, rid)
+				}
+			}
+
+			if len(rolesToDelete) > 0 {
+				delRoleStmt, err := tx.PrepareContext(ctx, `DELETE FROM roles WHERE id = ?;`)
+				if err != nil {
+					return fmt.Errorf("prepare delete role stmt: %w", err)
+				}
+				defer delRoleStmt.Close()
+				for _, rid := range rolesToDelete {
+					if _, err := delRoleStmt.ExecContext(ctx, rid); err != nil {
+						return fmt.Errorf("tx delete role %s: %w", rid, err)
 					}
 				}
 			}
@@ -908,16 +984,43 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 			orgRows.Close()
 
+			// Bulk-query remaining role counts grouped by org_id
+			orgRoleCounts := make(map[string]int)
+			roRows, err := tx.QueryContext(ctx, `SELECT org_id, COUNT(1) FROM roles GROUP BY org_id;`)
+			if err != nil {
+				return fmt.Errorf("tx query org role counts: %w", err)
+			}
+			for roRows.Next() {
+				var oid string
+				var cnt int
+				if err := roRows.Scan(&oid, &cnt); err != nil {
+					roRows.Close()
+					return err
+				}
+				orgRoleCounts[oid] = cnt
+			}
+			if err := roRows.Err(); err != nil {
+				roRows.Close()
+				return fmt.Errorf("iterate org role count rows: %w", err)
+			}
+			roRows.Close()
+
+			var orgsToDelete []string
 			for _, oid := range existingOrgIDs {
-				if !incomingOrgIDs[oid] {
-					var remainingRoles int
-					if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM roles WHERE org_id = ?;`, oid).Scan(&remainingRoles); err != nil {
-						return fmt.Errorf("tx check remaining roles for org %s: %w", oid, err)
-					}
-					if remainingRoles == 0 {
-						if _, err := tx.ExecContext(ctx, `DELETE FROM organizations WHERE id = ?;`, oid); err != nil {
-							return fmt.Errorf("tx delete org %s: %w", oid, err)
-						}
+				if !incomingOrgIDs[oid] && orgRoleCounts[oid] == 0 {
+					orgsToDelete = append(orgsToDelete, oid)
+				}
+			}
+
+			if len(orgsToDelete) > 0 {
+				delOrgStmt, err := tx.PrepareContext(ctx, `DELETE FROM organizations WHERE id = ?;`)
+				if err != nil {
+					return fmt.Errorf("prepare delete org stmt: %w", err)
+				}
+				defer delOrgStmt.Close()
+				for _, oid := range orgsToDelete {
+					if _, err := delOrgStmt.ExecContext(ctx, oid); err != nil {
+						return fmt.Errorf("tx delete org %s: %w", oid, err)
 					}
 				}
 			}
@@ -1008,6 +1111,12 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 
 		// G. Application Citations Reconciliation
 		if hasApplicationsSection {
+			delCitStmt, err := tx.PrepareContext(ctx, `DELETE FROM application_citations WHERE application_id = ?;`)
+			if err != nil {
+				return fmt.Errorf("prepare delete citation stmt: %w", err)
+			}
+			defer delCitStmt.Close()
+
 			citStmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO application_citations (application_id, fact_id) VALUES (?, ?);`)
 			if err != nil {
 				return err
@@ -1015,7 +1124,7 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			defer citStmt.Close()
 
 			for _, app := range appsLoaded {
-				if _, err := tx.ExecContext(ctx, `DELETE FROM application_citations WHERE application_id = ?;`, app.ID); err != nil {
+				if _, err := delCitStmt.ExecContext(ctx, app.ID); err != nil {
 					return fmt.Errorf("delete old citations for app %s: %w", app.ID, err)
 				}
 				for _, cid := range app.Citations {

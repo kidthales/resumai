@@ -64,7 +64,7 @@ if ($CI) {
     # Verify required tools upfront under -CI so missing binaries never silently degrade
     $requiredTools = @(
         @{ Name = "go"; Hint = "Install Go 1.27.x (or Go 1.26.x with GOTOOLCHAIN auto-download enabled) and ensure 'go' is on PATH." },
-        @{ Name = "govulncheck"; Hint = "Install via 'go install golang.org/x/vuln/cmd/govulncheck@v1.1.4' and ensure GOPATH/bin is on PATH." },
+        @{ Name = "govulncheck"; Hint = "Install via 'go install golang.org/x/vuln/cmd/govulncheck@v1.9.0' and ensure GOPATH/bin is on PATH." },
         @{ Name = "gcc"; Hint = "Go -race requires CGO and a 64-bit C compiler (MinGW-w64 gcc on Windows; build-essential on Linux)." }
     )
     foreach ($tool in $requiredTools) {
@@ -462,15 +462,31 @@ try {
     if (-not $SkipVulnCheck -and -not $Quick) {
         $GovulncheckCmd = Get-Command "govulncheck" -ErrorAction SilentlyContinue
         if ($GovulncheckCmd) {
-            & $GovulncheckCmd.Source -C $RootDir ./...
-            if ($LASTEXITCODE -ne 0) {
+            $output = & $GovulncheckCmd.Source -C $RootDir ./... 2>&1
+            $exitCode = $LASTEXITCODE
+            $outputStr = ($output | Out-String)
+            if ($outputStr) {
+                Write-Host $outputStr.TrimEnd()
+            }
+            if ($exitCode -ne 0) {
+                if ($outputStr -match 'panic:' -or ($outputStr -notmatch 'Vulnerability #' -and $outputStr -notmatch 'vulnerabilities found' -and $outputStr -notmatch 'Your code is affected')) {
+                    throw "govulncheck crashed (no scan result): $($outputStr.Trim())"
+                }
                 throw "govulncheck detected vulnerabilities."
             }
         } elseif ($CI) {
             throw "ERROR: -CI mode requires 'govulncheck' installed on PATH."
         } else {
-            go -C $RootDir run golang.org/x/vuln/cmd/govulncheck@v1.1.4 -C $RootDir ./...
-            if ($LASTEXITCODE -ne 0) {
+            $output = go -C $RootDir run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -C $RootDir ./... 2>&1
+            $exitCode = $LASTEXITCODE
+            $outputStr = ($output | Out-String)
+            if ($outputStr) {
+                Write-Host $outputStr.TrimEnd()
+            }
+            if ($exitCode -ne 0) {
+                if ($outputStr -match 'panic:' -or ($outputStr -notmatch 'Vulnerability #' -and $outputStr -notmatch 'vulnerabilities found' -and $outputStr -notmatch 'Your code is affected')) {
+                    throw "govulncheck crashed (no scan result): $($outputStr.Trim())"
+                }
                 throw "govulncheck detected vulnerabilities."
             }
         }

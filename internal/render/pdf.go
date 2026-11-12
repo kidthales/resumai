@@ -646,9 +646,6 @@ func CalculateLayoutTelemetry(contentHeight, usableHeight float64, targetPages i
 
 	if usableHeight <= 0 {
 		usableHeight = pageHeight - marginY
-	} else if len(page) == 0 && usableHeight != (pageHeight-marginY) {
-		// When caller supplies custom usableHeight without PageConfig, adapt pageHeight
-		pageHeight = usableHeight + marginY
 	}
 	if targetPages <= 0 {
 		targetPages = 1
