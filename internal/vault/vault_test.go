@@ -396,3 +396,76 @@ func TestEpistemicStatePrecedence(t *testing.T) {
 		t.Errorf("expected Verified to be false when EpistemicState is raw_note, got true")
 	}
 }
+
+func TestStringSliceSerialization(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	org := &domain.Organization{ID: "org-slice", Name: "Slice Corp"}
+	if err := v.SaveOrganization(ctx, org); err != nil {
+		t.Fatalf("save org failed: %v", err)
+	}
+
+	// 1. Role with nil tech stack
+	roleNil := &domain.Role{
+		ID:        "role-nil-tech",
+		OrgID:     org.ID,
+		Title:     "Nil Tech Role",
+		TechStack: nil,
+	}
+	if err := v.SaveRole(ctx, roleNil); err != nil {
+		t.Fatalf("save role with nil tech stack failed: %v", err)
+	}
+	gotRoleNil, err := v.GetRole(ctx, roleNil.ID)
+	if err != nil {
+		t.Fatalf("get role failed: %v", err)
+	}
+	if len(gotRoleNil.TechStack) != 0 {
+		t.Errorf("expected empty/nil tech stack, got %+v", gotRoleNil.TechStack)
+	}
+
+	// Verify the database raw column is normalized to "[]"
+	var rawTech string
+	err = v.DB().QueryRowContext(ctx, "SELECT tech_stack FROM roles WHERE id = ?;", roleNil.ID).Scan(&rawTech)
+	if err != nil {
+		t.Fatalf("query raw tech stack failed: %v", err)
+	}
+	if rawTech != "[]" {
+		t.Errorf("expected raw tech_stack column to be '[]', got %q", rawTech)
+	}
+
+	// 2. Archetype with empty and populated slices
+	arch := &domain.Archetype{
+		ID:               "arch-slice-test",
+		Name:             "Slice Test Persona",
+		CoreCompetencies: []string{"Go", "SQLite"},
+		StrategicImpact:  []string{},
+		TargetRoles:      nil,
+	}
+	if err := v.SaveArchetype(ctx, arch); err != nil {
+		t.Fatalf("save archetype failed: %v", err)
+	}
+
+	var rawCore, rawStrat, rawRoles string
+	err = v.DB().QueryRowContext(ctx, "SELECT core_competencies, strategic_impact, target_roles FROM archetypes WHERE id = ?;", arch.ID).Scan(&rawCore, &rawStrat, &rawRoles)
+	if err != nil {
+		t.Fatalf("query raw archetype slices failed: %v", err)
+	}
+	if rawCore != `["Go","SQLite"]` {
+		t.Errorf("expected core_competencies to be '[\"Go\",\"SQLite\"]', got %q", rawCore)
+	}
+	if rawStrat != "[]" {
+		t.Errorf("expected strategic_impact to be '[]', got %q", rawStrat)
+	}
+	if rawRoles != "[]" {
+		t.Errorf("expected target_roles to be '[]', got %q", rawRoles)
+	}
+
+	gotArch, err := v.GetArchetype(ctx, arch.ID)
+	if err != nil {
+		t.Fatalf("get archetype failed: %v", err)
+	}
+	if len(gotArch.CoreCompetencies) != 2 || gotArch.CoreCompetencies[0] != "Go" {
+		t.Errorf("unexpected core competencies: %+v", gotArch.CoreCompetencies)
+	}
+}

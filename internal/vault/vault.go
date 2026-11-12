@@ -391,7 +391,7 @@ func (v *CareerVault) SaveRole(ctx context.Context, role *domain.Role) error {
 	}
 	role.UpdatedAt = now
 
-	techJSON, err := json.Marshal(role.TechStack)
+	techJSON, err := marshalStringSlice(role.TechStack)
 	if err != nil {
 		return fmt.Errorf("marshal tech stack: %w", err)
 	}
@@ -415,7 +415,7 @@ func (v *CareerVault) SaveRole(ctx context.Context, role *domain.Role) error {
 		role.Category,
 		role.Location,
 		role.Duration,
-		string(techJSON),
+		techJSON,
 		role.CreatedAt.Format(time.RFC3339),
 		role.UpdatedAt.Format(time.RFC3339),
 	)
@@ -561,7 +561,7 @@ func (v *CareerVault) SaveCareerFact(ctx context.Context, fact *domain.CareerFac
 	}
 	fact.UpdatedAt = now
 
-	techJSON, err := json.Marshal(fact.TechTags)
+	techJSON, err := marshalStringSlice(fact.TechTags)
 	if err != nil {
 		return fmt.Errorf("marshal tech tags: %w", err)
 	}
@@ -589,7 +589,7 @@ func (v *CareerVault) SaveCareerFact(ctx context.Context, fact *domain.CareerFac
 		fact.Headline,
 		fact.Details,
 		string(fact.EpistemicState),
-		string(techJSON),
+		techJSON,
 		verifiedInt,
 		fact.CreatedAt.Format(time.RFC3339),
 		fact.UpdatedAt.Format(time.RFC3339),
@@ -863,9 +863,18 @@ func (v *CareerVault) SaveArchetype(ctx context.Context, arch *domain.Archetype)
 	}
 	arch.UpdatedAt = now
 
-	compJSON, _ := json.Marshal(arch.CoreCompetencies)
-	stratJSON, _ := json.Marshal(arch.StrategicImpact)
-	rolesJSON, _ := json.Marshal(arch.TargetRoles)
+	compJSON, err := marshalStringSlice(arch.CoreCompetencies)
+	if err != nil {
+		return fmt.Errorf("marshal core competencies: %w", err)
+	}
+	stratJSON, err := marshalStringSlice(arch.StrategicImpact)
+	if err != nil {
+		return fmt.Errorf("marshal strategic impact: %w", err)
+	}
+	rolesJSON, err := marshalStringSlice(arch.TargetRoles)
+	if err != nil {
+		return fmt.Errorf("marshal target roles: %w", err)
+	}
 
 	query := `
 	INSERT INTO archetypes (id, name, profile_overview, core_competencies, strategic_impact, target_roles, created_at, updated_at)
@@ -878,13 +887,13 @@ func (v *CareerVault) SaveArchetype(ctx context.Context, arch *domain.Archetype)
 		target_roles = excluded.target_roles,
 		updated_at = excluded.updated_at;`
 
-	_, err := v.db.ExecContext(ctx, query,
+	_, err = v.db.ExecContext(ctx, query,
 		arch.ID,
 		arch.Name,
 		arch.ProfileOverview,
-		string(compJSON),
-		string(stratJSON),
-		string(rolesJSON),
+		compJSON,
+		stratJSON,
+		rolesJSON,
 		arch.CreatedAt.Format(time.RFC3339),
 		arch.UpdatedAt.Format(time.RFC3339),
 	)
@@ -1203,4 +1212,17 @@ func parseDBTime(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// marshalStringSlice serializes a string slice to a JSON array string for SQLite TEXT storage.
+// Empty or nil slices are normalized to "[]".
+func marshalStringSlice(s []string) (string, error) {
+	if len(s) == 0 {
+		return "[]", nil
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }

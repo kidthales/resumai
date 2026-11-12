@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -192,8 +191,11 @@ func (v *CareerVault) ImportLegacy(ctx context.Context, dir string, opts ...Lega
 			if cat == "" {
 				cat = "work"
 			}
-			techJSON, _ := json.Marshal(r.TechStack)
-			if _, err := roleStmt.ExecContext(ctx, r.ID, r.OrgID, r.Title, cat, r.Location, r.Duration, string(techJSON), nowStr, nowStr); err != nil {
+			techJSON, err := marshalStringSlice(r.TechStack)
+			if err != nil {
+				return fmt.Errorf("marshal role %s tech stack: %w", r.ID, err)
+			}
+			if _, err := roleStmt.ExecContext(ctx, r.ID, r.OrgID, r.Title, cat, r.Location, r.Duration, techJSON, nowStr, nowStr); err != nil {
 				return fmt.Errorf("save role %s: %w", r.ID, err)
 			}
 		}
@@ -220,14 +222,17 @@ func (v *CareerVault) ImportLegacy(ctx context.Context, dir string, opts ...Lega
 			if f.Verified {
 				verifiedInt = 1
 			}
-			techJSON, _ := json.Marshal(f.TechTags)
+			techJSON, err := marshalStringSlice(f.TechTags)
+			if err != nil {
+				return fmt.Errorf("marshal fact %s tech tags: %w", f.ID, err)
+			}
 			if _, err := factStmt.ExecContext(ctx,
 				f.ID,
 				f.RoleID,
 				f.Headline,
 				f.Details,
 				string(f.EpistemicState),
-				string(techJSON),
+				techJSON,
 				verifiedInt,
 				nowStr,
 				nowStr,
@@ -286,16 +291,25 @@ func (v *CareerVault) ImportLegacy(ctx context.Context, dir string, opts ...Lega
 		defer archStmt.Close()
 
 		for _, a := range bundle.Archetypes {
-			compJSON, _ := json.Marshal(a.CoreCompetencies)
-			stratJSON, _ := json.Marshal(a.StrategicImpact)
-			rolesJSON, _ := json.Marshal(a.TargetRoles)
+			compJSON, err := marshalStringSlice(a.CoreCompetencies)
+			if err != nil {
+				return fmt.Errorf("marshal archetype %s core competencies: %w", a.ID, err)
+			}
+			stratJSON, err := marshalStringSlice(a.StrategicImpact)
+			if err != nil {
+				return fmt.Errorf("marshal archetype %s strategic impact: %w", a.ID, err)
+			}
+			rolesJSON, err := marshalStringSlice(a.TargetRoles)
+			if err != nil {
+				return fmt.Errorf("marshal archetype %s target roles: %w", a.ID, err)
+			}
 			if _, err := archStmt.ExecContext(ctx,
 				a.ID,
 				a.Name,
 				a.ProfileOverview,
-				string(compJSON),
-				string(stratJSON),
-				string(rolesJSON),
+				compJSON,
+				stratJSON,
+				rolesJSON,
 				nowStr,
 				nowStr,
 			); err != nil {

@@ -3,7 +3,6 @@ package vault
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -661,10 +660,19 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			defer archStmt.Close()
 
 			for _, a := range archsLoaded {
-				compJSON, _ := json.Marshal(a.CoreCompetencies)
-				stratJSON, _ := json.Marshal(a.StrategicImpact)
-				rolesJSON, _ := json.Marshal(a.TargetRoles)
-				if _, err := archStmt.ExecContext(ctx, a.ID, a.Name, a.ProfileOverview, string(compJSON), string(stratJSON), string(rolesJSON), nowStr, nowStr); err != nil {
+				compJSON, err := marshalStringSlice(a.CoreCompetencies)
+				if err != nil {
+					return fmt.Errorf("marshal archetype %s core competencies: %w", a.ID, err)
+				}
+				stratJSON, err := marshalStringSlice(a.StrategicImpact)
+				if err != nil {
+					return fmt.Errorf("marshal archetype %s strategic impact: %w", a.ID, err)
+				}
+				rolesJSON, err := marshalStringSlice(a.TargetRoles)
+				if err != nil {
+					return fmt.Errorf("marshal archetype %s target roles: %w", a.ID, err)
+				}
+				if _, err := archStmt.ExecContext(ctx, a.ID, a.Name, a.ProfileOverview, compJSON, stratJSON, rolesJSON, nowStr, nowStr); err != nil {
 					return fmt.Errorf("exec save archetype %s: %w", a.ID, err)
 				}
 			}
@@ -937,8 +945,11 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 				if cat == "" {
 					cat = "work"
 				}
-				techJSON, _ := json.Marshal(r.TechStack)
-				if _, err := roleStmt.ExecContext(ctx, r.ID, org.ID, r.Title, cat, r.Location, r.Duration, string(techJSON), nowStr, nowStr); err != nil {
+				techJSON, err := marshalStringSlice(r.TechStack)
+				if err != nil {
+					return fmt.Errorf("marshal role %s tech stack: %w", r.ID, err)
+				}
+				if _, err := roleStmt.ExecContext(ctx, r.ID, org.ID, r.Title, cat, r.Location, r.Duration, techJSON, nowStr, nowStr); err != nil {
 					return fmt.Errorf("exec save role %s: %w", r.ID, err)
 				}
 
@@ -950,8 +961,11 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 						verifiedInt = 1
 					}
 
-					tagsJSON, _ := json.Marshal(f.TechTags)
-					if _, err := factStmt.ExecContext(ctx, f.ID, r.ID, f.Headline, f.Details, string(eState), string(tagsJSON), verifiedInt, nowStr, nowStr); err != nil {
+					tagsJSON, err := marshalStringSlice(f.TechTags)
+					if err != nil {
+						return fmt.Errorf("marshal fact %s tech tags: %w", f.ID, err)
+					}
+					if _, err := factStmt.ExecContext(ctx, f.ID, r.ID, f.Headline, f.Details, string(eState), tagsJSON, verifiedInt, nowStr, nowStr); err != nil {
 						return fmt.Errorf("exec save fact %s: %w", f.ID, err)
 					}
 				}
