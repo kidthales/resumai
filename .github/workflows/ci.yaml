@@ -5,8 +5,12 @@ on:
   push:
     branches:
       - main
-  pull_request: ~
-  workflow_dispatch: ~
+      - "src-main/epic/55-*"
+  pull_request:
+    branches:
+      - main
+      - "src-main/epic/55-*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,95 +20,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tests:
-    name: Tests
-    runs-on: ubuntu-latest
+  test:
+    name: Test & Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Build Docker images
-        uses: docker/bake-action@v7
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          pull: true
-          load: true
-          targets: php
-          files: |
-            docker/docker-bake.hcl
-          set: |
-            *.cache-from=type=gha,scope=${{github.ref}}
-            *.cache-from=type=gha,scope=refs/heads/main
-            *.cache-to=type=gha,scope=${{github.ref}},mode=max
+          go-version: "1.26.x"
+          cache: true
 
-      - name: Start services
-        run: cd docker && docker compose -f compose.yaml -f compose.ci.yaml up --wait --no-build
+      - name: Verify Go formatting
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files detected:"
+            echo "$unformatted"
+            exit 1
+          fi
+          echo "All Go source files formatted properly."
 
-      - name: Check HTTP reachability
-        run: curl -v --fail-with-body http://localhost
-      # Uncomment when the homepage is configured, or change the path to check
-      # - name: Check HTTPS reachability
-      #   run: curl -v --insecure --fail-with-body https://localhost
-      - name: Check Mercure reachability
-        run: curl -vI --insecure --fail-with-body https://localhost/.well-known/mercure?topic=test
-      # Uncomment if Doctrine ORM is installed
-      # - name: Create test database
-      #   run: docker compose exec -T php bin/console -e test doctrine:database:create
-      # Uncomment if Doctrine Migrations is installed
-      # - name: Run migrations
-      #   run: docker compose exec -T php bin/console -e test doctrine:migrations:migrate --no-interaction
-      # Uncomment if PHPUnit is installed
-      - name: Run PHPUnit
-        run: cd docker && docker compose exec -T php bin/phpunit
-      # Uncomment if Doctrine ORM is installed
-      # - name: Doctrine Schema Validator
-      #   run: docker compose exec -T php bin/console -e test doctrine:schema:validate
+      - name: Run Go vet
+        run: go vet ./...
 
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+      - name: Run unit & boundary tests
+        run: go test -v ./...
 
-      - name: Setup Node
-        id: setup-node
-        background: true
-        uses: actions/setup-node@v7
-        with:
-          node-version: 'lts/*'
-      - name: Setup PHP
-        id: setup-php
-        background: true
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.5'
+      - name: Run tests with race detector
+        shell: bash
+        run: |
+          if command -v gcc >/dev/null 2>&1; then
+            go test -race ./...
+          else
+            echo "Notice: gcc not found in PATH; skipping -race on this runner."
+          fi
 
-      - name: Wait for setups
-        wait: [setup-node, setup-php]
+      - name: Validate PowerShell scripts AST
+        shell: pwsh
+        run: |
+          $psFiles = Get-ChildItem -Path scripts -Filter "*.ps1" -File -Recurse
+          foreach ($file in $psFiles) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Error "Syntax error in script $($file.FullName)"
+              exit 1
+            }
+          }
+          Write-Host "All $($psFiles.Count) PowerShell scripts passed AST validation."
 
-      - name: Install vendor/
-        run: composer install --no-progress --no-interaction
-      - name: Install node_modules
-        run: npm ci
-
-      - name: Prettier
-        id: prettier
-        background: true
-        run: npx prettier --check "**/*.{css,json,md,yaml}"
-      - name: PHP CS Fixer
-        id: php-cs-fixer
-        background: true
-        run: php vendor/bin/php-cs-fixer check
-      - name: ESLint
-        id: eslint
-        background: true
-        run: npx eslint .
-
-      - name: Wait for linters
-        wait: [prettier, php-cs-fixer, eslint]
+      - name: Build production binary
+        run: go build -ldflags="-s -w" -o bin/resumai ./cmd/resumai
