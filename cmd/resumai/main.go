@@ -55,6 +55,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runDump(cmdArgs, stdout, stderr, vaultPath)
 	case "load":
 		return runLoad(cmdArgs, stdout, stderr, vaultPath)
+	case "import-legacy":
+		return runImportLegacy(cmdArgs, stdout, stderr, vaultPath)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %q\n\n", cmd)
 		printUsage(stderr)
@@ -70,9 +72,10 @@ Usage:
 
 Commands:
   pii       Manage air-gapped candidate contact PII (show, set)
-  dump      Dump career vault to structured YAML directory bundle
-  load      Load structured YAML directory bundle into vault
-  version   Print resumai version
+  dump            Dump career vault to structured YAML directory bundle
+  load            Load structured YAML directory bundle into vault
+  import-legacy   Import v0.1.0 Markdown files into career vault
+  version         Print resumai version
   help      Display help information
 
 Global Flags:
