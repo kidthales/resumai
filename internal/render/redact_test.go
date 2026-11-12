@@ -1,6 +1,7 @@
 package render_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -50,5 +51,56 @@ func TestRedactSecrets_UserPaths(t *testing.T) {
 	}
 	if !strings.Contains(gotUnix, `[USER_HOME]`) {
 		t.Errorf("expected [USER_HOME] placeholder in unix path, got %s", gotUnix)
+	}
+}
+
+func TestRedactSecrets_UserHomeAndTempDirBranches(t *testing.T) {
+	// Exercise the os.UserHomeDir() live branch
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		homeTrimmed := strings.TrimRight(home, `/\`)
+		if len(homeTrimmed) > 3 {
+			input := "reading config from " + homeTrimmed + "/.resumai/config.yaml"
+			got := render.RedactSecrets(input)
+			if strings.Contains(got, homeTrimmed) {
+				t.Errorf("expected live UserHomeDir %q to be scrubbed, got %s", homeTrimmed, got)
+			}
+			if !strings.Contains(got, "[HOME]") && !strings.Contains(got, "[USER_HOME]") {
+				t.Errorf("expected [HOME] or [USER_HOME] in redacted output, got %s", got)
+			}
+		}
+	}
+
+	// Exercise the os.TempDir() live branch
+	if tmp := os.TempDir(); tmp != "" {
+		tmpTrimmed := strings.TrimRight(tmp, `/\`)
+		if len(tmpTrimmed) > 3 {
+			input := "cached intermediate file at " + tmpTrimmed + "/resumai-test.bin"
+			got := render.RedactSecrets(input)
+			if strings.Contains(got, tmpTrimmed) {
+				t.Errorf("expected live TempDir %q to be scrubbed, got %s", tmpTrimmed, got)
+			}
+			if !strings.Contains(got, "[TEMP]") {
+				t.Errorf("expected [TEMP] in redacted output, got %s", got)
+			}
+		}
+	}
+}
+
+func TestRedactSecrets_UnixPathAnchoring(t *testing.T) {
+	// Subpaths like /opt/home/x must not be mangled
+	optPath := "/opt/home/service/config.json"
+	gotOpt := render.RedactSecrets("check " + optPath)
+	if !strings.Contains(gotOpt, optPath) {
+		t.Errorf("expected /opt/home path to remain unredacted, got %s", gotOpt)
+	}
+
+	// Explicit user paths must be scrubbed
+	userPath := "/home/alice/resume.pdf"
+	gotUser := render.RedactSecrets("path: " + userPath)
+	if strings.Contains(gotUser, "/home/alice") {
+		t.Errorf("expected /home/alice to be scrubbed, got %s", gotUser)
+	}
+	if !strings.Contains(gotUser, "[USER_HOME]") {
+		t.Errorf("expected [USER_HOME] in output, got %s", gotUser)
 	}
 }
