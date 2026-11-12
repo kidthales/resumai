@@ -568,9 +568,15 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			var existingEduIDs []string
 			for rows.Next() {
 				var id string
-				if err := rows.Scan(&id); err == nil {
-					existingEduIDs = append(existingEduIDs, id)
+				if err := rows.Scan(&id); err != nil {
+					rows.Close()
+					return fmt.Errorf("scan education id: %w", err)
 				}
+				existingEduIDs = append(existingEduIDs, id)
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return fmt.Errorf("iterate education rows: %w", err)
 			}
 			rows.Close()
 
@@ -619,9 +625,15 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			var existingArchIDs []string
 			for rows.Next() {
 				var id string
-				if err := rows.Scan(&id); err == nil {
-					existingArchIDs = append(existingArchIDs, id)
+				if err := rows.Scan(&id); err != nil {
+					rows.Close()
+					return fmt.Errorf("scan archetype id: %w", err)
 				}
+				existingArchIDs = append(existingArchIDs, id)
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return fmt.Errorf("iterate archetype rows: %w", err)
 			}
 			rows.Close()
 
@@ -672,9 +684,15 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			var existingAppIDs []string
 			for rows.Next() {
 				var id string
-				if err := rows.Scan(&id); err == nil {
-					existingAppIDs = append(existingAppIDs, id)
+				if err := rows.Scan(&id); err != nil {
+					rows.Close()
+					return fmt.Errorf("scan application id: %w", err)
 				}
+				existingAppIDs = append(existingAppIDs, id)
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return fmt.Errorf("iterate application rows: %w", err)
 			}
 			rows.Close()
 
@@ -750,6 +768,10 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 				}
 				existingFactIDs = append(existingFactIDs, fid)
 			}
+			if err := factRows.Err(); err != nil {
+				factRows.Close()
+				return fmt.Errorf("iterate fact rows: %w", err)
+			}
 			factRows.Close()
 
 			for _, fid := range existingFactIDs {
@@ -804,6 +826,10 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 				}
 				existingRoleIDs = append(existingRoleIDs, rid)
 			}
+			if err := roleRows.Err(); err != nil {
+				roleRows.Close()
+				return fmt.Errorf("iterate role rows: %w", err)
+			}
 			roleRows.Close()
 
 			for _, rid := range existingRoleIDs {
@@ -831,6 +857,10 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 					return err
 				}
 				existingOrgIDs = append(existingOrgIDs, oid)
+			}
+			if err := orgRows.Err(); err != nil {
+				orgRows.Close()
+				return fmt.Errorf("iterate org rows: %w", err)
 			}
 			orgRows.Close()
 
