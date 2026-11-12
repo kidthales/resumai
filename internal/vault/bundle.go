@@ -910,13 +910,6 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 
 				for _, f := range r.Facts {
 					eState := domain.EpistemicState(f.EpistemicState)
-					if eState == "" {
-						if f.Verified {
-							eState = domain.EpistemicVerified
-						} else {
-							eState = domain.EpistemicRawNote
-						}
-					}
 					isVerified := (eState == domain.EpistemicVerified)
 					verifiedInt := 0
 					if isVerified {
@@ -998,12 +991,17 @@ func normalizeAndValidateOrg(org *BundleOrganization, defaultID string) error {
 			// Validate epistemic state
 			state := domain.EpistemicState(org.Roles[ri].Facts[fi].EpistemicState)
 			if state == "" {
-				state = domain.EpistemicRawNote
+				if org.Roles[ri].Facts[fi].Verified {
+					state = domain.EpistemicVerified
+				} else {
+					state = domain.EpistemicRawNote
+				}
 				org.Roles[ri].Facts[fi].EpistemicState = string(state)
 			}
 			if err := state.Validate(); err != nil {
 				return fmt.Errorf("invalid epistemic state in fact %s: %w", org.Roles[ri].Facts[fi].ID, err)
 			}
+			org.Roles[ri].Facts[fi].Verified = (state == domain.EpistemicVerified)
 		}
 	}
 	return nil

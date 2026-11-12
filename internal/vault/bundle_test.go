@@ -746,6 +746,9 @@ func TestLoadSingleFileFallbackNormalizationAndValidation(t *testing.T) {
         - id: custom-fact
           headline: Automated failover
           epistemic_state: verified
+        - id: verified-legacy-fact
+          headline: Omitted epistemic state but verified true
+          verified: true
 - id: beta-corp
   name: Beta Corp
   roles:
@@ -813,8 +816,8 @@ func TestLoadSingleFileFallbackNormalizationAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list facts for role1: %v", err)
 	}
-	if len(facts1) != 2 {
-		t.Fatalf("expected 2 facts in role1, got %d", len(facts1))
+	if len(facts1) != 3 {
+		t.Fatalf("expected 3 facts in role1, got %d", len(facts1))
 	}
 	if facts1[0].ID != "org-1-role-1-fact-1" {
 		t.Errorf("expected fact[0] ID 'org-1-role-1-fact-1', got '%s'", facts1[0].ID)
@@ -822,11 +825,26 @@ func TestLoadSingleFileFallbackNormalizationAndValidation(t *testing.T) {
 	if facts1[0].EpistemicState != domain.EpistemicRawNote {
 		t.Errorf("expected fact[0] epistemic state 'raw_note', got '%s'", facts1[0].EpistemicState)
 	}
+	if facts1[0].Verified {
+		t.Errorf("expected fact[0] verified to be false")
+	}
 	if facts1[1].ID != "custom-fact" {
 		t.Errorf("expected fact[1] ID 'custom-fact', got '%s'", facts1[1].ID)
 	}
 	if facts1[1].EpistemicState != domain.EpistemicVerified {
 		t.Errorf("expected fact[1] epistemic state 'verified', got '%s'", facts1[1].EpistemicState)
+	}
+	if !facts1[1].Verified {
+		t.Errorf("expected fact[1] verified to be true")
+	}
+	if facts1[2].ID != "verified-legacy-fact" {
+		t.Errorf("expected fact[2] ID 'verified-legacy-fact', got '%s'", facts1[2].ID)
+	}
+	if facts1[2].EpistemicState != domain.EpistemicVerified {
+		t.Errorf("expected fact[2] epistemic state 'verified', got '%s'", facts1[2].EpistemicState)
+	}
+	if !facts1[2].Verified {
+		t.Errorf("expected fact[2] verified to be true")
 	}
 
 	// Verify org 2 preservation
@@ -906,5 +924,93 @@ func TestLoadSingleFileFallbackNormalizationAndValidation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid epistemic state in fact fact-bad") {
 		t.Errorf("expected error message to contain 'invalid epistemic state in fact fact-bad', got: %v", err)
+	}
+}
+
+func TestLoadDirectoryBundleEpistemicStateInference(t *testing.T) {
+	ctx := context.Background()
+	bundleDir := t.TempDir()
+	orgDir := filepath.Join(bundleDir, "organizations")
+	if err := os.MkdirAll(orgDir, 0755); err != nil {
+		t.Fatalf("mkdir orgDir: %v", err)
+	}
+
+	acmeYAML := `id: org-acme
+name: Acme Corp
+roles:
+  - id: role-eng
+    title: Principal Engineer
+    facts:
+      - id: fact-omitted-verified-true
+        headline: High availability cluster
+        verified: true
+      - id: fact-omitted-verified-false
+        headline: Scratch pad note
+        verified: false
+      - id: fact-explicit-raw-verified-true
+        headline: Speculative note
+        epistemic_state: raw_note
+        verified: true
+      - id: fact-explicit-verified-flag-false
+        headline: Audit verified fact
+        epistemic_state: verified
+        verified: false
+`
+	if err := os.WriteFile(filepath.Join(orgDir, "acme.yaml"), []byte(acmeYAML), 0644); err != nil {
+		t.Fatalf("write acme.yaml: %v", err)
+	}
+
+	v := newTestVault(t)
+	if err := v.Load(ctx, bundleDir); err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	facts, err := v.ListCareerFactsByRole(ctx, "role-eng")
+	if err != nil {
+		t.Fatalf("list facts: %v", err)
+	}
+	if len(facts) != 4 {
+		t.Fatalf("expected 4 facts, got %d", len(facts))
+	}
+
+	factMap := make(map[string]*domain.CareerFact)
+	for _, f := range facts {
+		factMap[f.ID] = f
+	}
+
+	// 1. Omitted epistemic_state, verified true -> EpistemicVerified, Verified: true
+	f1 := factMap["fact-omitted-verified-true"]
+	if f1.EpistemicState != domain.EpistemicVerified {
+		t.Errorf("f1 epistemic state: expected %s, got %s", domain.EpistemicVerified, f1.EpistemicState)
+	}
+	if !f1.Verified {
+		t.Errorf("f1 verified: expected true, got false")
+	}
+
+	// 2. Omitted epistemic_state, verified false -> EpistemicRawNote, Verified: false
+	f2 := factMap["fact-omitted-verified-false"]
+	if f2.EpistemicState != domain.EpistemicRawNote {
+		t.Errorf("f2 epistemic state: expected %s, got %s", domain.EpistemicRawNote, f2.EpistemicState)
+	}
+	if f2.Verified {
+		t.Errorf("f2 verified: expected false, got true")
+	}
+
+	// 3. Explicit raw_note, verified true -> EpistemicState is primary source of truth, Verified coerced to false
+	f3 := factMap["fact-explicit-raw-verified-true"]
+	if f3.EpistemicState != domain.EpistemicRawNote {
+		t.Errorf("f3 epistemic state: expected %s, got %s", domain.EpistemicRawNote, f3.EpistemicState)
+	}
+	if f3.Verified {
+		t.Errorf("f3 verified: expected false (coerced by raw_note), got true")
+	}
+
+	// 4. Explicit verified, verified false -> EpistemicState is primary source of truth, Verified coerced to true
+	f4 := factMap["fact-explicit-verified-flag-false"]
+	if f4.EpistemicState != domain.EpistemicVerified {
+		t.Errorf("f4 epistemic state: expected %s, got %s", domain.EpistemicVerified, f4.EpistemicState)
+	}
+	if !f4.Verified {
+		t.Errorf("f4 verified: expected true (coerced by verified state), got false")
 	}
 }
