@@ -39,12 +39,12 @@ type BulletNode struct {
 
 // CareerFact represents an atomic ground-truth career accomplishment.
 type CareerFact struct {
-	ID          string    `json:"id"`
-	Headline    string    `json:"headline"`
-	Details     string    `json:"details"`
-	Verified    bool      `json:"verified"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	Headline  string    `json:"headline"`
+	Details   string    `json:"details"`
+	Verified  bool      `json:"verified"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // JobApplication represents the domain entity tracking an application lifecycle.
