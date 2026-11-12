@@ -28,6 +28,11 @@ func TestSanitizeText(t *testing.T) {
 			expected: "Hello World",
 		},
 		{
+			name:     "strips entity-encoded script blocks",
+			input:    "Hello &lt;script&gt;alert('xss')&lt;/script&gt;World",
+			expected: "Hello World",
+		},
+		{
 			name:     "strips embedded style tags",
 			input:    "Normal text <style>body{color:red}</style> continues here.",
 			expected: "Normal text continues here.",

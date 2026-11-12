@@ -150,6 +150,26 @@ func TestThemeManifest_Validate_Errors(t *testing.T) {
 	}
 }
 
+func TestThemeManifest_Validate_FontFamilyCharacters(t *testing.T) {
+	theme := render.DefaultThemeManifest()
+	theme.Typography.FontFamilyPrimary = "Inter\" onmouseover=\"alert(1)"
+	if err := theme.Validate(); err == nil {
+		t.Error("expected validation error for injected font family name, got nil")
+	}
+
+	theme = render.DefaultThemeManifest()
+	theme.Typography.FontFamilyMono = "Mono<script>"
+	if err := theme.Validate(); err == nil {
+		t.Error("expected validation error for injected mono font family name, got nil")
+	}
+
+	theme = render.DefaultThemeManifest()
+	theme.Typography.FontFamilyPrimary = "JetBrains-Mono 123"
+	if err := theme.Validate(); err != nil {
+		t.Errorf("expected valid alphanumeric font family, got error: %v", err)
+	}
+}
+
 func TestLoadThemeManifest_InvalidYAML(t *testing.T) {
 	_, err := render.LoadThemeManifest([]byte("invalid: yaml: : ["))
 	if err == nil {

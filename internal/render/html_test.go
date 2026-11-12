@@ -337,3 +337,36 @@ func TestHTMLRenderer_Render_ThemeSwitching(t *testing.T) {
 		}
 	}
 }
+
+func TestHTMLRenderer_Render_UnsafeURLSanitization(t *testing.T) {
+	doc := sampleResumeDocument()
+	doc.Projects = []render.ProjectItem{
+		{
+			Name: "Malicious Project",
+			URL:  "javascript:alert('project')",
+		},
+	}
+	doc.Summary.Runs = append(doc.Summary.Runs, render.InlineRun{
+		Text: "Unsafe Link",
+		Link: "javascript:alert('inline')",
+	})
+
+	pii := samplePIIHeader()
+	pii.LinkedInURL = "javascript:alert('linkedin')"
+	pii.GitHubURL = "data:text/html,<script>alert(1)</script>"
+
+	renderer, err := render.NewHTMLRenderer(nil)
+	if err != nil {
+		t.Fatalf("failed to create renderer: %v", err)
+	}
+
+	outBytes, err := renderer.Render(doc, pii)
+	if err != nil {
+		t.Fatalf("failed to render HTML: %v", err)
+	}
+
+	out := string(outBytes)
+	if strings.Contains(out, "href=\"javascript:") || strings.Contains(out, "href=\"data:") {
+		t.Errorf("rendered HTML contains unsafe URL schemes: %s", out)
+	}
+}

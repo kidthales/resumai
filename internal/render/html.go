@@ -398,23 +398,39 @@ func (r *HTMLRenderer) renderHeader(sb *strings.Builder, h *Header) {
 	}
 	if h.LinkedInURL != "" {
 		label := cleanDisplayURL(h.LinkedInURL)
-		contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
-			html.EscapeString(h.LinkedInURL), html.EscapeString(label)))
+		if IsSafeURL(h.LinkedInURL) {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
+				html.EscapeString(h.LinkedInURL), html.EscapeString(label)))
+		} else {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\">%s</span>", html.EscapeString(label)))
+		}
 	}
 	if h.GitHubURL != "" {
 		label := cleanDisplayURL(h.GitHubURL)
-		contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
-			html.EscapeString(h.GitHubURL), html.EscapeString(label)))
+		if IsSafeURL(h.GitHubURL) {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
+				html.EscapeString(h.GitHubURL), html.EscapeString(label)))
+		} else {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\">%s</span>", html.EscapeString(label)))
+		}
 	}
 	if h.PortfolioURL != "" {
 		label := cleanDisplayURL(h.PortfolioURL)
-		contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
-			html.EscapeString(h.PortfolioURL), html.EscapeString(label)))
+		if IsSafeURL(h.PortfolioURL) {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
+				html.EscapeString(h.PortfolioURL), html.EscapeString(label)))
+		} else {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\">%s</span>", html.EscapeString(label)))
+		}
 	}
 	if h.WebsiteURL != "" {
 		label := cleanDisplayURL(h.WebsiteURL)
-		contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
-			html.EscapeString(h.WebsiteURL), html.EscapeString(label)))
+		if IsSafeURL(h.WebsiteURL) {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a></span>",
+				html.EscapeString(h.WebsiteURL), html.EscapeString(label)))
+		} else {
+			contacts = append(contacts, fmt.Sprintf("<span class=\"contact-item\">%s</span>", html.EscapeString(label)))
+		}
 	}
 
 	if len(contacts) > 0 {
@@ -551,8 +567,12 @@ func (r *HTMLRenderer) renderProjects(sb *strings.Builder, projects []ProjectIte
 		fmt.Fprintf(sb, "            <div class=\"item-title-block\">%s", html.EscapeString(title))
 		if proj.URL != "" {
 			disp := cleanDisplayURL(proj.URL)
-			fmt.Fprintf(sb, " <span class=\"item-subtitle-block\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">[%s]</a></span>",
-				html.EscapeString(proj.URL), html.EscapeString(disp))
+			if IsSafeURL(proj.URL) {
+				fmt.Fprintf(sb, " <span class=\"item-subtitle-block\"><a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">[%s]</a></span>",
+					html.EscapeString(proj.URL), html.EscapeString(disp))
+			} else {
+				fmt.Fprintf(sb, " <span class=\"item-subtitle-block\">[%s]</span>", html.EscapeString(disp))
+			}
 		}
 		sb.WriteString("</div>\n")
 
@@ -650,7 +670,7 @@ func RenderInlineRunsHTML(runs []InlineRun) string {
 			inner = "<em>" + inner + "</em>"
 		}
 
-		if run.Link != "" {
+		if run.Link != "" && IsSafeURL(run.Link) {
 			inner = fmt.Sprintf("<a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a>",
 				html.EscapeString(run.Link), inner)
 		}

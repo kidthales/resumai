@@ -349,7 +349,11 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	}
 
 	// 10. Extract DOM Layout Telemetry using Range.getClientRects()
-	telemetryScript := buildTelemetryScript(targetPages)
+	var pageCfg PageConfig
+	if p.htmlRenderer != nil && p.htmlRenderer.Theme() != nil {
+		pageCfg = p.htmlRenderer.Theme().Page
+	}
+	telemetryScript := buildTelemetryScript(targetPages, pageCfg)
 	evalParams := map[string]interface{}{
 		"expression":    telemetryScript,
 		"awaitPromise":  true,
@@ -408,21 +412,68 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	return pdfBytes, &telemetry, nil
 }
 
+// parseDimensionToPX converts CSS dimension strings to pixels at 96 DPI.
+func parseDimensionToPX(dim string, defaultPX float64) float64 {
+	dim = strings.TrimSpace(strings.ToLower(dim))
+	if dim == "" {
+		return defaultPX
+	}
+	if strings.HasSuffix(dim, "in") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "in"), 64); err == nil {
+			return v * 96.0
+		}
+	}
+	if strings.HasSuffix(dim, "pt") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "pt"), 64); err == nil {
+			return v * 96.0 / 72.0
+		}
+	}
+	if strings.HasSuffix(dim, "mm") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "mm"), 64); err == nil {
+			return v * 96.0 / 25.4
+		}
+	}
+	if strings.HasSuffix(dim, "cm") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "cm"), 64); err == nil {
+			return v * 96.0 / 2.54
+		}
+	}
+	if strings.HasSuffix(dim, "px") {
+		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "px"), 64); err == nil {
+			return v
+		}
+	}
+	return defaultPX
+}
+
+// pageGeometryPX computes physical page height and vertical margins in pixels at 96 DPI.
+func pageGeometryPX(page PageConfig) (pageHeight, marginY float64) {
+	pageHeight = 1056.0 // US Letter default at 96 DPI: 11in = 1056px
+	if strings.EqualFold(strings.TrimSpace(page.Size), "a4") {
+		pageHeight = 297.0 * 96.0 / 25.4 // A4 height: 297mm ≈ 1122.52px
+	}
+
+	topPX := parseDimensionToPX(page.MarginTop, 48.0)    // default 0.5in = 48px
+	botPX := parseDimensionToPX(page.MarginBottom, 48.0) // default 0.5in = 48px
+	marginY = topPX + botPX
+	return pageHeight, marginY
+}
+
 // buildTelemetryScript compiles the in-browser JavaScript evaluation payload.
-func buildTelemetryScript(targetPages int) string {
+func buildTelemetryScript(targetPages int, page PageConfig) string {
 	if targetPages <= 0 {
 		targetPages = 1
 	}
+
+	pageHeight, marginY := pageGeometryPX(page)
 
 	return fmt.Sprintf(`(() => {
 		const resumePage = document.querySelector('.resume-page') || document.body;
 		const rect = resumePage.getBoundingClientRect();
 		const contentHeight = Math.max(resumePage.scrollHeight || 0, rect.height || 0);
 
-		// US Letter at 96 DPI: 8.5in = 816px, 11in = 1056px.
-		// Margins: 0.5in top + bottom = 96px, giving 960px usable printable height.
-		const pageHeight = 1056.0;
-		const marginY = 96.0;
+		const pageHeight = %.2f;
+		const marginY = %.2f;
 		const usableHeight = pageHeight - marginY;
 
 		const targetPages = %d;
@@ -528,7 +579,7 @@ func buildTelemetryScript(targetPages int) string {
 			bullets: bullets,
 			orphan_bullets: orphanBullets
 		};
-	})()`, targetPages)
+	})()`, pageHeight, marginY, targetPages)
 }
 
 // CalculateLayoutTelemetry provides a pure calculation model for layout metrics

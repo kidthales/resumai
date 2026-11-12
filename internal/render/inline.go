@@ -22,6 +22,8 @@ var (
 	scriptBlockRegex = regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
 	// Generic HTML tag stripper
 	htmlTagRegex = regexp.MustCompile(`(?i)<[^>]*>`)
+	// Dangerous executable HTML tags stripper (strips script/style tags unescaped from entities)
+	scriptTagRegex = regexp.MustCompile(`(?i)</?(?:script|style|iframe|object|embed|applet)[^>]*>`)
 	// Markdown link pattern: [label](url)
 	linkRegex = regexp.MustCompile(`^\[([^\]]+)\]\(([^)]+)\)`)
 	// Multiple consecutive horizontal spaces pattern
@@ -44,7 +46,11 @@ func SanitizeText(s string) string {
 	// 3. Unescape common HTML entities if present (e.g. &amp; -> &, &lt; -> <)
 	cleaned = html.UnescapeString(cleaned)
 
-	// 4. Filter control characters (keep \t, \n, \r)
+	// 4. Strip script/style blocks and tags unescaped from entities to prevent bypass
+	cleaned = scriptBlockRegex.ReplaceAllString(cleaned, "")
+	cleaned = scriptTagRegex.ReplaceAllString(cleaned, "")
+
+	// 5. Filter control characters (keep \t, \n, \r)
 	var b strings.Builder
 	b.Grow(len(cleaned))
 	for _, r := range cleaned {
@@ -57,7 +63,7 @@ func SanitizeText(s string) string {
 		b.WriteRune(r)
 	}
 
-	// 5. Normalize multiple consecutive horizontal spaces
+	// 6. Normalize multiple consecutive horizontal spaces
 	cleaned = multiSpaceRegex.ReplaceAllString(b.String(), " ")
 
 	return strings.TrimSpace(cleaned)
@@ -73,6 +79,8 @@ func SanitizeRunText(s string) string {
 	cleaned := scriptBlockRegex.ReplaceAllString(s, "")
 	cleaned = htmlTagRegex.ReplaceAllString(cleaned, "")
 	cleaned = html.UnescapeString(cleaned)
+	cleaned = scriptBlockRegex.ReplaceAllString(cleaned, "")
+	cleaned = scriptTagRegex.ReplaceAllString(cleaned, "")
 
 	var b strings.Builder
 	b.Grow(len(cleaned))

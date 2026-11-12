@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	dimensionRegex = regexp.MustCompile(`^(?:0|[0-9]+(?:\.[0-9]+)?(?:in|pt|mm|cm|px|rem|em|%))$`)
-	hexColorRegex  = regexp.MustCompile(`^#[0-9a-fA-F]{3,8}$`)
+	dimensionRegex  = regexp.MustCompile(`^(?:0|[0-9]+(?:\.[0-9]+)?(?:in|pt|mm|cm|px|rem|em|%))$`)
+	hexColorRegex   = regexp.MustCompile(`^#[0-9a-fA-F]{3,8}$`)
+	fontFamilyRegex = regexp.MustCompile(`^[a-zA-Z0-9 -]+$`)
 )
 
 // PageConfig holds page geometry and print margin dimensions.
@@ -205,8 +206,14 @@ func (m *ThemeManifest) Validate() error {
 	if strings.TrimSpace(m.Typography.FontFamilyPrimary) == "" {
 		return errors.New("typography.font_family_primary is required")
 	}
+	if !fontFamilyRegex.MatchString(m.Typography.FontFamilyPrimary) {
+		return fmt.Errorf("invalid typography.font_family_primary %q: must contain only letters, numbers, spaces, and hyphens", m.Typography.FontFamilyPrimary)
+	}
 	if strings.TrimSpace(m.Typography.FontFamilyMono) == "" {
 		return errors.New("typography.font_family_mono is required")
+	}
+	if !fontFamilyRegex.MatchString(m.Typography.FontFamilyMono) {
+		return fmt.Errorf("invalid typography.font_family_mono %q: must contain only letters, numbers, spaces, and hyphens", m.Typography.FontFamilyMono)
 	}
 	if m.Typography.LineHeight <= 0 || m.Typography.LineHeight > 3.0 {
 		return fmt.Errorf("invalid typography.line_height: %v (expected 0.5 - 3.0)", m.Typography.LineHeight)

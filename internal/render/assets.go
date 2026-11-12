@@ -13,8 +13,8 @@ var assetsFS embed.FS
 
 // Known font asset file names embedded offline.
 const (
-	FontInterRegular    = "Inter-Regular.woff2"
-	FontInterBold       = "Inter-Bold.woff2"
+	FontInterRegular     = "Inter-Regular.woff2"
+	FontInterBold        = "Inter-Bold.woff2"
 	FontJetBrainsMonoReg = "JetBrainsMono-Regular.woff2"
 )
 

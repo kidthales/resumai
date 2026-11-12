@@ -146,7 +146,7 @@ func TestPDFPrinter_Print_LiveChromium(t *testing.T) {
 	}
 
 	printer, err := render.NewPDFPrinter(
-		render.WithTimeout(20 * time.Second),
+		render.WithTimeout(20*time.Second),
 		render.WithTargetPages(1),
 	)
 	if err != nil {

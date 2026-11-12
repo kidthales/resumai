@@ -86,14 +86,14 @@ func TestDocxWriter_Render_ZipPackageIntegrity(t *testing.T) {
 	}
 
 	expectedFiles := map[string]bool{
-		"[Content_Types].xml":           false,
-		"_rels/.rels":                   false,
-		"docProps/core.xml":             false,
-		"docProps/app.xml":              false,
+		"[Content_Types].xml":          false,
+		"_rels/.rels":                  false,
+		"docProps/core.xml":            false,
+		"docProps/app.xml":             false,
 		"word/_rels/document.xml.rels": false,
-		"word/styles.xml":               false,
-		"word/numbering.xml":            false,
-		"word/document.xml":             false,
+		"word/styles.xml":              false,
+		"word/numbering.xml":           false,
+		"word/document.xml":            false,
 	}
 
 	for _, f := range zr.File {

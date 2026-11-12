@@ -633,10 +633,12 @@ func (b *docxBuilder) renderSubline(sb *bytes.Buffer, text string) {
 
 func (b *docxBuilder) renderProjectLink(sb *bytes.Buffer, rawURL, display string) {
 	accentColor := cleanHex(b.theme.Colors.Accent)
+	secColor := cleanHex(b.theme.Colors.Secondary)
 	smallSz := parseHalfPoints(b.theme.Typography.FontSizeSmall, 18)
 
-	relID := b.rels.addExternal(rawURL)
-	fmt.Fprintf(sb, `    <w:p>
+	if rawURL != "" && IsSafeURL(rawURL) {
+		relID := b.rels.addExternal(rawURL)
+		fmt.Fprintf(sb, `    <w:p>
       <w:pPr>
         <w:keepNext/>
         <w:keepLines/>
@@ -656,6 +658,24 @@ func (b *docxBuilder) renderProjectLink(sb *bytes.Buffer, rawURL, display string
       </w:hyperlink>
     </w:p>
 `, relID, smallSz, smallSz, accentColor, xmlEscape(display))
+	} else if display != "" {
+		fmt.Fprintf(sb, `    <w:p>
+      <w:pPr>
+        <w:keepNext/>
+        <w:keepLines/>
+        <w:spacing w:before="0" w:after="30" w:line="240" w:lineRule="auto"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:sz w:val="%d"/>
+          <w:szCs w:val="%d"/>
+          <w:color w:val="%s"/>
+        </w:rPr>
+        <w:t xml:space="preserve">[%s]</w:t>
+      </w:r>
+    </w:p>
+`, smallSz, smallSz, secColor, xmlEscape(display))
+	}
 }
 
 func (b *docxBuilder) renderBullets(sb *bytes.Buffer, bullets []Bullet) {
@@ -711,7 +731,8 @@ func (b *docxBuilder) renderInlineRuns(sb *bytes.Buffer, runs []InlineRun) {
 		rPr.WriteString("<w:rPr>")
 
 		// Font
-		fmt.Fprintf(&rPr, `<w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>`, fontName, fontName, fontName)
+		escapedFont := xmlEscape(fontName)
+		fmt.Fprintf(&rPr, `<w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>`, escapedFont, escapedFont, escapedFont)
 
 		if run.Bold {
 			rPr.WriteString("<w:b/>")
@@ -883,7 +904,7 @@ func (b *docxBuilder) numberingXML() string {
 
 func (b *docxBuilder) stylesXML() string {
 	t := b.theme
-	primaryFont := t.Typography.FontFamilyPrimary
+	primaryFont := xmlEscape(t.Typography.FontFamilyPrimary)
 	primaryColor := cleanHex(t.Colors.Primary)
 	accentColor := cleanHex(t.Colors.Accent)
 	baseSz := parseHalfPoints(t.Typography.FontSizeBase, 20)
