@@ -1,6 +1,0 @@
-services:
-  php:
-    image: ${IMAGES_PREFIX:-resumai}:dev-php-${IMAGES_TAG:-latest}
-    volumes:
-      - ../:/app
-    tty: true
