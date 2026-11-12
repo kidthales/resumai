@@ -482,15 +482,26 @@ func parseDimensionToInches(dim string, defaultInches float64) float64 {
 	return defaultInches
 }
 
+const (
+	// DefaultDPI is the standard screen and CSS rendering pixel density.
+	DefaultDPI = 96.0
+	// DefaultMarginInches is the fallback page margin (0.5 inches = 48 CSS pixels).
+	DefaultMarginInches = 0.5
+	// DefaultMarginPX is the vertical margin per edge at 96 DPI (0.5in * 96 DPI = 48.0px).
+	DefaultMarginPX = DefaultMarginInches * DefaultDPI
+	// DefaultMarginYPX is the combined top and bottom vertical margin offset at 96 DPI (96.0px).
+	DefaultMarginYPX = DefaultMarginPX * 2.0
+)
+
 // pageGeometryPX computes physical page height and vertical margins in pixels at 96 DPI.
 func pageGeometryPX(page PageConfig) (pageHeight, marginY float64) {
 	pageHeight = 1056.0 // US Letter default at 96 DPI: 11in = 1056px
 	if strings.EqualFold(strings.TrimSpace(page.Size), "a4") {
-		pageHeight = 297.0 * 96.0 / 25.4 // A4 height: 297mm ≈ 1122.52px
+		pageHeight = 297.0 * DefaultDPI / 25.4 // A4 height: 297mm ≈ 1122.52px
 	}
 
-	topPX := parseDimensionToPX(page.MarginTop, 48.0)    // default 0.5in = 48px
-	botPX := parseDimensionToPX(page.MarginBottom, 48.0) // default 0.5in = 48px
+	topPX := parseDimensionToPX(page.MarginTop, DefaultMarginPX)    // default 0.5in = 48px
+	botPX := parseDimensionToPX(page.MarginBottom, DefaultMarginPX) // default 0.5in = 48px
 	marginY = topPX + botPX
 	return pageHeight, marginY
 }
@@ -636,7 +647,9 @@ func buildTelemetryScript(targetPages int, page PageConfig) string {
 
 // CalculateLayoutTelemetry provides a pure calculation model for layout metrics
 // from raw geometric inputs, enabling headless/mock validation without browser execution.
-// Paper geometry and margins are derived from the optional PageConfig (defaulting to standard US Letter at 96 DPI).
+// Paper geometry and margins are derived from the optional PageConfig. When no PageConfig is passed,
+// standard US Letter geometry (1056px height) and DefaultMarginYPX (96.0px vertical margins, 0.5in top + 0.5in bottom at 96 DPI)
+// are applied as canonical defaults.
 func CalculateLayoutTelemetry(contentHeight, usableHeight float64, targetPages int, bullets []BulletTelemetry, page ...PageConfig) LayoutTelemetry {
 	var cfg PageConfig
 	if len(page) > 0 {

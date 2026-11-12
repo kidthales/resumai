@@ -160,7 +160,10 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		_ = os.Remove(logisticsPath)
 	}
 
-	// 3. Organizations -> Roles -> Facts (bulk queries to avoid N+1 SQLite overhead under -race)
+	// 3. Organizations -> Roles -> Facts (bulk queries to avoid N+1 SQLite overhead under -race).
+	// Architectural Trade-off: Dump loads all career facts, roles, and orgs into memory.
+	// At career-vault scale (~10-100 roles, ~100-500 facts), memory consumption is negligible (<2MB),
+	// and in-memory indexing avoids hundreds of round-trip queries to guarantee the <250ms SLA.
 	orgs, err := v.ListOrganizations(ctx)
 	if err != nil {
 		return fmt.Errorf("dump list organizations: %w", err)
@@ -286,7 +289,8 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		}
 	}
 
-	// 6. Applications
+	// 6. Applications & Citations:
+	// Bulk load application citations into memory for the same latency-over-memory SLA guarantee.
 	apps, err := v.ListApplications(ctx)
 	if err != nil {
 		return fmt.Errorf("dump list applications: %w", err)
