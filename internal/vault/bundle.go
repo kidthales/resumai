@@ -358,27 +358,8 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			if err := readYAML(f, &org); err != nil {
 				return fmt.Errorf("read org yaml (%s): %w", f, err)
 			}
-			if org.ID == "" {
-				org.ID = fileStem(f)
-			}
-			for ri := range org.Roles {
-				if org.Roles[ri].ID == "" {
-					org.Roles[ri].ID = fmt.Sprintf("%s-role-%d", org.ID, ri+1)
-				}
-				for fi := range org.Roles[ri].Facts {
-					if org.Roles[ri].Facts[fi].ID == "" {
-						org.Roles[ri].Facts[fi].ID = fmt.Sprintf("%s-fact-%d", org.Roles[ri].ID, fi+1)
-					}
-					// Validate epistemic state
-					state := domain.EpistemicState(org.Roles[ri].Facts[fi].EpistemicState)
-					if state == "" {
-						state = domain.EpistemicRawNote
-						org.Roles[ri].Facts[fi].EpistemicState = string(state)
-					}
-					if err := state.Validate(); err != nil {
-						return fmt.Errorf("invalid epistemic state in fact %s: %w", org.Roles[ri].Facts[fi].ID, err)
-					}
-				}
+			if err := normalizeAndValidateOrg(&org, fileStem(f)); err != nil {
+				return err
 			}
 			orgsLoaded = append(orgsLoaded, org)
 		}
@@ -386,6 +367,15 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 		var orgs []BundleOrganization
 		if err := readYAML(filepath.Join(cleanDir, "organizations.yaml"), &orgs); err != nil {
 			return fmt.Errorf("read organizations.yaml: %w", err)
+		}
+		for i := range orgs {
+			defaultID := orgs[i].ID
+			if defaultID == "" {
+				defaultID = fmt.Sprintf("org-%d", i+1)
+			}
+			if err := normalizeAndValidateOrg(&orgs[i], defaultID); err != nil {
+				return err
+			}
 		}
 		orgsLoaded = orgs
 	}
@@ -413,6 +403,11 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 		if err := readYAML(filepath.Join(cleanDir, "education.yaml"), &edus); err != nil {
 			return fmt.Errorf("read education.yaml: %w", err)
 		}
+		for i := range edus {
+			if edus[i].ID == "" {
+				edus[i].ID = fmt.Sprintf("edu-%d", i+1)
+			}
+		}
 		edusLoaded = edus
 	}
 
@@ -438,6 +433,11 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 		var archs []BundleArchetype
 		if err := readYAML(filepath.Join(cleanDir, "archetypes.yaml"), &archs); err != nil {
 			return fmt.Errorf("read archetypes.yaml: %w", err)
+		}
+		for i := range archs {
+			if archs[i].ID == "" {
+				archs[i].ID = fmt.Sprintf("arch-%d", i+1)
+			}
 		}
 		archsLoaded = archs
 	}
@@ -467,6 +467,11 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 		var apps []BundleApplication
 		if err := readYAML(filepath.Join(cleanDir, "applications.yaml"), &apps); err != nil {
 			return fmt.Errorf("read applications.yaml: %w", err)
+		}
+		for i := range apps {
+			if apps[i].ID == "" {
+				apps[i].ID = fmt.Sprintf("app-%d", i+1)
+			}
 		}
 		appsLoaded = apps
 	}
@@ -976,6 +981,32 @@ func fileExists(path string) bool {
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func normalizeAndValidateOrg(org *BundleOrganization, defaultID string) error {
+	if org.ID == "" {
+		org.ID = defaultID
+	}
+	for ri := range org.Roles {
+		if org.Roles[ri].ID == "" {
+			org.Roles[ri].ID = fmt.Sprintf("%s-role-%d", org.ID, ri+1)
+		}
+		for fi := range org.Roles[ri].Facts {
+			if org.Roles[ri].Facts[fi].ID == "" {
+				org.Roles[ri].Facts[fi].ID = fmt.Sprintf("%s-fact-%d", org.Roles[ri].ID, fi+1)
+			}
+			// Validate epistemic state
+			state := domain.EpistemicState(org.Roles[ri].Facts[fi].EpistemicState)
+			if state == "" {
+				state = domain.EpistemicRawNote
+				org.Roles[ri].Facts[fi].EpistemicState = string(state)
+			}
+			if err := state.Validate(); err != nil {
+				return fmt.Errorf("invalid epistemic state in fact %s: %w", org.Roles[ri].Facts[fi].ID, err)
+			}
+		}
+	}
+	return nil
 }
 
 func cleanYAMLDir(dir string) error {

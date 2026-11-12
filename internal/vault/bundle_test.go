@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -728,5 +729,182 @@ func TestDumpSlugCollisionDisambiguation(t *testing.T) {
 	}
 	if len(loadedApps) != 2 {
 		t.Fatalf("expected 2 applications, got %d", len(loadedApps))
+	}
+}
+
+func TestLoadSingleFileFallbackNormalizationAndValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Positive case: single-file fallbacks with missing IDs and default epistemic states
+	bundleDir := t.TempDir()
+
+	orgsYAML := `- name: Acme Corp
+  roles:
+    - title: Staff SRE
+      facts:
+        - headline: Reduced MTTR
+        - id: custom-fact
+          headline: Automated failover
+          epistemic_state: verified
+- id: beta-corp
+  name: Beta Corp
+  roles:
+    - id: beta-role-1
+      title: Lead Architect
+      facts:
+        - headline: Scaled traffic
+`
+	if err := os.WriteFile(filepath.Join(bundleDir, "organizations.yaml"), []byte(orgsYAML), 0644); err != nil {
+		t.Fatalf("write organizations.yaml: %v", err)
+	}
+
+	edusYAML := `- institution: MIT
+  degree: B.S. Computer Science
+`
+	if err := os.WriteFile(filepath.Join(bundleDir, "education.yaml"), []byte(edusYAML), 0644); err != nil {
+		t.Fatalf("write education.yaml: %v", err)
+	}
+
+	archsYAML := `- name: Platform Engineer
+  profile_overview: Core infrastructure builder
+`
+	if err := os.WriteFile(filepath.Join(bundleDir, "archetypes.yaml"), []byte(archsYAML), 0644); err != nil {
+		t.Fatalf("write archetypes.yaml: %v", err)
+	}
+
+	appsYAML := `- company: Stripe
+  role_title: Senior SRE
+  raw_jd: Infrastructure operations
+`
+	if err := os.WriteFile(filepath.Join(bundleDir, "applications.yaml"), []byte(appsYAML), 0644); err != nil {
+		t.Fatalf("write applications.yaml: %v", err)
+	}
+
+	v := newTestVault(t)
+	if err := v.Load(ctx, bundleDir); err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	orgs, err := v.ListOrganizations(ctx)
+	if err != nil {
+		t.Fatalf("list orgs: %v", err)
+	}
+	if len(orgs) != 2 {
+		t.Fatalf("expected 2 orgs, got %d", len(orgs))
+	}
+
+	// Verify org 1 ID defaulting and role/fact normalization
+	org1 := orgs[0]
+	if org1.ID != "org-1" {
+		t.Errorf("expected org1 ID 'org-1', got '%s'", org1.ID)
+	}
+	roles1, err := v.ListRolesByOrg(ctx, org1.ID)
+	if err != nil {
+		t.Fatalf("list roles for org1: %v", err)
+	}
+	if len(roles1) != 1 {
+		t.Fatalf("expected 1 role in org1, got %d", len(roles1))
+	}
+	role1 := roles1[0]
+	if role1.ID != "org-1-role-1" {
+		t.Errorf("expected role ID 'org-1-role-1', got '%s'", role1.ID)
+	}
+	facts1, err := v.ListCareerFactsByRole(ctx, role1.ID)
+	if err != nil {
+		t.Fatalf("list facts for role1: %v", err)
+	}
+	if len(facts1) != 2 {
+		t.Fatalf("expected 2 facts in role1, got %d", len(facts1))
+	}
+	if facts1[0].ID != "org-1-role-1-fact-1" {
+		t.Errorf("expected fact[0] ID 'org-1-role-1-fact-1', got '%s'", facts1[0].ID)
+	}
+	if facts1[0].EpistemicState != domain.EpistemicRawNote {
+		t.Errorf("expected fact[0] epistemic state 'raw_note', got '%s'", facts1[0].EpistemicState)
+	}
+	if facts1[1].ID != "custom-fact" {
+		t.Errorf("expected fact[1] ID 'custom-fact', got '%s'", facts1[1].ID)
+	}
+	if facts1[1].EpistemicState != domain.EpistemicVerified {
+		t.Errorf("expected fact[1] epistemic state 'verified', got '%s'", facts1[1].EpistemicState)
+	}
+
+	// Verify org 2 preservation
+	org2 := orgs[1]
+	if org2.ID != "beta-corp" {
+		t.Errorf("expected org2 ID 'beta-corp', got '%s'", org2.ID)
+	}
+	roles2, err := v.ListRolesByOrg(ctx, org2.ID)
+	if err != nil {
+		t.Fatalf("list roles for org2: %v", err)
+	}
+	if len(roles2) != 1 {
+		t.Fatalf("expected 1 role in org2, got %d", len(roles2))
+	}
+	role2 := roles2[0]
+	facts2, err := v.ListCareerFactsByRole(ctx, role2.ID)
+	if err != nil {
+		t.Fatalf("list facts for role2: %v", err)
+	}
+	if len(facts2) != 1 {
+		t.Fatalf("expected 1 fact in role2, got %d", len(facts2))
+	}
+	if facts2[0].ID != "beta-role-1-fact-1" {
+		t.Errorf("expected org2 fact ID 'beta-role-1-fact-1', got '%s'", facts2[0].ID)
+	}
+	if facts2[0].EpistemicState != domain.EpistemicRawNote {
+		t.Errorf("expected org2 fact epistemic state 'raw_note', got '%s'", facts2[0].EpistemicState)
+	}
+
+	// Verify education ID defaulting
+	edus, err := v.ListEducation(ctx)
+	if err != nil {
+		t.Fatalf("list edus: %v", err)
+	}
+	if len(edus) != 1 || edus[0].ID != "edu-1" {
+		t.Errorf("expected edu ID 'edu-1', got %+v", edus)
+	}
+
+	// Verify archetype ID defaulting
+	archs, err := v.ListArchetypes(ctx)
+	if err != nil {
+		t.Fatalf("list archs: %v", err)
+	}
+	if len(archs) != 1 || archs[0].ID != "arch-1" {
+		t.Errorf("expected arch ID 'arch-1', got %+v", archs)
+	}
+
+	// Verify application ID defaulting
+	apps, err := v.ListApplications(ctx)
+	if err != nil {
+		t.Fatalf("list apps: %v", err)
+	}
+	if len(apps) != 1 || apps[0].ID != "app-1" {
+		t.Errorf("expected app ID 'app-1', got %+v", apps)
+	}
+
+	// 2. Negative case: organizations.yaml with invalid epistemic state fails validation
+	badBundleDir := t.TempDir()
+	badOrgsYAML := `- id: org-bad
+  name: Bad Corp
+  roles:
+    - id: role-bad
+      title: Tester
+      facts:
+        - id: fact-bad
+          headline: Questionable fact
+          epistemic_state: invalid_state_value
+`
+	if err := os.WriteFile(filepath.Join(badBundleDir, "organizations.yaml"), []byte(badOrgsYAML), 0644); err != nil {
+		t.Fatalf("write bad organizations.yaml: %v", err)
+	}
+
+	vBad := newTestVault(t)
+	err = vBad.Load(ctx, badBundleDir)
+	if err == nil {
+		t.Fatalf("expected load to fail due to invalid epistemic state, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid epistemic state in fact fact-bad") {
+		t.Errorf("expected error message to contain 'invalid epistemic state in fact fact-bad', got: %v", err)
 	}
 }
