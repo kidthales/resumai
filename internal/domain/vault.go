@@ -48,13 +48,13 @@ type PIIHeader struct {
 
 // CandidateLogistics stores non-PII employment logistics and preferences.
 type CandidateLogistics struct {
-	TargetTitle         string    `json:"target_title"`
-	WorkAuthorization   string    `json:"work_authorization"`
-	RemotePreference    string    `json:"remote_preference"`
-	WillingToRelocate   bool      `json:"willing_to_relocate"`
-	TargetCompensation  string    `json:"target_compensation"`
-	NoticePeriodDays    int       `json:"notice_period_days"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	TargetTitle        string    `json:"target_title"`
+	WorkAuthorization  string    `json:"work_authorization"`
+	RemotePreference   string    `json:"remote_preference"`
+	WillingToRelocate  bool      `json:"willing_to_relocate"`
+	TargetCompensation string    `json:"target_compensation"`
+	NoticePeriodDays   int       `json:"notice_period_days"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // Organization represents an employer, institution, or client company.

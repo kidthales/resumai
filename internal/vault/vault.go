@@ -53,6 +53,19 @@ func Open(dsn string) (*CareerVault, error) {
 	return v, nil
 }
 
+// DefaultPath returns the default path to the vault database file (~/.resumai/vault.db),
+// or the value of RESUMAI_VAULT_PATH if set.
+func DefaultPath() (string, error) {
+	if p := os.Getenv("RESUMAI_VAULT_PATH"); p != "" {
+		return p, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("user home dir: %w", err)
+	}
+	return filepath.Join(home, ".resumai", "vault.db"), nil
+}
+
 // OpenPath opens or creates a CareerVault database file at the specified filesystem path,
 // ensuring parent directories exist and running all pending migrations.
 func OpenPath(path string) (*CareerVault, error) {
