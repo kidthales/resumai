@@ -2,6 +2,7 @@ package render_test
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -150,6 +151,23 @@ func TestCalculateLayoutTelemetry_PureCalculations(t *testing.T) {
 	}
 	if telemetry3.PageHeightPX != 1056.0 {
 		t.Errorf("expected PageHeightPX 1056.0, got %f", telemetry3.PageHeightPX)
+	}
+
+	// A4 PageConfig (297mm height ≈ 1122.52px, 20mm vertical margins ≈ 75.59px top + 75.59px bottom = 151.18px marginY)
+	a4Page := render.PageConfig{
+		Size:         "a4",
+		MarginTop:    "20mm",
+		MarginBottom: "20mm",
+	}
+	telemetryA4 := render.CalculateLayoutTelemetry(800.0, 0, 1, bullets, a4Page)
+	expectedA4Height := 297.0 * 96.0 / 25.4
+	expectedA4MarginY := 2.0 * (20.0 * 96.0 / 25.4)
+	expectedA4Usable := expectedA4Height - expectedA4MarginY
+	if math.Abs(telemetryA4.PageHeightPX-expectedA4Height) > 0.01 {
+		t.Errorf("expected A4 PageHeightPX ~%f, got %f", expectedA4Height, telemetryA4.PageHeightPX)
+	}
+	if math.Abs(telemetryA4.UsablePageHeightPX-expectedA4Usable) > 0.01 {
+		t.Errorf("expected A4 UsablePageHeightPX ~%f, got %f", expectedA4Usable, telemetryA4.UsablePageHeightPX)
 	}
 }
 

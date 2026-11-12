@@ -155,24 +155,35 @@ func TestPageGeometryPX(t *testing.T) {
 }
 
 func TestChromiumLaunchArgs(t *testing.T) {
-	args := chromiumLaunchArgs("/tmp/resumai-test-profile")
-	joined := strings.Join(args, " ")
+	t.Run("headless base flags", func(t *testing.T) {
+		args := chromiumLaunchArgs("/tmp/resumai-test-profile")
+		joined := strings.Join(args, " ")
 
-	requiredFlags := []string{
-		"--headless=new",
-		"--remote-debugging-port=0",
-		"--no-sandbox",
-		"--disable-setuid-sandbox",
-		"--disable-dev-shm-usage",
-		"--disable-software-rasterizer",
-		"--user-data-dir=/tmp/resumai-test-profile",
-	}
-
-	for _, flag := range requiredFlags {
-		if !strings.Contains(joined, flag) {
-			t.Errorf("expected chromiumLaunchArgs to include %q, got %v", flag, args)
+		baseFlags := []string{
+			"--headless=new",
+			"--remote-debugging-port=0",
+			"--disable-software-rasterizer",
+			"--user-data-dir=/tmp/resumai-test-profile",
 		}
-	}
+
+		for _, flag := range baseFlags {
+			if !strings.Contains(joined, flag) {
+				t.Errorf("expected chromiumLaunchArgs to include %q, got %v", flag, args)
+			}
+		}
+	})
+
+	t.Run("ci environment sandbox disable flags", func(t *testing.T) {
+		t.Setenv("CI", "true")
+		args := chromiumLaunchArgs("/tmp/resumai-test-profile")
+		joined := strings.Join(args, " ")
+
+		for _, flag := range []string{"--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"} {
+			if !strings.Contains(joined, flag) {
+				t.Errorf("expected CI invocation to include %q, got %v", flag, args)
+			}
+		}
+	})
 }
 
 func TestExtractDevToolsPort(t *testing.T) {
@@ -216,6 +227,25 @@ func TestExtractDevToolsPort(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "D-Bus connection stalled") {
 			t.Errorf("expected timeout error to include collected stderr output, got: %v", err)
+		}
+	})
+
+	t.Run("redacts secrets and user paths in error diagnostics", func(t *testing.T) {
+		dummyToken := "ghp_" + strings.Repeat("b", 36)
+		stderrInput := "[0101/000000.000:ERROR] Failed to bind to C:\\Users\\secretdev\\AppData\\Local\\Temp with token " + dummyToken + "\n"
+		_, err := extractDevToolsPort(strings.NewReader(stderrInput), 2*time.Second)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		errStr := err.Error()
+		if strings.Contains(errStr, "secretdev") {
+			t.Errorf("expected username in path to be redacted, got: %s", errStr)
+		}
+		if strings.Contains(errStr, dummyToken) {
+			t.Errorf("expected token to be redacted, got: %s", errStr)
+		}
+		if !strings.Contains(errStr, "[REDACTED]") {
+			t.Errorf("expected [REDACTED] in error, got: %s", errStr)
 		}
 	})
 }

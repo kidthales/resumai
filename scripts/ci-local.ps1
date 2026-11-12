@@ -63,7 +63,7 @@ if ($CI) {
 
     # Verify required tools upfront under -CI so missing binaries never silently degrade
     $requiredTools = @(
-        @{ Name = "go"; Hint = "Install Go 1.26.x and ensure 'go' is on PATH." },
+        @{ Name = "go"; Hint = "Install Go 1.27.x (or Go 1.26.x with GOTOOLCHAIN auto-download enabled) and ensure 'go' is on PATH." },
         @{ Name = "govulncheck"; Hint = "Install via 'go install golang.org/x/vuln/cmd/govulncheck@v1.1.4' and ensure GOPATH/bin is on PATH." },
         @{ Name = "gcc"; Hint = "Go -race requires CGO and a 64-bit C compiler (MinGW-w64 gcc on Windows; build-essential on Linux)." }
     )
@@ -119,6 +119,9 @@ function Test-Gate0Workflows {
         $currentStepName = ""
         $currentStepHasRun = $false
         $currentStepRunLines = @()
+        $currentStepHasIf = $false
+        $currentStepIfVal = ""
+        $currentStepContinueOnError = $false
         $inRunBlock = $false
         $runBlockIndent = -1
 
@@ -132,6 +135,13 @@ function Test-Gate0Workflows {
 
             if ($i -lt $lines.Count -and ($trimmed -eq "" -or $trimmed.StartsWith("#"))) {
                 continue
+            }
+
+            if ($trimmed -match '^steps:\s*\[') {
+                $violations += "$($wf.Name): flow-style 'steps: [...]' is prohibited to ensure deterministic Gate 0 auditing."
+            }
+            if ($trimmed -match '^\s*(jobs|steps):\s*&' -or $trimmed -match '^\s*-\s*\*[a-zA-Z0-9_-]+') {
+                $violations += "$($wf.Name): YAML anchors and aliases are prohibited in workflow steps to ensure deterministic Gate 0 auditing."
             }
 
             $indent = $rawLine.Length - $rawLine.TrimStart().Length
@@ -169,6 +179,12 @@ function Test-Gate0Workflows {
 
                     if ($isCanonicalCi) {
                         $jobRunsCanonicalCi = $true
+                        if ($currentStepHasIf) {
+                            $violations += "$($wf.Name): canonical CI step '$currentStepName' in job '$currentJob' must not define 'if:' conditional ('$currentStepIfVal') to preserve single-source contract."
+                        }
+                        if ($currentStepContinueOnError) {
+                            $violations += "$($wf.Name): canonical CI step '$currentStepName' in job '$currentJob' must not define 'continue-on-error: true' to preserve single-source contract."
+                        }
                     }
 
                     if (-not $isCanonicalCi -and -not $isAllowlisted) {
@@ -179,6 +195,9 @@ function Test-Gate0Workflows {
                 $currentStepName = ""
                 $currentStepHasRun = $false
                 $currentStepRunLines = @()
+                $currentStepHasIf = $false
+                $currentStepIfVal = ""
+                $currentStepContinueOnError = $false
             }
 
             $isEndingJob = $false
@@ -273,6 +292,9 @@ function Test-Gate0Workflows {
                     $currentStepName = ""
                     $currentStepHasRun = $false
                     $currentStepRunLines = @()
+                    $currentStepHasIf = $false
+                    $currentStepIfVal = ""
+                    $currentStepContinueOnError = $false
                     $dashIdx = $rawLine.IndexOf("-")
                     $propText = $trimmed.Substring(1).Trim()
                     $stepPropIndent = $dashIdx + 2
@@ -296,6 +318,13 @@ function Test-Gate0Workflows {
                                 $runBlockIndent = $indent
                             } else {
                                 $currentStepRunLines += $propVal
+                            }
+                        } elseif ($propKey -eq "if") {
+                            $currentStepHasIf = $true
+                            $currentStepIfVal = $propVal
+                        } elseif ($propKey -eq "continue-on-error") {
+                            if ($propVal -ne "false") {
+                                $currentStepContinueOnError = $true
                             }
                         }
                     }

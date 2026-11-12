@@ -636,21 +636,24 @@ func buildTelemetryScript(targetPages int, page PageConfig) string {
 
 // CalculateLayoutTelemetry provides a pure calculation model for layout metrics
 // from raw geometric inputs, enabling headless/mock validation without browser execution.
+// Paper geometry and margins are derived from the optional PageConfig (defaulting to standard US Letter at 96 DPI).
 func CalculateLayoutTelemetry(contentHeight, usableHeight float64, targetPages int, bullets []BulletTelemetry, page ...PageConfig) LayoutTelemetry {
 	var cfg PageConfig
 	if len(page) > 0 {
 		cfg = page[0]
 	}
-	configuredPageHeight, marginY := pageGeometryPX(cfg)
+	pageHeight, marginY := pageGeometryPX(cfg)
 
 	if usableHeight <= 0 {
-		usableHeight = configuredPageHeight - marginY
+		usableHeight = pageHeight - marginY
+	} else if len(page) == 0 && usableHeight != (pageHeight-marginY) {
+		// When caller supplies custom usableHeight without PageConfig, adapt pageHeight
+		pageHeight = usableHeight + marginY
 	}
 	if targetPages <= 0 {
 		targetPages = 1
 	}
 
-	pageHeight := usableHeight + marginY
 	allowedHeight := float64(targetPages) * usableHeight
 	overflow := 0.0
 	if contentHeight > allowedHeight {
@@ -777,16 +780,30 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
+// shouldDisableChromiumSandbox reports whether Chromium renderer sandboxing should be disabled,
+// such as on Linux runners or in headless container/CI environments where unprivileged namespaces
+// are restricted or require root.
+func shouldDisableChromiumSandbox() bool {
+	if runtime.GOOS == "linux" {
+		return true
+	}
+	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+		return true
+	}
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	return false
+}
+
 // chromiumLaunchArgs builds the headless Chromium CLI invocation arguments,
-// including container/CI sandbox and shared-memory flags required on Linux runners.
+// keeping the native renderer sandbox active on Windows and macOS desktops while
+// passing necessary container/CI sandbox and shared-memory flags on Linux and CI runners.
 func chromiumLaunchArgs(userDataDir string) []string {
 	args := []string{
 		"--headless=new",
 		"--remote-debugging-port=0",
 		"--disable-gpu",
-		"--no-sandbox",
-		"--disable-setuid-sandbox",
-		"--disable-dev-shm-usage",
 		"--disable-software-rasterizer",
 		"--no-first-run",
 		"--no-default-browser-check",
@@ -799,6 +816,9 @@ func chromiumLaunchArgs(userDataDir string) []string {
 		"--password-store=basic",
 		"--use-mock-keychain",
 		"--user-data-dir=" + userDataDir,
+	}
+	if shouldDisableChromiumSandbox() {
+		args = append(args, "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage")
 	}
 	if runtime.GOOS == "linux" {
 		args = append(args, "--no-zygote")
@@ -835,7 +855,7 @@ func extractDevToolsPort(r io.Reader, timeout time.Duration) (int, error) {
 		if len(stderrLines) == 0 {
 			return "no stderr output"
 		}
-		return strings.Join(stderrLines, " | ")
+		return RedactSecrets(strings.Join(stderrLines, " | "))
 	}
 
 	re := regexp.MustCompile(`(?:DevTools listening on ws://(?:127\.0\.0\.1|localhost):|127\.0\.0\.1:)(\d+)`)
