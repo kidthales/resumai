@@ -38,8 +38,8 @@ func TestMigrationsIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to count schema migrations: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("expected 1 migration recorded, got %d", count)
+	if count != 2 {
+		t.Errorf("expected 2 migrations recorded, got %d", count)
 	}
 }
 
@@ -467,5 +467,134 @@ func TestStringSliceSerialization(t *testing.T) {
 	}
 	if len(gotArch.CoreCompetencies) != 2 || gotArch.CoreCompetencies[0] != "Go" {
 		t.Errorf("unexpected core competencies: %+v", gotArch.CoreCompetencies)
+	}
+}
+
+func TestApplicationFSMFieldsPersistence(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	org := &domain.Organization{ID: "org-fsm", Name: "Acme Corp"}
+	_ = v.SaveOrganization(ctx, org)
+	role := &domain.Role{ID: "role-fsm", OrgID: org.ID, Title: "Senior Engineer"}
+	_ = v.SaveRole(ctx, role)
+	fact := &domain.CareerFact{
+		ID:             "fact-fsm-1",
+		RoleID:         role.ID,
+		Headline:       "Cut latency",
+		Details:        "Cut P99 latency by 40%.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	}
+	_ = v.SaveCareerFact(ctx, fact)
+	arch := &domain.Archetype{ID: "arch-fsm", Name: "Systems"}
+	_ = v.SaveArchetype(ctx, arch)
+
+	dossier := domain.OpportunityDossier{
+		RoleTitle:  "Staff Go Engineer",
+		Company:    "Acme Corp",
+		RawJD:      "Looking for Staff Go Engineer to build SQLite kernels.",
+		FitSummary: "Strong fit",
+		JDClaims: []domain.JDClaim{
+			{Summary: "SQLite kernels", VerbatimJDQuote: "build SQLite kernels."},
+		},
+		ExternalClaims: []domain.ExternalClaim{
+			{Claim: "Series B", UnknownAskRecruiter: true},
+		},
+	}
+
+	app, err := domain.NewTriagedApplication("app-fsm-01", dossier)
+	if err != nil {
+		t.Fatalf("NewTriagedApplication: %v", err)
+	}
+	draft := domain.ApplicationDraft{
+		ArchetypeID: arch.ID,
+		Headline:    "Staff Go Engineer",
+		Summary:     "Systems builder.",
+		Experience: []domain.DraftExperience{
+			{
+				RoleTitle:    "Senior Engineer",
+				Organization: "Prior Co",
+				Highlights: []domain.BulletNode{
+					{ID: "b1", Text: "Cut P99 latency by 40%.", FactIDs: []string{fact.ID}},
+				},
+			},
+		},
+		PageBudget: 1,
+	}
+	if err := app.SaveDraft(draft, v); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
+	}
+	if err := app.RecordAudits(domain.AuditBundle{
+		FactCheck:      &domain.FactCheckReport{Summary: "All verified", Passed: true},
+		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "Aligned", Passed: true},
+	}); err != nil {
+		t.Fatalf("RecordAudits: %v", err)
+	}
+	if err := app.PromoteReady(v); err != nil {
+		t.Fatalf("PromoteReady: %v", err)
+	}
+	pii := &domain.PIIHeader{FullName: "Jane Doe"}
+	if err := app.MarkExported(pii, domain.ExportRecord{
+		PacketDir: "/tmp/packet",
+		HTMLPath:  "/tmp/packet/resume.html",
+		DocxPath:  "/tmp/packet/resume.docx",
+		PDFPath:   "/tmp/packet/resume.pdf",
+		PageCount: 1,
+		MaxPages:  1,
+	}); err != nil {
+		t.Fatalf("MarkExported: %v", err)
+	}
+	if err := v.SaveApplication(ctx, app); err != nil {
+		t.Fatalf("SaveApplication (Exported): %v", err)
+	}
+	if err := v.RecordApplicationCitations(ctx, app.ID, []string{fact.ID}); err != nil {
+		t.Fatalf("RecordApplicationCitations before submit: %v", err)
+	}
+	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if err := app.MarkSubmitted(sha, "/tmp/packet/interview_brief.md"); err != nil {
+		t.Fatalf("MarkSubmitted: %v", err)
+	}
+
+	if err := v.SaveApplication(ctx, app); err != nil {
+		t.Fatalf("SaveApplication (Submitted): %v", err)
+	}
+
+	got, err := v.GetApplicationContext(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("GetApplicationContext: %v", err)
+	}
+	if got.State != domain.StateSubmitted || got.Dossier == nil || got.Draft == nil || got.Audits == nil || got.Export == nil {
+		t.Fatalf("expected full FSM artifacts restored, got %+v", got)
+	}
+	if got.BundleSHA256 != sha || got.InterviewBriefPath != "/tmp/packet/interview_brief.md" || got.SubmittedAt == nil {
+		t.Fatalf("expected submission lock fields restored, got sha=%q brief=%q submittedAt=%v", got.BundleSHA256, got.InterviewBriefPath, got.SubmittedAt)
+	}
+	if got.Dossier.JDClaims[0].VerbatimJDQuote != "build SQLite kernels." {
+		t.Errorf("dossier quote mismatch: %+v", got.Dossier)
+	}
+	if len(got.Draft.Experience) != 1 || got.Draft.Experience[0].Highlights[0].ID != "b1" {
+		t.Errorf("draft mismatch: %+v", got.Draft)
+	}
+
+	// Submitted applications must be immutable in storage as well (SaveApplication, DeleteApplication, RecordApplicationCitations).
+	if err := v.SaveApplication(ctx, got); !errors.Is(err, domain.ErrAlreadySubmitted) {
+		t.Fatalf("expected ErrAlreadySubmitted on update to Submitted app, got %v", err)
+	}
+	if err := v.DeleteApplication(ctx, got.ID); !errors.Is(err, domain.ErrAlreadySubmitted) {
+		t.Fatalf("expected ErrAlreadySubmitted on DeleteApplication for Submitted app, got %v", err)
+	}
+	if err := v.RecordApplicationCitations(ctx, got.ID, nil); !errors.Is(err, domain.ErrAlreadySubmitted) {
+		t.Fatalf("expected ErrAlreadySubmitted on RecordApplicationCitations(nil) for Submitted app, got %v", err)
+	}
+	citations, err := v.GetCitationsForApp(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("GetCitationsForApp: %v", err)
+	}
+	if len(citations) != 1 || citations[0] != fact.ID {
+		t.Fatalf("expected citations for Submitted app to remain intact, got %v", citations)
+	}
+	if err := v.DeleteApplication(ctx, "app-nonexistent"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound deleting missing application, got %v", err)
 	}
 }

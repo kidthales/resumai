@@ -90,7 +90,7 @@ func (r *ValidationReport) Add(bulletID, factID, message string, sentinel error)
 
 // ContainsMetricPlaceholder checks whether a string contains any unresolved [METRIC: placeholder.
 func ContainsMetricPlaceholder(text string) bool {
-	return strings.Contains(strings.ToUpper(text), "[METRIC:")
+	return domain.ContainsMetricPlaceholder(text)
 }
 
 // DocumentValidator validates ResumeDocument AST invariants prior to rendering.

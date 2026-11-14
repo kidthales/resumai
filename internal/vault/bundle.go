@@ -93,14 +93,21 @@ type BundleArchetype struct {
 
 // BundleApplication represents a job application in applications/<id>.yaml.
 type BundleApplication struct {
-	ID                 string   `yaml:"id"`
-	RoleTitle          string   `yaml:"role_title"`
-	Company            string   `yaml:"company"`
-	RawJD              string   `yaml:"raw_jd"`
-	State              string   `yaml:"state"`
-	RejectionRationale string   `yaml:"rejection_rationale,omitempty"`
-	ArchetypeID        string   `yaml:"archetype_id,omitempty"`
-	Citations          []string `yaml:"citations,omitempty"`
+	ID                 string                     `yaml:"id"`
+	RoleTitle          string                     `yaml:"role_title"`
+	Company            string                     `yaml:"company"`
+	RawJD              string                     `yaml:"raw_jd"`
+	State              string                     `yaml:"state"`
+	RejectionRationale string                     `yaml:"rejection_rationale,omitempty"`
+	ArchetypeID        string                     `yaml:"archetype_id,omitempty"`
+	Dossier            *domain.OpportunityDossier `yaml:"dossier,omitempty"`
+	Draft              *domain.ApplicationDraft   `yaml:"draft,omitempty"`
+	Audits             *domain.AuditBundle        `yaml:"audits,omitempty"`
+	Export             *domain.ExportRecord       `yaml:"export,omitempty"`
+	BundleSHA256       string                     `yaml:"bundle_sha256,omitempty"`
+	InterviewBriefPath string                     `yaml:"interview_brief_path,omitempty"`
+	SubmittedAt        *time.Time                 `yaml:"submitted_at,omitempty"`
+	Citations          []string                   `yaml:"citations,omitempty"`
 }
 
 // Dump exports the CareerVault data into a structured YAML directory bundle.
@@ -308,6 +315,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	seenAppSlugs := make(map[string]int)
 	for _, app := range apps {
 		citations := citationsByApp[app.ID]
+		var submittedAt *time.Time
+		if app.SubmittedAt != nil && !app.SubmittedAt.IsZero() {
+			t := app.SubmittedAt.UTC()
+			submittedAt = &t
+		}
 		bApp := BundleApplication{
 			ID:                 app.ID,
 			RoleTitle:          app.RoleTitle,
@@ -316,6 +328,13 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			State:              string(app.State),
 			RejectionRationale: app.RejectionRationale,
 			ArchetypeID:        app.ArchetypeID,
+			Dossier:            app.Dossier,
+			Draft:              app.Draft,
+			Audits:             app.Audits,
+			Export:             app.Export,
+			BundleSHA256:       app.BundleSHA256,
+			InterviewBriefPath: app.InterviewBriefPath,
+			SubmittedAt:        submittedAt,
 			Citations:          citations,
 		}
 		fileSlug := uniqueFileSlug(app.ID, app.Company+"-"+app.RoleTitle, seenAppSlugs)
@@ -511,6 +530,15 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			}
 		}
 		appsLoaded = apps
+	}
+
+	for i := range appsLoaded {
+		if appsLoaded[i].State == "" {
+			appsLoaded[i].State = string(domain.StateTriaged)
+		}
+		if err := domain.ApplicationState(appsLoaded[i].State).Validate(); err != nil {
+			return fmt.Errorf("invalid application state for %s: %w", appsLoaded[i].ID, err)
+		}
 	}
 
 	// 2. Perform transactional updates in a single isolated SQLite transaction
@@ -731,24 +759,28 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 		}
 
 		// E. Applications (Upsert application records before reconciling career facts)
+		existingAppStates := make(map[string]domain.ApplicationState)
 		if hasApplicationsSection {
 			incomingAppIDs := make(map[string]bool, len(appsLoaded))
 			for _, app := range appsLoaded {
 				incomingAppIDs[app.ID] = true
 			}
 
-			rows, err := tx.QueryContext(ctx, `SELECT id FROM applications;`)
+			rows, err := tx.QueryContext(ctx, `SELECT id, state FROM applications;`)
 			if err != nil {
 				return err
 			}
 			var staleAppIDs []string
 			for rows.Next() {
-				var id string
-				if err := rows.Scan(&id); err != nil {
+				var id, stateStr string
+				if err := rows.Scan(&id, &stateStr); err != nil {
 					rows.Close()
 					return fmt.Errorf("scan application id: %w", err)
 				}
-				if !incomingAppIDs[id] {
+				st := domain.ApplicationState(stateStr)
+				existingAppStates[id] = st
+				// Submitted applications are immutable and never deleted via bundle reload.
+				if !incomingAppIDs[id] && st != domain.StateSubmitted {
 					staleAppIDs = append(staleAppIDs, id)
 				}
 			}
@@ -759,21 +791,25 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			rows.Close()
 
 			if len(staleAppIDs) > 0 {
-				delAppStmt, err := tx.PrepareContext(ctx, `DELETE FROM applications WHERE id = ?;`)
+				delAppStmt, err := tx.PrepareContext(ctx, `DELETE FROM applications WHERE id = ? AND state != ?;`)
 				if err != nil {
 					return err
 				}
 				defer delAppStmt.Close()
 				for _, id := range staleAppIDs {
-					if _, err := delAppStmt.ExecContext(ctx, id); err != nil {
+					if _, err := delAppStmt.ExecContext(ctx, id, string(domain.StateSubmitted)); err != nil {
 						return fmt.Errorf("delete application %s: %w", id, err)
 					}
 				}
 			}
 
 			appStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO applications (id, role_title, company, raw_jd, state, rejection_rationale, archetype_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO applications (
+				id, role_title, company, raw_jd, state, rejection_rationale, archetype_id,
+				dossier_json, draft_json, audits_json, export_json, bundle_sha256, interview_brief_path, submitted_at,
+				created_at, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				role_title = excluded.role_title,
 				company = excluded.company,
@@ -781,7 +817,15 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 				state = excluded.state,
 				rejection_rationale = excluded.rejection_rationale,
 				archetype_id = excluded.archetype_id,
-				updated_at = excluded.updated_at;`)
+				dossier_json = excluded.dossier_json,
+				draft_json = excluded.draft_json,
+				audits_json = excluded.audits_json,
+				export_json = excluded.export_json,
+				bundle_sha256 = excluded.bundle_sha256,
+				interview_brief_path = excluded.interview_brief_path,
+				submitted_at = excluded.submitted_at,
+				updated_at = excluded.updated_at
+			WHERE applications.state != 'Submitted';`)
 			if err != nil {
 				return err
 			}
@@ -792,12 +836,44 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 				if st == "" {
 					st = string(domain.StateTriaged)
 				}
+				if existingAppStates[app.ID] == domain.StateSubmitted {
+					if st != string(domain.StateSubmitted) {
+						return fmt.Errorf("%w: cannot transition submitted application %q to %q", domain.ErrAlreadySubmitted, app.ID, st)
+					}
+					// Preserve already-Submitted application row immutable in SQLite.
+					continue
+				}
+
 				var archID sql.NullString
 				if app.ArchetypeID != "" {
 					archID = sql.NullString{String: app.ArchetypeID, Valid: true}
 				}
+				dossierJSON, err := marshalOptionalJSON(app.Dossier)
+				if err != nil {
+					return fmt.Errorf("marshal dossier for %s: %w", app.ID, err)
+				}
+				draftJSON, err := marshalOptionalJSON(app.Draft)
+				if err != nil {
+					return fmt.Errorf("marshal draft for %s: %w", app.ID, err)
+				}
+				auditsJSON, err := marshalOptionalJSON(app.Audits)
+				if err != nil {
+					return fmt.Errorf("marshal audits for %s: %w", app.ID, err)
+				}
+				exportJSON, err := marshalOptionalJSON(app.Export)
+				if err != nil {
+					return fmt.Errorf("marshal export for %s: %w", app.ID, err)
+				}
+				var submittedAt sql.NullString
+				if app.SubmittedAt != nil && !app.SubmittedAt.IsZero() {
+					submittedAt = sql.NullString{String: app.SubmittedAt.UTC().Format(time.RFC3339), Valid: true}
+				}
 
-				if _, err := appStmt.ExecContext(ctx, app.ID, app.RoleTitle, app.Company, app.RawJD, st, app.RejectionRationale, archID, nowStr, nowStr); err != nil {
+				if _, err := appStmt.ExecContext(ctx,
+					app.ID, app.RoleTitle, app.Company, app.RawJD, st, app.RejectionRationale, archID,
+					dossierJSON, draftJSON, auditsJSON, exportJSON, app.BundleSHA256, app.InterviewBriefPath, submittedAt,
+					nowStr, nowStr,
+				); err != nil {
 					return fmt.Errorf("exec save application %s: %w", app.ID, err)
 				}
 			}
@@ -1128,6 +1204,9 @@ func (v *CareerVault) Load(ctx context.Context, dir string) error {
 			defer citStmt.Close()
 
 			for _, app := range appsLoaded {
+				if existingAppStates[app.ID] == domain.StateSubmitted {
+					continue
+				}
 				if _, err := delCitStmt.ExecContext(ctx, app.ID); err != nil {
 					return fmt.Errorf("delete old citations for app %s: %w", app.ID, err)
 				}

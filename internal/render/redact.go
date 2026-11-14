@@ -14,6 +14,17 @@ var (
 	unixUserPathRe         = regexp.MustCompile(`(^|[\s"'=:(])/(?:home|Users)/[^\s/]+`)
 )
 
+// RedactCredentials scrubs sensitive credentials (Discord webhooks and GitHub tokens)
+// without rewriting local filesystem paths.
+func RedactCredentials(s string) string {
+	if s == "" {
+		return ""
+	}
+	s = discordWebhookRedactRe.ReplaceAllString(s, "https://discord.com/api/webhooks/[REDACTED]")
+	s = githubTokenRedactRe.ReplaceAllString(s, "[REDACTED]")
+	return s
+}
+
 // RedactSecrets scrubs sensitive credentials (GitHub tokens, Discord webhooks)
 // and local filesystem path segments (user home directories, temp dirs, OS profile paths)
 // from diagnostic strings, logs, and error messages before surfacing via CLI/MCP/Sidecar.
@@ -29,11 +40,8 @@ func redactSecretsCustom(s, home, tmp string) string {
 		return ""
 	}
 
-	// 1. Scrub Discord webhooks
-	s = discordWebhookRedactRe.ReplaceAllString(s, "https://discord.com/api/webhooks/[REDACTED]")
-
-	// 2. Scrub GitHub tokens
-	s = githubTokenRedactRe.ReplaceAllString(s, "[REDACTED]")
+	// 1-2. Scrub Discord webhooks and GitHub tokens
+	s = RedactCredentials(s)
 
 	// 3. Scrub user home directory if discoverable and long enough (skip minimal paths like "/" or "C:\")
 	homeTrimmed := strings.TrimRight(home, `/\`)

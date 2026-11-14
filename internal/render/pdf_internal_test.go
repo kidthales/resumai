@@ -1,8 +1,15 @@
 package render
 
 import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/binary"
+	"encoding/json"
 	"io"
 	"math"
+	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -248,4 +255,199 @@ func TestExtractDevToolsPort(t *testing.T) {
 			t.Errorf("expected [REDACTED] in error, got: %s", errStr)
 		}
 	})
+}
+
+func TestFilePathToURI(t *testing.T) {
+	if got := filePathToURI("/tmp/resumai-render-123.html"); got != "file:///tmp/resumai-render-123.html" {
+		t.Errorf("unix temp path URI = %q, want %q", got, "file:///tmp/resumai-render-123.html")
+	}
+	if got := filePathToURI("/tmp/dir with spaces/resumai.html"); got != "file:///tmp/dir%20with%20spaces/resumai.html" {
+		t.Errorf("unix space path URI = %q, want %q", got, "file:///tmp/dir%20with%20spaces/resumai.html")
+	}
+	if runtime.GOOS == "windows" {
+		if got := filePathToURI(`C:\Users\dev\Temp\resumai-render-123.html`); got != "file:///C:/Users/dev/Temp/resumai-render-123.html" {
+			t.Errorf("windows path URI = %q, want %q", got, "file:///C:/Users/dev/Temp/resumai-render-123.html")
+		}
+	}
+}
+
+func readClientWSFrame(r *bufio.Reader) ([]byte, error) {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, err
+	}
+	masked := (header[1] & 0x80) != 0
+	length := int(header[1] & 0x7F)
+	if length == 126 {
+		ext := make([]byte, 2)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return nil, err
+		}
+		length = int(binary.BigEndian.Uint16(ext))
+	}
+	var mask [4]byte
+	if masked {
+		if _, err := io.ReadFull(r, mask[:]); err != nil {
+			return nil, err
+		}
+	}
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, err
+	}
+	if masked {
+		for i := range payload {
+			payload[i] ^= mask[i%4]
+		}
+	}
+	return payload, nil
+}
+
+func writeServerWSFrame(w io.Writer, payload []byte) error {
+	var buf bytes.Buffer
+	buf.WriteByte(0x81)
+	if len(payload) < 126 {
+		buf.WriteByte(byte(len(payload)))
+	} else {
+		buf.WriteByte(126)
+		var ext [2]byte
+		binary.BigEndian.PutUint16(ext[:], uint16(len(payload)))
+		buf.Write(ext[:])
+	}
+	buf.Write(payload)
+	_, err := w.Write(buf.Bytes())
+	return err
+}
+
+func TestCDPWebSocket_EventsAndContextRetry(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	ws := &cdpWebSocket{
+		conn:    clientConn,
+		r:       bufio.NewReader(clientConn),
+		pending: make(map[int64]chan cdpResponse),
+		events:  make(map[string]map[uint64]chan json.RawMessage),
+		closed:  make(chan struct{}),
+	}
+	go ws.readLoop()
+	defer ws.Close()
+
+	loadCh, unsub := ws.Subscribe("Page.loadEventFired")
+	defer unsub()
+
+	errCh := make(chan error, 1)
+	go func() {
+		sr := bufio.NewReader(serverConn)
+		// 1. Expect Page.navigate
+		rawNav, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var navCmd struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(rawNav, &navCmd); err != nil {
+			errCh <- err
+			return
+		}
+		// Reply to Page.navigate, then emit Page.loadEventFired
+		if err := writeServerWSFrame(serverConn, []byte(`{"id":1,"result":{"frameId":"f1","loaderId":"l1"}}`)); err != nil {
+			errCh <- err
+			return
+		}
+		if err := writeServerWSFrame(serverConn, []byte(`{"method":"Page.loadEventFired","params":{"timestamp":123.45}}`)); err != nil {
+			errCh <- err
+			return
+		}
+
+		// 2. First Runtime.evaluate -> transient -32000 Execution context was destroyed
+		rawEval1, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var evalCmd1 struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(rawEval1, &evalCmd1)
+		resp1, _ := json.Marshal(map[string]any{
+			"id": evalCmd1.ID,
+			"error": map[string]any{
+				"code":    -32000,
+				"message": "Execution context was destroyed.",
+			},
+		})
+		if err := writeServerWSFrame(serverConn, resp1); err != nil {
+			errCh <- err
+			return
+		}
+
+		// 3. Second Runtime.evaluate -> resolves false (stale about:blank load event)
+		rawEval2, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var evalCmd2 struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(rawEval2, &evalCmd2)
+		resp2, _ := json.Marshal(map[string]any{
+			"id":     evalCmd2.ID,
+			"result": map[string]any{"result": map[string]any{"value": false}},
+		})
+		if err := writeServerWSFrame(serverConn, resp2); err != nil {
+			errCh <- err
+			return
+		}
+
+		// Emit committed Page.loadEventFired before third evaluation
+		if err := writeServerWSFrame(serverConn, []byte(`{"method":"Page.loadEventFired","params":{"timestamp":124.00}}`)); err != nil {
+			errCh <- err
+			return
+		}
+
+		// 4. Third Runtime.evaluate -> resolves true
+		rawEval3, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var evalCmd3 struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(rawEval3, &evalCmd3)
+		resp3, _ := json.Marshal(map[string]any{
+			"id":     evalCmd3.ID,
+			"result": map[string]any{"result": map[string]any{"value": true}},
+		})
+		if err := writeServerWSFrame(serverConn, resp3); err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := ws.Call(ctx, "Page.navigate", map[string]any{"url": "file:///tmp/test.html"}); err != nil {
+		t.Fatalf("Page.navigate failed: %v", err)
+	}
+	select {
+	case <-loadCh:
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for Page.loadEventFired: %v", ctx.Err())
+	}
+
+	if err := awaitDocumentAndFonts(ctx, ws, loadCh); err != nil {
+		t.Fatalf("awaitDocumentAndFonts failed: %v", err)
+	}
+	if serr := <-errCh; serr != nil {
+		t.Fatalf("mock CDP server error: %v", serr)
+	}
 }
