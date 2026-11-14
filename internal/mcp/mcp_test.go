@@ -193,6 +193,42 @@ func TestServeStdioJSONRPC(t *testing.T) {
 	}
 }
 
+func TestServeStdioOversizedFrameRejectedAndRecovers(t *testing.T) {
+	_, srv := newTestVaultAndServer(t)
+
+	oversized := bytes.Repeat([]byte("a"), (10<<20)+128)
+	var in bytes.Buffer
+	in.Write(oversized)
+	in.WriteByte('\n')
+	in.WriteString(`{"jsonrpc":"2.0","id":99,"method":"ping"}` + "\n")
+
+	var out bytes.Buffer
+	if err := srv.ServeStdio(context.Background(), &in, &out); err != nil {
+		t.Fatalf("ServeStdio failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 responses (oversized error + subsequent ping), got %d:\n%s", len(lines), out.String())
+	}
+
+	var rErr mcp.Response
+	if err := json.Unmarshal([]byte(lines[0]), &rErr); err != nil {
+		t.Fatalf("unmarshal oversized response: %v", err)
+	}
+	if rErr.Error == nil || rErr.Error.Code != -32600 {
+		t.Fatalf("expected -32600 for oversized frame, got %+v", rErr.Error)
+	}
+
+	var rPing mcp.Response
+	if err := json.Unmarshal([]byte(lines[1]), &rPing); err != nil {
+		t.Fatalf("unmarshal ping response: %v", err)
+	}
+	if rPing.Error != nil {
+		t.Fatalf("expected ping to succeed after oversized frame, got error %+v", rPing.Error)
+	}
+}
+
 func TestVaultCurationTools(t *testing.T) {
 	v, srv := newTestVaultAndServer(t)
 

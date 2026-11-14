@@ -16,6 +16,7 @@ import (
 const (
 	jsonRPCVersion     = "2.0"
 	mcpProtocolVersion = "2024-11-05"
+	maxMCPFrameBytes   = 10 << 20 // 10 MiB hard cap per JSON-RPC stdio frame
 )
 
 // Standard JSON-RPC 2.0 error codes.
@@ -86,8 +87,24 @@ func (s *Server) ServeStdio(ctx context.Context, r io.Reader, w io.Writer) error
 			return ctx.Err()
 		}
 
-		line, err := reader.ReadBytes('\n')
-		if len(bytes.TrimSpace(line)) > 0 {
+		line, exceeded, err := readLimitedLine(reader, maxMCPFrameBytes)
+		if exceeded {
+			resp := Response{
+				JSONRPC: jsonRPCVersion,
+				ID:      json.RawMessage("null"),
+				Error: &RPCError{
+					Code:    errCodeInvalidRequest,
+					Message: fmt.Sprintf("JSON-RPC frame exceeds maximum size of %d bytes", maxMCPFrameBytes),
+				},
+			}
+			b, merr := json.Marshal(resp)
+			if merr != nil {
+				return merr
+			}
+			if _, werr := w.Write(append(b, '\n')); werr != nil {
+				return fmt.Errorf("write mcp response: %w", werr)
+			}
+		} else if len(bytes.TrimSpace(line)) > 0 {
 			respBytes, hasResp, handleErr := s.HandleLine(ctx, line)
 			if handleErr != nil {
 				return handleErr
@@ -108,9 +125,51 @@ func (s *Server) ServeStdio(ctx context.Context, r io.Reader, w io.Writer) error
 	}
 }
 
+func readLimitedLine(reader *bufio.Reader, maxBytes int) ([]byte, bool, error) {
+	var buf []byte
+	for {
+		frag, err := reader.ReadSlice('\n')
+		if len(buf)+len(frag) > maxBytes {
+			// Drain remainder of oversized line so subsequent JSON-RPC frames stay aligned.
+			for errors.Is(err, bufio.ErrBufferFull) {
+				_, err = reader.ReadSlice('\n')
+			}
+			return nil, true, err
+		}
+		if err == nil {
+			if len(buf) == 0 {
+				return frag, false, nil
+			}
+			buf = append(buf, frag...)
+			return buf, false, nil
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			buf = append(buf, frag...)
+			continue
+		}
+		if len(buf) == 0 {
+			return frag, false, err
+		}
+		buf = append(buf, frag...)
+		return buf, false, err
+	}
+}
+
 // HandleLine processes a single JSON-RPC 2.0 message line and returns the serialized
 // JSON response (if the message was a request with an id rather than a notification).
 func (s *Server) HandleLine(ctx context.Context, line []byte) ([]byte, bool, error) {
+	if len(line) > maxMCPFrameBytes {
+		resp := Response{
+			JSONRPC: jsonRPCVersion,
+			ID:      json.RawMessage("null"),
+			Error: &RPCError{
+				Code:    errCodeInvalidRequest,
+				Message: fmt.Sprintf("JSON-RPC frame exceeds maximum size of %d bytes", maxMCPFrameBytes),
+			},
+		}
+		b, merr := json.Marshal(resp)
+		return b, true, merr
+	}
 	trimmed := bytes.TrimSpace(line)
 	if len(trimmed) == 0 {
 		return nil, false, nil

@@ -421,6 +421,46 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 			t.Fatalf("expected promotion to succeed with only low/medium discrepancies, got %v", err)
 		}
 	})
+
+	t.Run("failed fact-check or alignment-check verdict blocks promotion", func(t *testing.T) {
+		cases := []struct {
+			name   string
+			mutate func(*AuditBundle)
+		}{
+			{
+				name: "fact_check passed=false without high discrepancy",
+				mutate: func(b *AuditBundle) {
+					b.FactCheck.Passed = false
+					b.FactCheck.Summary = "Fabricated scope framing"
+					b.FactCheck.Discrepancies = nil
+				},
+			},
+			{
+				name: "alignment_check passed=false",
+				mutate: func(b *AuditBundle) {
+					b.AlignmentCheck.Passed = false
+					b.AlignmentCheck.Summary = "Missing mandatory kernel background"
+				},
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				app, _ := NewTriagedApplication("app-critic-reject", validTestDossier())
+				if err := app.SaveDraft(validTestDraft("fact-verified"), resolver); err != nil {
+					t.Fatalf("SaveDraft failed: %v", err)
+				}
+				audits := validTestAudits()
+				tc.mutate(&audits)
+				if err := app.RecordAudits(audits); err != nil {
+					t.Fatalf("RecordAudits failed: %v", err)
+				}
+				if err := app.PromoteReady(resolver); !errors.Is(err, ErrUnverifiedFactOrPlaceholder) {
+					t.Fatalf("expected ErrUnverifiedFactOrPlaceholder when critic failed, got %v", err)
+				}
+			})
+		}
+	})
 }
 
 func TestJobApplicationFSM_ExportAndTransitionGuards(t *testing.T) {

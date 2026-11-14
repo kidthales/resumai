@@ -13,28 +13,28 @@ const UnknownAskRecruiterToken = "unknown_ask_recruiter"
 // JDClaim captures a requirement or signal extracted from a job description,
 // grounded by a verbatim quote substring present in raw_jd.
 type JDClaim struct {
-	Category        string `json:"category,omitempty"`
-	Summary         string `json:"summary,omitempty"`
-	VerbatimJDQuote string `json:"verbatim_jd_quote"`
+	Category        string `json:"category,omitempty" yaml:"category,omitempty"`
+	Summary         string `json:"summary,omitempty" yaml:"summary,omitempty"`
+	VerbatimJDQuote string `json:"verbatim_jd_quote" yaml:"verbatim_jd_quote"`
 }
 
 // ExternalClaim captures an external reconnaissance claim about the role or organization.
 // Every external claim must provide a valid HTTP/HTTPS source_url or mark unknown_ask_recruiter.
 type ExternalClaim struct {
-	Category            string `json:"category,omitempty"`
-	Claim               string `json:"claim"`
-	SourceURL           string `json:"source_url,omitempty"`
-	UnknownAskRecruiter bool   `json:"unknown_ask_recruiter,omitempty"`
+	Category            string `json:"category,omitempty" yaml:"category,omitempty"`
+	Claim               string `json:"claim" yaml:"claim"`
+	SourceURL           string `json:"source_url,omitempty" yaml:"source_url,omitempty"`
+	UnknownAskRecruiter bool   `json:"unknown_ask_recruiter,omitempty" yaml:"unknown_ask_recruiter,omitempty"`
 }
 
 // OpportunityDossier represents the structured triage artifact for a job application.
 type OpportunityDossier struct {
-	RoleTitle      string          `json:"role_title,omitempty"`
-	Company        string          `json:"company,omitempty"`
-	RawJD          string          `json:"raw_jd"`
-	FitSummary     string          `json:"fit_summary,omitempty"`
-	JDClaims       []JDClaim       `json:"jd_claims,omitempty"`
-	ExternalClaims []ExternalClaim `json:"external_claims,omitempty"`
+	RoleTitle      string          `json:"role_title,omitempty" yaml:"role_title,omitempty"`
+	Company        string          `json:"company,omitempty" yaml:"company,omitempty"`
+	RawJD          string          `json:"raw_jd" yaml:"raw_jd"`
+	FitSummary     string          `json:"fit_summary,omitempty" yaml:"fit_summary,omitempty"`
+	JDClaims       []JDClaim       `json:"jd_claims,omitempty" yaml:"jd_claims,omitempty"`
+	ExternalClaims []ExternalClaim `json:"external_claims,omitempty" yaml:"external_claims,omitempty"`
 }
 
 // Validate enforces deterministic triage citation invariants:

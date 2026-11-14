@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/kidthales/resumai/internal/domain"
 	"github.com/kidthales/resumai/internal/render"
@@ -127,17 +126,6 @@ func (s *Server) CallTool(ctx context.Context, name string, args json.RawMessage
 		return toolErrorResult(err), nil
 	}
 	return toolJSONResult(payload)
-}
-
-// HandleTriage validates and records initial triage for a role.
-func (s *Server) HandleTriage(rawJD string) (*domain.JobApplication, error) {
-	if strings.TrimSpace(rawJD) == "" {
-		return nil, domain.ErrInvalidTriageCitation
-	}
-	return &domain.JobApplication{
-		RawJD: rawJD,
-		State: domain.StateTriaged,
-	}, nil
 }
 
 func decodeArgs[T any](raw json.RawMessage) (T, error) {

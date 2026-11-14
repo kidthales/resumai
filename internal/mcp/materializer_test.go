@@ -436,6 +436,145 @@ func TestLocalMaterializer_MissingPIIAndPageBudgetOverflow(t *testing.T) {
 	assertNoSentinelPII(t, err.Error(), pii)
 }
 
+func TestLocalMaterializer_DirectoryJailAndPartialLockRecovery(t *testing.T) {
+	baseDir := t.TempDir()
+	outsideDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(baseDir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				_ = os.Chmod(path, 0644)
+			}
+			return nil
+		})
+	})
+
+	v, _ := newTestVaultAndServer(t)
+	ctx := context.Background()
+	pii := &domain.PIIHeader{FullName: "Jane Jailed", Email: "jane@jailed.invalid"}
+	if err := v.SetPII(ctx, pii); err != nil {
+		t.Fatalf("SetPII: %v", err)
+	}
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-1", Name: "Prior Co"})
+	_ = v.SaveRole(ctx, &domain.Role{ID: "role-1", OrgID: "org-1", Title: "Engineer"})
+	_ = v.SaveCareerFact(ctx, &domain.CareerFact{
+		ID:             "fact-1",
+		RoleID:         "role-1",
+		Headline:       "Built API",
+		Details:        "Built API serving 10k RPS.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	})
+	_ = v.SaveArchetype(ctx, &domain.Archetype{ID: "arch-1", Name: "Systems"})
+
+	newReadyApp := func(id string) *domain.JobApplication {
+		app, err := domain.NewTriagedApplication(id, domain.OpportunityDossier{
+			RoleTitle: "Staff Go",
+			Company:   "Acme",
+			RawJD:     "Build Go APIs.",
+		})
+		if err != nil {
+			t.Fatalf("NewTriagedApplication: %v", err)
+		}
+		if err := app.SaveDraft(domain.ApplicationDraft{
+			ArchetypeID: "arch-1",
+			Experience: []domain.DraftExperience{
+				{
+					RoleTitle:    "Engineer",
+					Organization: "Prior Co",
+					Highlights:   []domain.BulletNode{{ID: "b-1", Text: "Built API serving 10k RPS.", FactIDs: []string{"fact-1"}}},
+				},
+			},
+			PageBudget: 1,
+		}, v); err != nil {
+			t.Fatalf("SaveDraft: %v", err)
+		}
+		if err := app.RecordAudits(domain.AuditBundle{
+			FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
+			AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
+		}); err != nil {
+			t.Fatalf("RecordAudits: %v", err)
+		}
+		if err := app.PromoteReady(v); err != nil {
+			t.Fatalf("PromoteReady: %v", err)
+		}
+		return app
+	}
+
+	okPDF := func(_ context.Context, _ *render.ResumeDocument, _ *domain.PIIHeader, _ *render.ThemeManifest, _ int) ([]byte, *render.LayoutTelemetry, error) {
+		return []byte("%PDF-1.4\n"), &render.LayoutTelemetry{PageCount: 1, LastPageFillRatio: 0.8}, nil
+	}
+	mat := mcp.NewLocalMaterializer(v, mcp.WithBaseOutputDir(baseDir), mcp.WithPDFRenderer(okPDF))
+
+	// 1. Escaping output_dir (relative traversal & absolute path outside baseDir) must be rejected.
+	for _, badOut := range []string{"../../../arbitrary/dir", outsideDir} {
+		app := newReadyApp("app-escape")
+		if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{
+			Application: app,
+			OutputDir:   badOut,
+		}); err == nil {
+			t.Fatalf("expected RenderAndMarkExported to reject unjailed output_dir %q", badOut)
+		}
+	}
+
+	// 2. Benign relative subdirectory inside baseDir succeeds and remains jailed.
+	app := newReadyApp("app-jailed")
+	res, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{
+		Application: app,
+		OutputDir:   "batch-2026",
+	})
+	if err != nil {
+		t.Fatalf("expected jailed relative subdir to succeed, got: %v", err)
+	}
+	rel, rerr := filepath.Rel(baseDir, res.Export.PacketDir)
+	if rerr != nil || strings.HasPrefix(rel, "..") {
+		t.Fatalf("packetDir %q escaped baseDir %q", res.Export.PacketDir, baseDir)
+	}
+
+	// 3. FinalizeSubmission must reject ExportRecord paths escaping packetDir or baseDir.
+	tampered := *app
+	tamperedExport := *app.Export
+	tamperedExport.HTMLPath = filepath.Join(outsideDir, "evil.html")
+	tampered.Export = &tamperedExport
+	if _, err := mat.FinalizeSubmission(ctx, mcp.SubmissionRequest{Application: &tampered}); err == nil {
+		t.Fatalf("expected FinalizeSubmission to reject HTMLPath escaping packetDir")
+	}
+
+	tamperedDir := *app
+	tamperedDirExport := *app.Export
+	tamperedDirExport.PacketDir = outsideDir
+	tamperedDir.Export = &tamperedDirExport
+	if _, err := mat.FinalizeSubmission(ctx, mcp.SubmissionRequest{Application: &tamperedDir}); err == nil {
+		t.Fatalf("expected FinalizeSubmission to reject PacketDir escaping baseDir")
+	}
+
+	// 4. Simulate partial 0444 read-only lock left on disk while app remains StateExported
+	// (e.g., mid-flight FinalizeSubmission or SaveApplication failure). Both FinalizeSubmission
+	// retry and RenderAndMarkExported re-render must recover without permission-denied wedge.
+	staleBrief := filepath.Join(app.Export.PacketDir, "interview_brief.md")
+	if err := os.WriteFile(staleBrief, []byte("stale brief"), 0444); err != nil {
+		t.Fatalf("write stale brief: %v", err)
+	}
+	if err := os.Chmod(app.Export.HTMLPath, 0444); err != nil {
+		t.Fatalf("chmod html 0444: %v", err)
+	}
+
+	// Retry FinalizeSubmission while HTMLPath and interview_brief.md are already 0444
+	if _, err := mat.FinalizeSubmission(ctx, mcp.SubmissionRequest{
+		Application: app,
+		Notes:       "retry after failure",
+	}); err != nil {
+		t.Fatalf("FinalizeSubmission retry on 0444 artifacts failed: %v", err)
+	}
+
+	// Re-render while app is still StateExported and all 5 artifacts (including interview_brief.md) are 0444
+	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app}); err != nil {
+		t.Fatalf("RenderAndMarkExported re-render on 0444 artifacts failed: %v", err)
+	}
+	if _, statErr := os.Stat(staleBrief); !os.IsNotExist(statErr) {
+		t.Fatalf("expected stale unsubmitted interview_brief.md to be cleaned on re-render, stat err=%v", statErr)
+	}
+}
+
 func assertNoSentinelPII(t *testing.T, payload string, pii *domain.PIIHeader) {
 	t.Helper()
 	fields := []string{

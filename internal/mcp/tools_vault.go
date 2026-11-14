@@ -236,7 +236,7 @@ func (s *Server) handleGetLogistics(ctx context.Context, _ json.RawMessage) (any
 }
 
 func (s *Server) handleSaveLogistics(ctx context.Context, raw json.RawMessage) (any, error) {
-	var in struct {
+	type input struct {
 		TargetTitle        string `json:"target_title"`
 		WorkAuthorization  string `json:"work_authorization"`
 		RemotePreference   string `json:"remote_preference"`
@@ -244,14 +244,7 @@ func (s *Server) handleSaveLogistics(ctx context.Context, raw json.RawMessage) (
 		TargetCompensation string `json:"target_compensation"`
 		NoticePeriodDays   int    `json:"notice_period_days"`
 	}
-	in, err := decodeArgs[struct {
-		TargetTitle        string `json:"target_title"`
-		WorkAuthorization  string `json:"work_authorization"`
-		RemotePreference   string `json:"remote_preference"`
-		WillingToRelocate  bool   `json:"willing_to_relocate"`
-		TargetCompensation string `json:"target_compensation"`
-		NoticePeriodDays   int    `json:"notice_period_days"`
-	}](raw)
+	in, err := decodeArgs[input](raw)
 	if err != nil {
 		return nil, err
 	}

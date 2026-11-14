@@ -106,7 +106,7 @@ func (s *Server) registerApplicationTools() {
 		InputSchema: schemaObject(map[string]any{
 			"application_id": strProp("JobApplication ID"),
 			"theme":          strProp("Optional theme name (default, modern, classic)"),
-			"output_dir":     strProp("Optional base output directory override (defaults to ~/.resumai/applications)"),
+			"output_dir":     strProp("Optional subdirectory or jailed base output directory inside the configured applications root (defaults to ~/.resumai/applications)"),
 		}, "application_id"),
 	}, s.handleRenderBundle)
 

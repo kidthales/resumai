@@ -58,10 +58,10 @@ func ContainsMetricPlaceholder(text string) bool {
 
 // BulletNode represents a single bullet point in a draft resume.
 type BulletNode struct {
-	ID       string   `json:"id"`
-	Text     string   `json:"text"`
-	FactIDs  []string `json:"fact_ids"`
-	Verified bool     `json:"verified"`
+	ID       string   `json:"id" yaml:"id"`
+	Text     string   `json:"text" yaml:"text"`
+	FactIDs  []string `json:"fact_ids" yaml:"fact_ids"`
+	Verified bool     `json:"verified" yaml:"verified"`
 }
 
 // CareerFact represents an atomic ground-truth career accomplishment.

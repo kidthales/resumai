@@ -346,19 +346,26 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	pdfPath := filepath.Join(packetDir, "resume.pdf")
 	auditPath := filepath.Join(packetDir, "audit.md")
 
-	if err := os.WriteFile(htmlPath, htmlBytes, 0600); err != nil {
+	if err := writeFileEnsuringWritable(htmlPath, htmlBytes, 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.html: %w", err), pii)
 	}
-	if err := os.WriteFile(docxPath, docxBytes, 0600); err != nil {
+	if err := writeFileEnsuringWritable(docxPath, docxBytes, 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.docx: %w", err), pii)
 	}
-	if err := os.WriteFile(pdfPath, pdfBytes, 0600); err != nil {
+	if err := writeFileEnsuringWritable(pdfPath, pdfBytes, 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.pdf: %w", err), pii)
 	}
 
 	auditMD := buildAuditMarkdown(app, theme.Name, telemetry, maxPages, now)
-	if err := os.WriteFile(auditPath, []byte(auditMD), 0644); err != nil {
+	if err := writeFileEnsuringWritable(auditPath, []byte(auditMD), 0644); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write audit.md: %w", err), pii)
+	}
+	if app.State == domain.StateExported {
+		briefPath := filepath.Join(packetDir, "interview_brief.md")
+		if info, serr := os.Stat(briefPath); serr == nil && !info.IsDir() {
+			_ = ensureWritable(briefPath, 0644)
+			_ = os.Remove(briefPath)
+		}
 	}
 
 	exportRec := domain.ExportRecord{
@@ -404,16 +411,30 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 		}
 	}
 
-	packetDir := filepath.Clean(app.Export.PacketDir)
-	artifactPaths := map[string]string{
-		"resume.html": filepath.Clean(app.Export.HTMLPath),
-		"resume.docx": filepath.Clean(app.Export.DocxPath),
-		"resume.pdf":  filepath.Clean(app.Export.PDFPath),
+	absBase, err := m.resolvedBaseDir()
+	if err != nil {
+		return nil, scrubPIIError(err, pii)
 	}
-	for name, p := range artifactPaths {
-		if strings.TrimSpace(p) == "" {
+	packetDir, err := ensurePathWithinDir(absBase, app.Export.PacketDir, false)
+	if err != nil {
+		return nil, scrubPIIError(fmt.Errorf("%w: invalid packet_dir: %v", domain.ErrMissingExportArtifact, err), pii)
+	}
+
+	rawPaths := map[string]string{
+		"resume.html": app.Export.HTMLPath,
+		"resume.docx": app.Export.DocxPath,
+		"resume.pdf":  app.Export.PDFPath,
+	}
+	artifactPaths := make(map[string]string, len(rawPaths)+1)
+	for name, raw := range rawPaths {
+		if strings.TrimSpace(raw) == "" {
 			return nil, scrubPIIError(fmt.Errorf("%w: missing path for %s", domain.ErrMissingExportArtifact, name), pii)
 		}
+		jailedPath, err := ensurePathWithinDir(packetDir, raw, false)
+		if err != nil {
+			return nil, scrubPIIError(fmt.Errorf("%w: %s escapes packet directory: %v", domain.ErrMissingExportArtifact, name, err), pii)
+		}
+		artifactPaths[name] = jailedPath
 	}
 
 	auditPath := filepath.Join(packetDir, "audit.md")
@@ -429,7 +450,7 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 	now := m.now().UTC()
 	briefPath := filepath.Join(packetDir, "interview_brief.md")
 	briefMD := buildInterviewBriefMarkdown(app, bundleSHA256, fileDigests, req.Notes, now)
-	if err := os.WriteFile(briefPath, []byte(briefMD), 0644); err != nil {
+	if err := writeFileEnsuringWritable(briefPath, []byte(briefMD), 0644); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write interview_brief.md: %w", err), pii)
 	}
 
@@ -440,8 +461,23 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 	}
 	lockTargets = append(lockTargets, briefPath)
 	sort.Strings(lockTargets)
+
+	type priorPerm struct {
+		path string
+		mode os.FileMode
+	}
+	var locked []priorPerm
 	for _, target := range lockTargets {
+		info, serr := os.Stat(target)
+		if serr == nil {
+			locked = append(locked, priorPerm{path: target, mode: info.Mode().Perm()})
+		}
 		if err := os.Chmod(target, 0444); err != nil {
+			for _, prev := range locked {
+				if prev.mode&0222 != 0 {
+					_ = os.Chmod(prev.path, prev.mode)
+				}
+			}
 			return nil, scrubPIIError(fmt.Errorf("lock submitted packet artifact %s: %w", filepath.Base(target), err), pii)
 		}
 	}
@@ -475,16 +511,8 @@ func (m *LocalMaterializer) renderPDF(
 	return printer.Print(doc, pii)
 }
 
-func (m *LocalMaterializer) resolvePacketDir(app *domain.JobApplication, outputDirOverride string) (string, error) {
-	override := strings.TrimSpace(outputDirOverride)
-	if override != "" {
-		return filepath.Join(filepath.Clean(override), packetFolderName(app, m.now())), nil
-	}
-	if app.Export != nil && strings.TrimSpace(app.Export.PacketDir) != "" {
-		return filepath.Clean(app.Export.PacketDir), nil
-	}
-
-	baseDir := m.baseOutputDir
+func (m *LocalMaterializer) resolvedBaseDir() (string, error) {
+	baseDir := strings.TrimSpace(m.baseOutputDir)
 	if baseDir == "" {
 		var err error
 		baseDir, err = DefaultApplicationsDir()
@@ -492,7 +520,79 @@ func (m *LocalMaterializer) resolvePacketDir(app *domain.JobApplication, outputD
 			return "", err
 		}
 	}
-	return filepath.Join(filepath.Clean(baseDir), packetFolderName(app, m.now())), nil
+	absBase, err := filepath.Abs(filepath.Clean(baseDir))
+	if err != nil {
+		return "", fmt.Errorf("resolve base applications dir: %w", err)
+	}
+	return absBase, nil
+}
+
+func (m *LocalMaterializer) resolvePacketDir(app *domain.JobApplication, outputDirOverride string) (string, error) {
+	absBase, err := m.resolvedBaseDir()
+	if err != nil {
+		return "", err
+	}
+
+	override := strings.TrimSpace(outputDirOverride)
+	if override != "" {
+		candidateBase := override
+		if !filepath.IsAbs(candidateBase) {
+			candidateBase = filepath.Join(absBase, candidateBase)
+		}
+		jailedBase, err := ensurePathWithinDir(absBase, candidateBase, true)
+		if err != nil {
+			return "", fmt.Errorf("output_dir escapes configured applications directory: %w", err)
+		}
+		packetDir := filepath.Join(jailedBase, packetFolderName(app, m.now()))
+		return ensurePathWithinDir(absBase, packetDir, false)
+	}
+
+	if app.Export != nil && strings.TrimSpace(app.Export.PacketDir) != "" {
+		return ensurePathWithinDir(absBase, app.Export.PacketDir, false)
+	}
+
+	packetDir := filepath.Join(absBase, packetFolderName(app, m.now()))
+	return ensurePathWithinDir(absBase, packetDir, false)
+}
+
+func ensurePathWithinDir(baseDir, target string, allowEqual bool) (string, error) {
+	absBase, err := filepath.Abs(filepath.Clean(baseDir))
+	if err != nil {
+		return "", fmt.Errorf("resolve base directory: %w", err)
+	}
+	absTarget, err := filepath.Abs(filepath.Clean(target))
+	if err != nil {
+		return "", fmt.Errorf("resolve target path: %w", err)
+	}
+	rel, err := filepath.Rel(absBase, absTarget)
+	if err != nil {
+		return "", fmt.Errorf("path %q outside base directory", target)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes base directory", target)
+	}
+	if !allowEqual && rel == "." {
+		return "", fmt.Errorf("path %q must be a child inside base directory", target)
+	}
+	return absTarget, nil
+}
+
+func ensureWritable(path string, perm os.FileMode) error {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return nil
+	}
+	if info.Mode().Perm()&0200 == 0 {
+		return os.Chmod(path, perm)
+	}
+	return nil
+}
+
+func writeFileEnsuringWritable(path string, data []byte, perm os.FileMode) error {
+	if err := ensureWritable(path, perm); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, perm)
 }
 
 func packetFolderName(app *domain.JobApplication, fallbackNow time.Time) string {

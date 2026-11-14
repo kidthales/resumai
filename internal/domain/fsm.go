@@ -27,64 +27,64 @@ type FactLookup interface {
 
 // DraftExperience represents a role section inside an application draft.
 type DraftExperience struct {
-	ID           string       `json:"id,omitempty"`
-	RoleTitle    string       `json:"role_title"`
-	Organization string       `json:"organization"`
-	Location     string       `json:"location,omitempty"`
-	StartDate    string       `json:"start_date,omitempty"`
-	EndDate      string       `json:"end_date,omitempty"`
-	Duration     string       `json:"duration,omitempty"`
-	Highlights   []BulletNode `json:"highlights"`
+	ID           string       `json:"id,omitempty" yaml:"id,omitempty"`
+	RoleTitle    string       `json:"role_title" yaml:"role_title"`
+	Organization string       `json:"organization" yaml:"organization"`
+	Location     string       `json:"location,omitempty" yaml:"location,omitempty"`
+	StartDate    string       `json:"start_date,omitempty" yaml:"start_date,omitempty"`
+	EndDate      string       `json:"end_date,omitempty" yaml:"end_date,omitempty"`
+	Duration     string       `json:"duration,omitempty" yaml:"duration,omitempty"`
+	Highlights   []BulletNode `json:"highlights" yaml:"highlights"`
 }
 
 // DraftEducation represents an academic credential section inside an application draft.
 type DraftEducation struct {
-	ID           string       `json:"id,omitempty"`
-	Institution  string       `json:"institution"`
-	Degree       string       `json:"degree"`
-	FieldOfStudy string       `json:"field_of_study,omitempty"`
-	Location     string       `json:"location,omitempty"`
-	StartDate    string       `json:"start_date,omitempty"`
-	EndDate      string       `json:"end_date,omitempty"`
-	Duration     string       `json:"duration,omitempty"`
-	Honors       string       `json:"honors,omitempty"`
-	Highlights   []BulletNode `json:"highlights,omitempty"`
+	ID           string       `json:"id,omitempty" yaml:"id,omitempty"`
+	Institution  string       `json:"institution" yaml:"institution"`
+	Degree       string       `json:"degree" yaml:"degree"`
+	FieldOfStudy string       `json:"field_of_study,omitempty" yaml:"field_of_study,omitempty"`
+	Location     string       `json:"location,omitempty" yaml:"location,omitempty"`
+	StartDate    string       `json:"start_date,omitempty" yaml:"start_date,omitempty"`
+	EndDate      string       `json:"end_date,omitempty" yaml:"end_date,omitempty"`
+	Duration     string       `json:"duration,omitempty" yaml:"duration,omitempty"`
+	Honors       string       `json:"honors,omitempty" yaml:"honors,omitempty"`
+	Highlights   []BulletNode `json:"highlights,omitempty" yaml:"highlights,omitempty"`
 }
 
 // DraftSkillCategory groups technical skills in a draft.
 type DraftSkillCategory struct {
-	Name   string   `json:"name"`
-	Skills []string `json:"skills"`
+	Name   string   `json:"name" yaml:"name"`
+	Skills []string `json:"skills" yaml:"skills"`
 }
 
 // DraftProject represents a project section inside an application draft.
 type DraftProject struct {
-	Name         string       `json:"name"`
-	Role         string       `json:"role,omitempty"`
-	URL          string       `json:"url,omitempty"`
-	Duration     string       `json:"duration,omitempty"`
-	Technologies []string     `json:"technologies,omitempty"`
-	Highlights   []BulletNode `json:"highlights,omitempty"`
+	Name         string       `json:"name" yaml:"name"`
+	Role         string       `json:"role,omitempty" yaml:"role,omitempty"`
+	URL          string       `json:"url,omitempty" yaml:"url,omitempty"`
+	Duration     string       `json:"duration,omitempty" yaml:"duration,omitempty"`
+	Technologies []string     `json:"technologies,omitempty" yaml:"technologies,omitempty"`
+	Highlights   []BulletNode `json:"highlights,omitempty" yaml:"highlights,omitempty"`
 }
 
 // DraftCustomSection represents an extensible custom section in a draft.
 type DraftCustomSection struct {
-	Title      string       `json:"title"`
-	Highlights []BulletNode `json:"highlights"`
+	Title      string       `json:"title" yaml:"title"`
+	Highlights []BulletNode `json:"highlights" yaml:"highlights"`
 }
 
 // ApplicationDraft represents the tailored resume AST authored prior to rendering.
 type ApplicationDraft struct {
-	ArchetypeID    string               `json:"archetype_id"`
-	Headline       string               `json:"headline,omitempty"`
-	Summary        string               `json:"summary,omitempty"`
-	Experience     []DraftExperience    `json:"experience,omitempty"`
-	Education      []DraftEducation     `json:"education,omitempty"`
-	Skills         []DraftSkillCategory `json:"skills,omitempty"`
-	Projects       []DraftProject       `json:"projects,omitempty"`
-	Certifications []string             `json:"certifications,omitempty"`
-	CustomSections []DraftCustomSection `json:"custom_sections,omitempty"`
-	PageBudget     int                  `json:"page_budget,omitempty"`
+	ArchetypeID    string               `json:"archetype_id" yaml:"archetype_id"`
+	Headline       string               `json:"headline,omitempty" yaml:"headline,omitempty"`
+	Summary        string               `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Experience     []DraftExperience    `json:"experience,omitempty" yaml:"experience,omitempty"`
+	Education      []DraftEducation     `json:"education,omitempty" yaml:"education,omitempty"`
+	Skills         []DraftSkillCategory `json:"skills,omitempty" yaml:"skills,omitempty"`
+	Projects       []DraftProject       `json:"projects,omitempty" yaml:"projects,omitempty"`
+	Certifications []string             `json:"certifications,omitempty" yaml:"certifications,omitempty"`
+	CustomSections []DraftCustomSection `json:"custom_sections,omitempty" yaml:"custom_sections,omitempty"`
+	PageBudget     int                  `json:"page_budget,omitempty" yaml:"page_budget,omitempty"`
 }
 
 // AllBullets returns pointers to every BulletNode across all sections in the draft.
@@ -156,47 +156,47 @@ func (s AuditDiscrepancySeverity) Validate() error {
 
 // FactualDiscrepancy records a single finding from the clean-room fact checker.
 type FactualDiscrepancy struct {
-	BulletID string                   `json:"bullet_id,omitempty"`
-	FactID   string                   `json:"fact_id,omitempty"`
-	Severity AuditDiscrepancySeverity `json:"severity"`
-	Finding  string                   `json:"finding"`
+	BulletID string                   `json:"bullet_id,omitempty" yaml:"bullet_id,omitempty"`
+	FactID   string                   `json:"fact_id,omitempty" yaml:"fact_id,omitempty"`
+	Severity AuditDiscrepancySeverity `json:"severity" yaml:"severity"`
+	Finding  string                   `json:"finding" yaml:"finding"`
 }
 
 // FactCheckReport holds the clean-room resume-fact-checker critic output.
 type FactCheckReport struct {
-	CriticAgent   string               `json:"critic_agent"`
-	Summary       string               `json:"summary"`
-	Discrepancies []FactualDiscrepancy `json:"discrepancies,omitempty"`
-	Passed        bool                 `json:"passed"`
-	RecordedAt    time.Time            `json:"recorded_at"`
+	CriticAgent   string               `json:"critic_agent" yaml:"critic_agent"`
+	Summary       string               `json:"summary" yaml:"summary"`
+	Discrepancies []FactualDiscrepancy `json:"discrepancies,omitempty" yaml:"discrepancies,omitempty"`
+	Passed        bool                 `json:"passed" yaml:"passed"`
+	RecordedAt    time.Time            `json:"recorded_at" yaml:"recorded_at"`
 }
 
 // AlignmentCheckReport holds the clean-room resume-alignment-checker critic output.
 type AlignmentCheckReport struct {
-	CriticAgent     string    `json:"critic_agent"`
-	Summary         string    `json:"summary"`
-	MatchedSignals  []string  `json:"matched_signals,omitempty"`
-	MissingSignals  []string  `json:"missing_signals,omitempty"`
-	Recommendations []string  `json:"recommendations,omitempty"`
-	Passed          bool      `json:"passed"`
-	RecordedAt      time.Time `json:"recorded_at"`
+	CriticAgent     string    `json:"critic_agent" yaml:"critic_agent"`
+	Summary         string    `json:"summary" yaml:"summary"`
+	MatchedSignals  []string  `json:"matched_signals,omitempty" yaml:"matched_signals,omitempty"`
+	MissingSignals  []string  `json:"missing_signals,omitempty" yaml:"missing_signals,omitempty"`
+	Recommendations []string  `json:"recommendations,omitempty" yaml:"recommendations,omitempty"`
+	Passed          bool      `json:"passed" yaml:"passed"`
+	RecordedAt      time.Time `json:"recorded_at" yaml:"recorded_at"`
 }
 
 // AuditBundle aggregates both required clean-room critic reports for an application draft.
 type AuditBundle struct {
-	FactCheck      *FactCheckReport      `json:"fact_check"`
-	AlignmentCheck *AlignmentCheckReport `json:"alignment_check"`
+	FactCheck      *FactCheckReport      `json:"fact_check" yaml:"fact_check"`
+	AlignmentCheck *AlignmentCheckReport `json:"alignment_check" yaml:"alignment_check"`
 }
 
 // ExportRecord stores rendered packet artifact paths and page-budget telemetry.
 type ExportRecord struct {
-	PacketDir  string    `json:"packet_dir"`
-	HTMLPath   string    `json:"html_path"`
-	DocxPath   string    `json:"docx_path"`
-	PDFPath    string    `json:"pdf_path"`
-	PageCount  int       `json:"page_count"`
-	MaxPages   int       `json:"max_pages"`
-	ExportedAt time.Time `json:"exported_at"`
+	PacketDir  string    `json:"packet_dir" yaml:"packet_dir"`
+	HTMLPath   string    `json:"html_path" yaml:"html_path"`
+	DocxPath   string    `json:"docx_path" yaml:"docx_path"`
+	PDFPath    string    `json:"pdf_path" yaml:"pdf_path"`
+	PageCount  int       `json:"page_count" yaml:"page_count"`
+	MaxPages   int       `json:"max_pages" yaml:"max_pages"`
+	ExportedAt time.Time `json:"exported_at" yaml:"exported_at"`
 }
 
 // NewTriagedApplication creates a new JobApplication in StateTriaged after validating the dossier.
@@ -354,7 +354,7 @@ func (a *JobApplication) RecordAudits(bundle AuditBundle) error {
 }
 
 // PromoteReady transitions Audited -> ReadyToRender, enforcing:
-// 1. Both audit reports attached, with zero High factual discrepancies.
+// 1. Both audit reports attached and passed (Passed == true), with zero High factual discrepancies.
 // 2. Zero unresolved [METRIC: tokens across headline, summary, and bullets.
 // 3. 100% of cited career facts resolve and are verified in the live vault.
 func (a *JobApplication) PromoteReady(lookup FactLookup) error {
@@ -372,6 +372,13 @@ func (a *JobApplication) PromoteReady(lookup FactLookup) error {
 	}
 	if lookup == nil {
 		return fmt.Errorf("%w: fact lookup is required", ErrUnverifiedFactOrPlaceholder)
+	}
+
+	if !a.Audits.FactCheck.Passed {
+		return fmt.Errorf("%w: fact-check audit did not pass (%s)", ErrUnverifiedFactOrPlaceholder, a.Audits.FactCheck.Summary)
+	}
+	if !a.Audits.AlignmentCheck.Passed {
+		return fmt.Errorf("%w: alignment-check audit did not pass (%s)", ErrUnverifiedFactOrPlaceholder, a.Audits.AlignmentCheck.Summary)
 	}
 
 	for _, d := range a.Audits.FactCheck.Discrepancies {
