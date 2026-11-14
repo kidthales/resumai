@@ -500,3 +500,91 @@ func TestApplicationLifecycleEndToEnd(t *testing.T) {
 		t.Fatalf("expected ErrAlreadySubmitted on duplicate submit, got isError=%v text=%s", res.IsError, res.Content[0].Text)
 	}
 }
+
+func TestGetAuditBundleDeterministicOrder(t *testing.T) {
+	_, srv := newTestVaultAndServer(t)
+
+	callToolJSON(t, srv, "resumai_save_organization", map[string]any{"id": "org-z", "name": "Zulu Corp"})
+	callToolJSON(t, srv, "resumai_save_organization", map[string]any{"id": "org-a", "name": "Alpha Corp"})
+	callToolJSON(t, srv, "resumai_save_organization", map[string]any{"id": "org-m", "name": "Mike Corp"})
+
+	callToolJSON(t, srv, "resumai_save_role", map[string]any{"id": "role-z", "org_id": "org-z", "title": "Engineer Z"})
+	callToolJSON(t, srv, "resumai_save_role", map[string]any{"id": "role-a", "org_id": "org-a", "title": "Engineer A"})
+	callToolJSON(t, srv, "resumai_save_role", map[string]any{"id": "role-m", "org_id": "org-m", "title": "Engineer M"})
+
+	callToolJSON(t, srv, "resumai_save_fact", map[string]any{
+		"id": "fact-z", "role_id": "role-z", "headline": "Z", "details": "Did Z.", "epistemic_state": "verified",
+	})
+	callToolJSON(t, srv, "resumai_save_fact", map[string]any{
+		"id": "fact-a", "role_id": "role-a", "headline": "A", "details": "Did A.", "epistemic_state": "verified",
+	})
+	callToolJSON(t, srv, "resumai_save_fact", map[string]any{
+		"id": "fact-m", "role_id": "role-m", "headline": "M", "details": "Did M.", "epistemic_state": "verified",
+	})
+	callToolJSON(t, srv, "resumai_save_archetype", map[string]any{"id": "arch-1", "name": "Systems"})
+
+	res, _ := callToolJSON(t, srv, "resumai_save_triage", map[string]any{
+		"application_id": "app-sort",
+		"dossier": map[string]any{
+			"role_title": "Staff Engineer",
+			"company":    "Acme",
+			"raw_jd":     "Build systems.",
+		},
+	})
+	if res.IsError {
+		t.Fatalf("save_triage failed: %s", res.Content[0].Text)
+	}
+
+	res, _ = callToolJSON(t, srv, "resumai_save_draft", map[string]any{
+		"application_id": "app-sort",
+		"draft": map[string]any{
+			"archetype_id": "arch-1",
+			"experience": []map[string]any{
+				{
+					"role_title":   "Engineers",
+					"organization": "Multi",
+					"highlights": []map[string]any{
+						{"id": "b1", "text": "Did Z, A, M.", "fact_ids": []string{"fact-z", "fact-a", "fact-m"}},
+					},
+				},
+			},
+			"page_budget": 1,
+		},
+	})
+	if res.IsError {
+		t.Fatalf("save_draft failed: %s", res.Content[0].Text)
+	}
+
+	for iter := 0; iter < 10; iter++ {
+		res, bundle := callToolJSON(t, srv, "resumai_get_audit_bundle", map[string]any{
+			"application_id": "app-sort",
+		})
+		if res.IsError {
+			t.Fatalf("get_audit_bundle failed: %s", res.Content[0].Text)
+		}
+
+		rolesRaw, ok := bundle["roles"].([]any)
+		if !ok || len(rolesRaw) != 3 {
+			t.Fatalf("expected 3 roles, got %v", bundle["roles"])
+		}
+		expectedRoles := []string{"role-a", "role-m", "role-z"}
+		for i, want := range expectedRoles {
+			gotID := rolesRaw[i].(map[string]any)["id"]
+			if gotID != want {
+				t.Fatalf("iter %d: roles[%d].id = %v, want %s", iter, i, gotID, want)
+			}
+		}
+
+		orgsRaw, ok := bundle["organizations"].([]any)
+		if !ok || len(orgsRaw) != 3 {
+			t.Fatalf("expected 3 organizations, got %v", bundle["organizations"])
+		}
+		expectedOrgs := []string{"org-a", "org-m", "org-z"}
+		for i, want := range expectedOrgs {
+			gotID := orgsRaw[i].(map[string]any)["id"]
+			if gotID != want {
+				t.Fatalf("iter %d: organizations[%d].id = %v, want %s", iter, i, gotID, want)
+			}
+		}
+	}
+}

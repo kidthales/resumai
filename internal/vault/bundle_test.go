@@ -122,13 +122,17 @@ func TestBundleRoundtripAndAirGap(t *testing.T) {
 		RoleTitle: "Staff Systems Engineer",
 		Company:   "Stark Enterprises",
 		RawJD:     "Seeking staff engineer...",
-		State:     domain.StateSubmitted,
+		State:     domain.StateExported,
 	}
 	if err := v1.SaveApplication(ctx, app); err != nil {
 		t.Fatalf("save app: %v", err)
 	}
 	if err := v1.RecordApplicationCitations(ctx, app.ID, []string{fact1.ID}); err != nil {
 		t.Fatalf("record citations: %v", err)
+	}
+	app.State = domain.StateSubmitted
+	if err := v1.SaveApplication(ctx, app); err != nil {
+		t.Fatalf("advance app to submitted: %v", err)
 	}
 
 	// 2. Test Dump WITHOUT PII (air-gap default)
@@ -247,10 +251,12 @@ func TestSoftArchiveProvenanceGuardOnReload(t *testing.T) {
 		ID:        "app-aim-01",
 		RoleTitle: "Lead Quantum Engineer",
 		Company:   "Stark Quantum",
-		State:     domain.StateSubmitted,
+		State:     domain.StateExported,
 	}
 	_ = v.SaveApplication(ctx, app)
 	_ = v.RecordApplicationCitations(ctx, app.ID, []string{factSubmitted.ID})
+	app.State = domain.StateSubmitted
+	_ = v.SaveApplication(ctx, app)
 
 	// Dump bundle
 	bundleDir := filepath.Join(t.TempDir(), "aim-bundle")
@@ -1042,7 +1048,7 @@ func TestBundleRoundtripMigration0002AndSubmittedImmutability(t *testing.T) {
 		RoleTitle:   "Principal Go Engineer",
 		Company:     "Acme Corp",
 		RawJD:       "Seeking Principal Go Engineer for pure-Go SQLite systems.",
-		State:       domain.StateSubmitted,
+		State:       domain.StateExported,
 		ArchetypeID: "arch-1",
 		Dossier: &domain.OpportunityDossier{
 			RoleTitle:  "Principal Go Engineer",
@@ -1104,6 +1110,10 @@ func TestBundleRoundtripMigration0002AndSubmittedImmutability(t *testing.T) {
 	}
 	if err := v1.RecordApplicationCitations(ctx, app.ID, []string{"fact-1"}); err != nil {
 		t.Fatalf("RecordApplicationCitations: %v", err)
+	}
+	app.State = domain.StateSubmitted
+	if err := v1.SaveApplication(ctx, app); err != nil {
+		t.Fatalf("advance app to submitted: %v", err)
 	}
 
 	// 1. Dump and Load into fresh vault: all Migration 0002 fields must round-trip faithfully.

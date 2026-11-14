@@ -1271,23 +1271,48 @@ func unmarshalOptionalJSON[T any](raw string, dest **T) error {
 }
 
 // DeleteApplication deletes an application by ID.
+// Returns domain.ErrAlreadySubmitted if the persisted application is in Submitted state.
 func (v *CareerVault) DeleteApplication(ctx context.Context, id string) error {
-	res, err := v.db.ExecContext(ctx, `DELETE FROM applications WHERE id = ?;`, id)
-	if err != nil {
-		return fmt.Errorf("delete application: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return domain.ErrNotFound
-	}
-	return nil
+	return v.WithTx(ctx, func(tx *sql.Tx) error {
+		var existingState string
+		err := tx.QueryRowContext(ctx, `SELECT state FROM applications WHERE id = ?;`, id).Scan(&existingState)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("check application state: %w", err)
+		}
+		if domain.ApplicationState(existingState) == domain.StateSubmitted {
+			return domain.ErrAlreadySubmitted
+		}
+
+		res, err := tx.ExecContext(ctx, `DELETE FROM applications WHERE id = ?;`, id)
+		if err != nil {
+			return fmt.Errorf("delete application: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			return domain.ErrNotFound
+		}
+		return nil
+	})
 }
 
 // --- Citations & Soft-Archive Provenance Guards ---
 
 // RecordApplicationCitations associates career facts as citations for a job application.
+// Returns domain.ErrAlreadySubmitted if the persisted application is in Submitted state.
 func (v *CareerVault) RecordApplicationCitations(ctx context.Context, appID string, factIDs []string) error {
 	return v.WithTx(ctx, func(tx *sql.Tx) error {
+		var existingState string
+		err := tx.QueryRowContext(ctx, `SELECT state FROM applications WHERE id = ?;`, appID).Scan(&existingState)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("check application state: %w", err)
+		}
+		if err == nil && domain.ApplicationState(existingState) == domain.StateSubmitted {
+			return domain.ErrAlreadySubmitted
+		}
+
 		// Clear existing citations for this application
 		if _, err := tx.ExecContext(ctx, `DELETE FROM application_citations WHERE application_id = ?;`, appID); err != nil {
 			return fmt.Errorf("delete old citations: %w", err)

@@ -258,13 +258,15 @@ func (a *JobApplication) PassRole(rationale string) error {
 	return nil
 }
 
-// SaveDraft transitions Triaged (or re-drafts from Drafted/Audited) -> Drafted,
+// SaveDraft transitions Triaged (or re-drafts from Drafted/Audited/ReadyToRender/Exported) -> Drafted,
 // verifying a valid archetype_id and resolving every BulletNode.fact_ids to real career facts.
 func (a *JobApplication) SaveDraft(draft ApplicationDraft, resolver DraftResolver) error {
 	if err := a.guardNotSubmitted(); err != nil {
 		return err
 	}
-	if a.State != StateTriaged && a.State != StateDrafted && a.State != StateAudited {
+	switch a.State {
+	case StateTriaged, StateDrafted, StateAudited, StateReadyToRender, StateExported:
+	default:
 		return fmt.Errorf("%w: cannot save draft from state %q", ErrInvalidStateTransition, a.State)
 	}
 	if resolver == nil {
@@ -308,8 +310,9 @@ func (a *JobApplication) SaveDraft(draft ApplicationDraft, resolver DraftResolve
 
 	a.ArchetypeID = archID
 	a.Draft = &draftCopy
-	// Any draft modification invalidates prior audit reports.
+	// Any draft modification invalidates prior audit reports and exported packet metadata.
 	a.Audits = nil
+	a.Export = nil
 	a.State = StateDrafted
 	a.UpdatedAt = time.Now().UTC()
 	return nil

@@ -360,7 +360,7 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	if err := writeFileEnsuringWritable(auditPath, []byte(auditMD), 0644); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write audit.md: %w", err), pii)
 	}
-	if app.State == domain.StateExported {
+	if app.State == domain.StateReadyToRender || app.State == domain.StateExported {
 		briefPath := filepath.Join(packetDir, "interview_brief.md")
 		if info, serr := os.Stat(briefPath); serr == nil && !info.IsDir() {
 			_ = ensureWritable(briefPath, 0644)

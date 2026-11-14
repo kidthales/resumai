@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -58,7 +59,7 @@ func (s *Server) registerApplicationTools() {
 
 	s.registerTool(Tool{
 		Name:        "resumai_save_draft",
-		Description: "Save a tailored ApplicationDraft on a Triaged/Drafted/Audited application, verifying archetype_id and grounding every bullet fact_id in CareerVault.",
+		Description: "Save a tailored ApplicationDraft on a Triaged/Drafted/Audited/ReadyToRender/Exported application, verifying archetype_id and grounding every bullet fact_id in CareerVault.",
 		InputSchema: schemaObject(map[string]any{
 			"application_id": strProp("JobApplication ID"),
 			"draft": map[string]any{
@@ -378,10 +379,16 @@ func (s *Server) handleGetAuditBundle(ctx context.Context, raw json.RawMessage) 
 	for _, r := range roleMap {
 		roles = append(roles, r)
 	}
+	sort.Slice(roles, func(i, j int) bool {
+		return roles[i].ID < roles[j].ID
+	})
 	orgs := make([]*domain.Organization, 0, len(orgMap))
 	for _, o := range orgMap {
 		orgs = append(orgs, o)
 	}
+	sort.Slice(orgs, func(i, j int) bool {
+		return orgs[i].ID < orgs[j].ID
+	})
 
 	var archetype *domain.Archetype
 	if app.ArchetypeID != "" {

@@ -529,3 +529,57 @@ func TestJobApplicationFSM_ExportAndTransitionGuards(t *testing.T) {
 		t.Fatalf("expected ErrMissingSubmissionArtifact for empty brief path, got %v", err)
 	}
 }
+
+func TestJobApplicationFSM_RedraftFromReadyToRenderAndExported(t *testing.T) {
+	resolver := newTestResolver()
+
+	// Empty state cannot SaveDraft directly.
+	uninitialized := &JobApplication{ID: "app-uninit"}
+	if err := uninitialized.SaveDraft(validTestDraft(), resolver); !errors.Is(err, ErrInvalidStateTransition) {
+		t.Fatalf("expected ErrInvalidStateTransition from empty state, got %v", err)
+	}
+
+	// ReadyToRender -> SaveDraft clears Audits and returns to Drafted.
+	app, _ := NewTriagedApplication("app-redraft-ready", validTestDossier())
+	if err := app.SaveDraft(validTestDraft(), resolver); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
+	}
+	if err := app.RecordAudits(validTestAudits()); err != nil {
+		t.Fatalf("RecordAudits: %v", err)
+	}
+	if err := app.PromoteReady(resolver); err != nil {
+		t.Fatalf("PromoteReady: %v", err)
+	}
+	if err := app.SaveDraft(validTestDraft(), resolver); err != nil {
+		t.Fatalf("SaveDraft from ReadyToRender failed: %v", err)
+	}
+	if app.State != StateDrafted || app.Audits != nil || app.Export != nil {
+		t.Fatalf("expected StateDrafted with nil Audits/Export, got state=%q audits=%v export=%v", app.State, app.Audits, app.Export)
+	}
+
+	// Re-audit, promote, and export -> Exported -> SaveDraft clears Audits & Export.
+	if err := app.RecordAudits(validTestAudits()); err != nil {
+		t.Fatalf("RecordAudits after redraft: %v", err)
+	}
+	if err := app.PromoteReady(resolver); err != nil {
+		t.Fatalf("PromoteReady after redraft: %v", err)
+	}
+	pii := &PIIHeader{FullName: "Jane Candidate"}
+	export := ExportRecord{
+		PacketDir: "/tmp/packet",
+		HTMLPath:  "/tmp/packet/resume.html",
+		DocxPath:  "/tmp/packet/resume.docx",
+		PDFPath:   "/tmp/packet/resume.pdf",
+		PageCount: 1,
+		MaxPages:  1,
+	}
+	if err := app.MarkExported(pii, export); err != nil {
+		t.Fatalf("MarkExported: %v", err)
+	}
+	if err := app.SaveDraft(validTestDraft(), resolver); err != nil {
+		t.Fatalf("SaveDraft from Exported failed: %v", err)
+	}
+	if app.State != StateDrafted || app.Audits != nil || app.Export != nil {
+		t.Fatalf("expected StateDrafted with nil Audits/Export after Exported redraft, got state=%q audits=%v export=%v", app.State, app.Audits, app.Export)
+	}
+}

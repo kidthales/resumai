@@ -545,13 +545,19 @@ func TestApplicationFSMFieldsPersistence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("MarkExported: %v", err)
 	}
+	if err := v.SaveApplication(ctx, app); err != nil {
+		t.Fatalf("SaveApplication (Exported): %v", err)
+	}
+	if err := v.RecordApplicationCitations(ctx, app.ID, []string{fact.ID}); err != nil {
+		t.Fatalf("RecordApplicationCitations before submit: %v", err)
+	}
 	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	if err := app.MarkSubmitted(sha, "/tmp/packet/interview_brief.md"); err != nil {
 		t.Fatalf("MarkSubmitted: %v", err)
 	}
 
 	if err := v.SaveApplication(ctx, app); err != nil {
-		t.Fatalf("SaveApplication: %v", err)
+		t.Fatalf("SaveApplication (Submitted): %v", err)
 	}
 
 	got, err := v.GetApplicationContext(ctx, app.ID)
@@ -571,8 +577,24 @@ func TestApplicationFSMFieldsPersistence(t *testing.T) {
 		t.Errorf("draft mismatch: %+v", got.Draft)
 	}
 
-	// Submitted applications must be immutable in storage as well.
+	// Submitted applications must be immutable in storage as well (SaveApplication, DeleteApplication, RecordApplicationCitations).
 	if err := v.SaveApplication(ctx, got); !errors.Is(err, domain.ErrAlreadySubmitted) {
 		t.Fatalf("expected ErrAlreadySubmitted on update to Submitted app, got %v", err)
+	}
+	if err := v.DeleteApplication(ctx, got.ID); !errors.Is(err, domain.ErrAlreadySubmitted) {
+		t.Fatalf("expected ErrAlreadySubmitted on DeleteApplication for Submitted app, got %v", err)
+	}
+	if err := v.RecordApplicationCitations(ctx, got.ID, nil); !errors.Is(err, domain.ErrAlreadySubmitted) {
+		t.Fatalf("expected ErrAlreadySubmitted on RecordApplicationCitations(nil) for Submitted app, got %v", err)
+	}
+	citations, err := v.GetCitationsForApp(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("GetCitationsForApp: %v", err)
+	}
+	if len(citations) != 1 || citations[0] != fact.ID {
+		t.Fatalf("expected citations for Submitted app to remain intact, got %v", citations)
+	}
+	if err := v.DeleteApplication(ctx, "app-nonexistent"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound deleting missing application, got %v", err)
 	}
 }

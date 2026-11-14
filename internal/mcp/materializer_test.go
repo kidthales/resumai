@@ -434,6 +434,52 @@ func TestLocalMaterializer_MissingPIIAndPageBudgetOverflow(t *testing.T) {
 		t.Fatalf("expected error from leaking PDF renderer")
 	}
 	assertNoSentinelPII(t, err.Error(), pii)
+
+	// 4. Recover from ReadyToRender overflow trap via SaveDraft -> RecordAudits -> PromoteReady -> Render,
+	// then also verify pre-submission re-drafting from Exported clears stale Export/Audits and re-renders.
+	trimmedDraft := domain.ApplicationDraft{
+		ArchetypeID: "arch-1",
+		Summary:     "Concise summary.",
+		Experience: []domain.DraftExperience{
+			{
+				RoleTitle:    "Engineer",
+				Organization: "Prior Co",
+				Highlights:   []domain.BulletNode{{ID: "b-1", Text: "Built 10k RPS API.", FactIDs: []string{"fact-1"}}},
+			},
+		},
+		PageBudget: 1,
+	}
+	if err := app.SaveDraft(trimmedDraft, v); err != nil {
+		t.Fatalf("SaveDraft recovery from ReadyToRender failed: %v", err)
+	}
+	if err := app.RecordAudits(domain.AuditBundle{
+		FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
+		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
+	}); err != nil {
+		t.Fatalf("RecordAudits after recovery: %v", err)
+	}
+	if err := app.PromoteReady(v); err != nil {
+		t.Fatalf("PromoteReady after recovery: %v", err)
+	}
+
+	okPDF := func(_ context.Context, _ *render.ResumeDocument, _ *domain.PIIHeader, _ *render.ThemeManifest, _ int) ([]byte, *render.LayoutTelemetry, error) {
+		return []byte("%PDF-1.4\n"), &render.LayoutTelemetry{PageCount: 1, LastPageFillRatio: 0.78}, nil
+	}
+	okMat := mcp.NewLocalMaterializer(v, mcp.WithBaseOutputDir(baseDir), mcp.WithPDFRenderer(okPDF))
+	if _, err := okMat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app}); err != nil {
+		t.Fatalf("RenderAndMarkExported after overflow recovery failed: %v", err)
+	}
+	if app.State != domain.StateExported || app.Export == nil {
+		t.Fatalf("expected StateExported with Export populated, got state=%q export=%v", app.State, app.Export)
+	}
+
+	// Pre-submission re-draft from Exported must succeed and clear Audits and Export.
+	if err := app.SaveDraft(trimmedDraft, v); err != nil {
+		t.Fatalf("SaveDraft from Exported failed: %v", err)
+	}
+	if app.State != domain.StateDrafted || app.Audits != nil || app.Export != nil {
+		t.Fatalf("expected StateDrafted with cleared Audits and Export, got state=%q audits=%v export=%v", app.State, app.Audits, app.Export)
+	}
 }
 
 func TestLocalMaterializer_DirectoryJailAndPartialLockRecovery(t *testing.T) {
