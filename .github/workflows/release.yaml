@@ -1,0 +1,100 @@
+---
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify Release via CI Pipeline
+    uses: ./.github/workflows/ci.yaml
+    permissions:
+      contents: read
+
+  release:
+    name: Build & Publish Release Assets
+    needs: [verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: "go.mod"
+          check-latest: false
+          cache: true
+
+      - name: Build cross-platform stripped release binaries
+        run: |
+          VERSION="${TAG#v}"
+          COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          LDFLAGS="-s -w -X github.com/kidthales/resumai/internal/version.Version=${VERSION} -X github.com/kidthales/resumai/internal/version.Commit=${COMMIT} -X github.com/kidthales/resumai/internal/version.Date=${DATE}"
+
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o resumai-windows-amd64.exe ./cmd/resumai
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o resumai-linux-amd64 ./cmd/resumai
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o resumai-linux-arm64 ./cmd/resumai
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o resumai-darwin-amd64 ./cmd/resumai
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o resumai-darwin-arm64 ./cmd/resumai
+
+      - name: Generate SHA256SUMS
+        run: |
+          sha256sum \
+            resumai-windows-amd64.exe \
+            resumai-linux-amd64 \
+            resumai-linux-arm64 \
+            resumai-darwin-amd64 \
+            resumai-darwin-arm64 > SHA256SUMS
+
+      - name: Verify resumai version output
+        run: |
+          VERSION="${TAG#v}"
+          chmod +x ./resumai-linux-amd64
+          OUTPUT=$(./resumai-linux-amd64 version)
+          echo "Binary version output: $OUTPUT"
+          if [[ "$OUTPUT" != *"$VERSION"* ]]; then
+            echo "Error: version output does not contain version $VERSION"
+            exit 1
+          fi
+
+      - name: Attach release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              resumai-windows-amd64.exe \
+              resumai-linux-amd64 \
+              resumai-linux-arm64 \
+              resumai-darwin-amd64 \
+              resumai-darwin-arm64 \
+              SHA256SUMS \
+              --clobber
+          else
+            gh release create "$TAG" \
+              resumai-windows-amd64.exe \
+              resumai-linux-amd64 \
+              resumai-linux-arm64 \
+              resumai-darwin-amd64 \
+              resumai-darwin-arm64 \
+              SHA256SUMS \
+              --title "$TAG" \
+              --generate-notes
+          fi
