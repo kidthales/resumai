@@ -215,6 +215,8 @@ func TestMCPSubcommandStdio(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"resumai_vault_status","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"resumai_save_triage","arguments":{"application_id":"app-cli","dossier":{"role_title":"Staff Go","company":"Acme","raw_jd":"Go systems"}}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"resumai_render_bundle","arguments":{"application_id":"app-cli"}}}`,
 	}, "\n") + "\n")
 
 	var out, errOut bytes.Buffer
@@ -224,8 +226,8 @@ func TestMCPSubcommandStdio(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 JSON-RPC responses on stdout, got %d: %s", len(lines), out.String())
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 JSON-RPC responses on stdout, got %d: %s", len(lines), out.String())
 	}
 	if !strings.Contains(lines[0], `"protocolVersion"`) {
 		t.Errorf("expected initialize response in line 0, got: %s", lines[0])
@@ -242,5 +244,11 @@ func TestMCPSubcommandStdio(t *testing.T) {
 	}
 	if len(toolResp.Result.Content) == 0 || !strings.Contains(toolResp.Result.Content[0].Text, `"organizations_count": 0`) {
 		t.Errorf("expected vault status JSON in line 1 content, got: %+v", toolResp)
+	}
+	if strings.Contains(lines[3], "packet materializer is not configured") {
+		t.Errorf("expected PacketMaterializer to be wired in runMCPWithIO, got: %s", lines[3])
+	}
+	if !strings.Contains(lines[3], "invalid application state transition") {
+		t.Errorf("expected state transition error from wired materializer path, got: %s", lines[3])
 	}
 }

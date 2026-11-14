@@ -46,7 +46,8 @@ func runMCPWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer, glob
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := mcp.NewServer(v)
+	mat := mcp.NewLocalMaterializer(v)
+	srv := mcp.NewServer(v, mcp.WithPacketMaterializer(mat))
 	if err := srv.ServeStdio(ctx, stdin, stdout); err != nil && err != context.Canceled {
 		fmt.Fprintf(stderr, "mcp server error: %v\n", err)
 		return 1
