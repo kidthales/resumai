@@ -206,3 +206,41 @@ func TestPIISubcommandErrors(t *testing.T) {
 		t.Errorf("expected usage output, got: %s", out.String())
 	}
 }
+
+func TestMCPSubcommandStdio(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "mcp_cli_test.db")
+
+	in := strings.NewReader(strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"resumai_vault_status","arguments":{}}}`,
+	}, "\n") + "\n")
+
+	var out, errOut bytes.Buffer
+	code := runMCPWithIO([]string{"--vault", dbPath}, in, &out, &errOut, "")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, errOut.String())
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 JSON-RPC responses on stdout, got %d: %s", len(lines), out.String())
+	}
+	if !strings.Contains(lines[0], `"protocolVersion"`) {
+		t.Errorf("expected initialize response in line 0, got: %s", lines[0])
+	}
+	var toolResp struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &toolResp); err != nil {
+		t.Fatalf("failed to unmarshal tool response: %v; raw: %s", err, lines[1])
+	}
+	if len(toolResp.Result.Content) == 0 || !strings.Contains(toolResp.Result.Content[0].Text, `"organizations_count": 0`) {
+		t.Errorf("expected vault status JSON in line 1 content, got: %+v", toolResp)
+	}
+}

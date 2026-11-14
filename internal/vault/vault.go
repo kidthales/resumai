@@ -14,10 +14,49 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Vault defines the contract for persistent career facts and job applications.
+// Vault defines the air-gapped contract for persistent career facts, vault curation,
+// and job applications. Contact PII methods (GetPII, SetPII) are strictly excluded.
 type Vault interface {
+	domain.DraftResolver
+	domain.FactLookup
+
 	GetCareerFact(id string) (*domain.CareerFact, error)
 	GetApplication(id string) (*domain.JobApplication, error)
+
+	HasPII(ctx context.Context) (bool, error)
+
+	GetCandidateLogistics(ctx context.Context) (*domain.CandidateLogistics, error)
+	SetCandidateLogistics(ctx context.Context, cl *domain.CandidateLogistics) error
+
+	SaveOrganization(ctx context.Context, org *domain.Organization) error
+	GetOrganization(ctx context.Context, id string) (*domain.Organization, error)
+	ListOrganizations(ctx context.Context) ([]*domain.Organization, error)
+
+	SaveRole(ctx context.Context, role *domain.Role) error
+	GetRole(ctx context.Context, id string) (*domain.Role, error)
+	ListRoles(ctx context.Context) ([]*domain.Role, error)
+	ListRolesByOrg(ctx context.Context, orgID string) ([]*domain.Role, error)
+
+	SaveCareerFact(ctx context.Context, fact *domain.CareerFact) error
+	GetCareerFactContext(ctx context.Context, id string) (*domain.CareerFact, error)
+	ListCareerFacts(ctx context.Context) ([]*domain.CareerFact, error)
+	ListCareerFactsByRole(ctx context.Context, roleID string) ([]*domain.CareerFact, error)
+	ArchiveCareerFact(ctx context.Context, id string) error
+
+	SaveEducation(ctx context.Context, edu *domain.Education) error
+	GetEducation(ctx context.Context, id string) (*domain.Education, error)
+	ListEducation(ctx context.Context) ([]*domain.Education, error)
+
+	SaveArchetype(ctx context.Context, arch *domain.Archetype) error
+	GetArchetype(ctx context.Context, id string) (*domain.Archetype, error)
+	ListArchetypes(ctx context.Context) ([]*domain.Archetype, error)
+
+	SaveApplication(ctx context.Context, app *domain.JobApplication) error
+	GetApplicationContext(ctx context.Context, id string) (*domain.JobApplication, error)
+	ListApplications(ctx context.Context) ([]*domain.JobApplication, error)
+
+	RecordApplicationCitations(ctx context.Context, appID string, factIDs []string) error
+	GetCitationsForApp(ctx context.Context, appID string) ([]string, error)
 }
 
 // CareerVault provides embedded SQLite persistence for career data and job applications.
@@ -130,6 +169,17 @@ func (v *CareerVault) WithTx(ctx context.Context, fn func(tx *sql.Tx) error) err
 }
 
 // --- PII Header (Air-Gapped) ---
+
+// HasPII reports whether a non-empty candidate PII header has been configured locally
+// without returning any PII field values across the air-gap boundary.
+func (v *CareerVault) HasPII(ctx context.Context) (bool, error) {
+	var count int
+	err := v.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM pii_header WHERE id = 1 AND TRIM(full_name) != '';`).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("check pii configured: %w", err)
+	}
+	return count > 0, nil
+}
 
 // GetPII retrieves the air-gapped candidate PII header. Returns ErrNotFound if not set.
 func (v *CareerVault) GetPII(ctx context.Context) (*domain.PIIHeader, error) {
@@ -605,6 +655,11 @@ func (v *CareerVault) GetCareerFact(id string) (*domain.CareerFact, error) {
 	return v.GetCareerFactContext(context.Background(), id)
 }
 
+// GetCareerFactByID resolves a career fact by ID (satisfies domain.DraftResolver and domain.FactLookup).
+func (v *CareerVault) GetCareerFactByID(id string) (*domain.CareerFact, error) {
+	return v.GetCareerFactContext(context.Background(), id)
+}
+
 // GetCareerFactContext retrieves a career fact by ID with context.
 func (v *CareerVault) GetCareerFactContext(ctx context.Context, id string) (*domain.CareerFact, error) {
 	query := `
@@ -903,6 +958,11 @@ func (v *CareerVault) SaveArchetype(ctx context.Context, arch *domain.Archetype)
 	return nil
 }
 
+// GetArchetypeByID resolves an archetype by ID (satisfies domain.DraftResolver).
+func (v *CareerVault) GetArchetypeByID(id string) (*domain.Archetype, error) {
+	return v.GetArchetype(context.Background(), id)
+}
+
 // GetArchetype retrieves an archetype by ID.
 func (v *CareerVault) GetArchetype(ctx context.Context, id string) (*domain.Archetype, error) {
 	query := `
@@ -991,10 +1051,21 @@ func (v *CareerVault) DeleteArchetype(ctx context.Context, id string) error {
 // --- Applications ---
 
 // SaveApplication creates or updates a JobApplication.
+// Returns domain.ErrAlreadySubmitted if the existing persisted row is already Submitted.
 func (v *CareerVault) SaveApplication(ctx context.Context, app *domain.JobApplication) error {
 	if app.ID == "" {
 		return errors.New("application ID cannot be empty")
 	}
+
+	var existingState string
+	err := v.db.QueryRowContext(ctx, `SELECT state FROM applications WHERE id = ?;`, app.ID).Scan(&existingState)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check existing application state: %w", err)
+	}
+	if err == nil && domain.ApplicationState(existingState) == domain.StateSubmitted {
+		return domain.ErrAlreadySubmitted
+	}
+
 	now := time.Now().UTC()
 	if app.CreatedAt.IsZero() {
 		app.CreatedAt = now
@@ -1006,9 +1077,35 @@ func (v *CareerVault) SaveApplication(ctx context.Context, app *domain.JobApplic
 		archetypeID = sql.NullString{String: app.ArchetypeID, Valid: true}
 	}
 
+	dossierJSON, err := marshalOptionalJSON(app.Dossier)
+	if err != nil {
+		return fmt.Errorf("marshal dossier: %w", err)
+	}
+	draftJSON, err := marshalOptionalJSON(app.Draft)
+	if err != nil {
+		return fmt.Errorf("marshal draft: %w", err)
+	}
+	auditsJSON, err := marshalOptionalJSON(app.Audits)
+	if err != nil {
+		return fmt.Errorf("marshal audits: %w", err)
+	}
+	exportJSON, err := marshalOptionalJSON(app.Export)
+	if err != nil {
+		return fmt.Errorf("marshal export: %w", err)
+	}
+
+	var submittedAt sql.NullString
+	if app.SubmittedAt != nil && !app.SubmittedAt.IsZero() {
+		submittedAt = sql.NullString{String: app.SubmittedAt.UTC().Format(time.RFC3339), Valid: true}
+	}
+
 	query := `
-	INSERT INTO applications (id, role_title, company, raw_jd, state, rejection_rationale, archetype_id, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO applications (
+		id, role_title, company, raw_jd, state, rejection_rationale, archetype_id,
+		dossier_json, draft_json, audits_json, export_json, bundle_sha256, interview_brief_path, submitted_at,
+		created_at, updated_at
+	)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		role_title = excluded.role_title,
 		company = excluded.company,
@@ -1016,9 +1113,16 @@ func (v *CareerVault) SaveApplication(ctx context.Context, app *domain.JobApplic
 		state = excluded.state,
 		rejection_rationale = excluded.rejection_rationale,
 		archetype_id = excluded.archetype_id,
+		dossier_json = excluded.dossier_json,
+		draft_json = excluded.draft_json,
+		audits_json = excluded.audits_json,
+		export_json = excluded.export_json,
+		bundle_sha256 = excluded.bundle_sha256,
+		interview_brief_path = excluded.interview_brief_path,
+		submitted_at = excluded.submitted_at,
 		updated_at = excluded.updated_at;`
 
-	_, err := v.db.ExecContext(ctx, query,
+	_, err = v.db.ExecContext(ctx, query,
 		app.ID,
 		app.RoleTitle,
 		app.Company,
@@ -1026,6 +1130,13 @@ func (v *CareerVault) SaveApplication(ctx context.Context, app *domain.JobApplic
 		string(app.State),
 		app.RejectionRationale,
 		archetypeID,
+		dossierJSON,
+		draftJSON,
+		auditsJSON,
+		exportJSON,
+		app.BundleSHA256,
+		app.InterviewBriefPath,
+		submittedAt,
 		app.CreatedAt.Format(time.RFC3339),
 		app.UpdatedAt.Format(time.RFC3339),
 	)
@@ -1040,17 +1151,22 @@ func (v *CareerVault) GetApplication(id string) (*domain.JobApplication, error) 
 	return v.GetApplicationContext(context.Background(), id)
 }
 
-// GetApplicationContext retrieves an application by ID with context.
-func (v *CareerVault) GetApplicationContext(ctx context.Context, id string) (*domain.JobApplication, error) {
-	query := `
-	SELECT id, role_title, company, raw_jd, state, rejection_rationale, archetype_id, created_at, updated_at
-	FROM applications WHERE id = ?;`
+const selectApplicationColumns = `
+	id, role_title, company, raw_jd, state, rejection_rationale, archetype_id,
+	dossier_json, draft_json, audits_json, export_json, bundle_sha256, interview_brief_path, submitted_at,
+	created_at, updated_at`
 
+type applicationScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanApplication(s applicationScanner) (*domain.JobApplication, error) {
 	var app domain.JobApplication
 	var stateStr, createdAtStr, updatedAtStr string
-	var archetypeID sql.NullString
+	var archetypeID, submittedAtStr sql.NullString
+	var dossierJSON, draftJSON, auditsJSON, exportJSON string
 
-	err := v.db.QueryRowContext(ctx, query, id).Scan(
+	if err := s.Scan(
 		&app.ID,
 		&app.RoleTitle,
 		&app.Company,
@@ -1058,31 +1174,62 @@ func (v *CareerVault) GetApplicationContext(ctx context.Context, id string) (*do
 		&stateStr,
 		&app.RejectionRationale,
 		&archetypeID,
+		&dossierJSON,
+		&draftJSON,
+		&auditsJSON,
+		&exportJSON,
+		&app.BundleSHA256,
+		&app.InterviewBriefPath,
+		&submittedAtStr,
 		&createdAtStr,
 		&updatedAtStr,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, domain.ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get application: %w", err)
+	); err != nil {
+		return nil, err
 	}
 
 	app.State = domain.ApplicationState(stateStr)
 	if archetypeID.Valid {
 		app.ArchetypeID = archetypeID.String
 	}
+	if err := unmarshalOptionalJSON(dossierJSON, &app.Dossier); err != nil {
+		return nil, fmt.Errorf("unmarshal dossier: %w", err)
+	}
+	if err := unmarshalOptionalJSON(draftJSON, &app.Draft); err != nil {
+		return nil, fmt.Errorf("unmarshal draft: %w", err)
+	}
+	if err := unmarshalOptionalJSON(auditsJSON, &app.Audits); err != nil {
+		return nil, fmt.Errorf("unmarshal audits: %w", err)
+	}
+	if err := unmarshalOptionalJSON(exportJSON, &app.Export); err != nil {
+		return nil, fmt.Errorf("unmarshal export: %w", err)
+	}
+	if submittedAtStr.Valid && submittedAtStr.String != "" {
+		t := parseDBTime(submittedAtStr.String)
+		if !t.IsZero() {
+			app.SubmittedAt = &t
+		}
+	}
 	app.CreatedAt = parseDBTime(createdAtStr)
 	app.UpdatedAt = parseDBTime(updatedAtStr)
 	return &app, nil
 }
 
+// GetApplicationContext retrieves an application by ID with context.
+func (v *CareerVault) GetApplicationContext(ctx context.Context, id string) (*domain.JobApplication, error) {
+	query := `SELECT` + selectApplicationColumns + ` FROM applications WHERE id = ?;`
+	app, err := scanApplication(v.db.QueryRowContext(ctx, query, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get application: %w", err)
+	}
+	return app, nil
+}
+
 // ListApplications lists all job applications.
 func (v *CareerVault) ListApplications(ctx context.Context) ([]*domain.JobApplication, error) {
-	query := `
-	SELECT id, role_title, company, raw_jd, state, rejection_rationale, archetype_id, created_at, updated_at
-	FROM applications ORDER BY created_at DESC;`
-
+	query := `SELECT` + selectApplicationColumns + ` FROM applications ORDER BY created_at DESC;`
 	rows, err := v.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("list applications: %w", err)
@@ -1091,33 +1238,36 @@ func (v *CareerVault) ListApplications(ctx context.Context) ([]*domain.JobApplic
 
 	var list []*domain.JobApplication
 	for rows.Next() {
-		var app domain.JobApplication
-		var stateStr, createdAtStr, updatedAtStr string
-		var archetypeID sql.NullString
-
-		if err := rows.Scan(
-			&app.ID,
-			&app.RoleTitle,
-			&app.Company,
-			&app.RawJD,
-			&stateStr,
-			&app.RejectionRationale,
-			&archetypeID,
-			&createdAtStr,
-			&updatedAtStr,
-		); err != nil {
+		app, err := scanApplication(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan application: %w", err)
 		}
-
-		app.State = domain.ApplicationState(stateStr)
-		if archetypeID.Valid {
-			app.ArchetypeID = archetypeID.String
-		}
-		app.CreatedAt = parseDBTime(createdAtStr)
-		app.UpdatedAt = parseDBTime(updatedAtStr)
-		list = append(list, &app)
+		list = append(list, app)
 	}
 	return list, rows.Err()
+}
+
+func marshalOptionalJSON[T any](ptr *T) (string, error) {
+	if ptr == nil {
+		return "", nil
+	}
+	b, err := json.Marshal(ptr)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func unmarshalOptionalJSON[T any](raw string, dest **T) error {
+	if raw == "" {
+		return nil
+	}
+	var val T
+	if err := json.Unmarshal([]byte(raw), &val); err != nil {
+		return err
+	}
+	*dest = &val
+	return nil
 }
 
 // DeleteApplication deletes an application by ID.
