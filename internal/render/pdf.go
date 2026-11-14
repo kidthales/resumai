@@ -308,36 +308,36 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 		return nil, nil, fmt.Errorf("CDP Runtime.enable failed: %w", err)
 	}
 
-	// 8. Navigate to the temporary HTML file via file:/// URI
-	fileURI := "file:///" + filepath.ToSlash(tmpHTMLPath)
+	// 8. Subscribe to Page.loadEventFired before navigating so the load signal cannot be missed.
+	loadCh, unsubLoad := ws.Subscribe("Page.loadEventFired")
+	defer unsubLoad()
+
+	// Navigate to the temporary HTML file via canonical file:/// URI
+	fileURI := filePathToURI(tmpHTMLPath)
 	navParams := map[string]interface{}{
 		"url": fileURI,
 	}
-	if _, err := ws.Call(ctx, "Page.navigate", navParams); err != nil {
+	navRaw, err := ws.Call(ctx, "Page.navigate", navParams)
+	if err != nil {
 		return nil, nil, fmt.Errorf("CDP Page.navigate failed: %w", err)
 	}
-
-	// 9. Await DOM load and embedded offline fonts readiness
-	fontAwaitExpr := `new Promise((resolve) => {
-		function check() {
-			if (document.readyState === 'complete') {
-				if (document.fonts && document.fonts.ready) {
-					document.fonts.ready.then(() => resolve(true)).catch(() => resolve(true));
-				} else {
-					resolve(true);
-				}
-			} else {
-				setTimeout(check, 10);
-			}
-		}
-		check();
-	})`
-	evalFontParams := map[string]interface{}{
-		"expression":    fontAwaitExpr,
-		"awaitPromise":  true,
-		"returnByValue": true,
+	var navResp struct {
+		ErrorText string `json:"errorText"`
 	}
-	if _, err := ws.Call(ctx, "Runtime.evaluate", evalFontParams); err != nil {
+	if len(navRaw) > 0 && json.Unmarshal(navRaw, &navResp) == nil && navResp.ErrorText != "" {
+		return nil, nil, fmt.Errorf("CDP Page.navigate error: %s", navResp.ErrorText)
+	}
+
+	select {
+	case <-loadCh:
+	case <-ctx.Done():
+		return nil, nil, fmt.Errorf("CDP Page.loadEventFired wait failed: %w", ctx.Err())
+	case <-ws.closed:
+		return nil, nil, errors.New("CDP websocket closed while waiting for Page.loadEventFired")
+	}
+
+	// 9. Await committed file:// DOM load and embedded offline fonts readiness
+	if err := awaitDocumentAndFonts(ctx, ws, loadCh); err != nil {
 		return nil, nil, fmt.Errorf("CDP font wait evaluation failed: %w", err)
 	}
 
@@ -355,7 +355,7 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 		"returnByValue": true,
 	}
 
-	telemetryRaw, err := ws.Call(ctx, "Runtime.evaluate", evalParams)
+	telemetryRaw, err := evaluateCDPWithRetry(ctx, ws, evalParams, loadCh)
 	if err != nil {
 		return nil, nil, fmt.Errorf("CDP layout telemetry evaluation failed: %w", err)
 	}
@@ -1004,6 +1004,8 @@ type cdpWebSocket struct {
 	nextID  int64
 	mu      sync.Mutex
 	pending map[int64]chan cdpResponse
+	events  map[string]map[uint64]chan json.RawMessage
+	nextSub uint64
 	closed  chan struct{}
 }
 
@@ -1013,9 +1015,137 @@ type cdpResponse struct {
 	Error  *cdpError       `json:"error,omitempty"`
 }
 
+type cdpMessage struct {
+	ID     int64           `json:"id"`
+	Method string          `json:"method,omitempty"`
+	Params json.RawMessage `json:"params,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *cdpError       `json:"error,omitempty"`
+}
+
 type cdpError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+func (e *cdpError) Error() string {
+	return fmt.Sprintf("CDP error %d: %s", e.Code, e.Message)
+}
+
+func filePathToURI(path string) string {
+	slash := filepath.ToSlash(filepath.Clean(path))
+	if strings.HasPrefix(slash, "//") {
+		trimmed := strings.TrimPrefix(slash, "//")
+		if host, rest, ok := strings.Cut(trimmed, "/"); ok {
+			return (&url.URL{Scheme: "file", Host: host, Path: "/" + rest}).String()
+		}
+	}
+	if !strings.HasPrefix(slash, "/") {
+		slash = "/" + slash
+	}
+	return (&url.URL{Scheme: "file", Path: slash}).String()
+}
+
+func isTransientCDPContextErr(err error) bool {
+	var cdpErr *cdpError
+	if !errors.As(err, &cdpErr) {
+		return false
+	}
+	if cdpErr.Code != -32000 {
+		return false
+	}
+	return strings.Contains(cdpErr.Message, "Execution context was destroyed") ||
+		strings.Contains(cdpErr.Message, "Cannot find context")
+}
+
+func waitCDPNavSettling(ctx context.Context, loadCh <-chan json.RawMessage, closed <-chan struct{}) error {
+	timer := time.NewTimer(25 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-loadCh:
+		return nil
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-closed:
+		return errors.New("CDP websocket closed")
+	}
+}
+
+func evaluateCDPWithRetry(ctx context.Context, ws *cdpWebSocket, evalParams map[string]interface{}, loadCh <-chan json.RawMessage) (json.RawMessage, error) {
+	const maxAttempts = 20
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		raw, err := ws.Call(ctx, "Runtime.evaluate", evalParams)
+		if err == nil {
+			return raw, nil
+		}
+		lastErr = err
+		if !isTransientCDPContextErr(err) || attempt == maxAttempts-1 {
+			return nil, err
+		}
+		if werr := waitCDPNavSettling(ctx, loadCh, ws.closed); werr != nil {
+			return nil, werr
+		}
+	}
+	return nil, lastErr
+}
+
+func awaitDocumentAndFonts(ctx context.Context, ws *cdpWebSocket, loadCh <-chan json.RawMessage) error {
+	const fontAwaitExpr = `new Promise((resolve) => {
+		const deadline = Date.now() + 5000;
+		function check() {
+			if (window.location.protocol === 'file:' && document.readyState === 'complete') {
+				if (document.fonts && document.fonts.ready) {
+					Promise.race([
+						document.fonts.ready.catch(() => {}),
+						new Promise((r) => setTimeout(r, 5000))
+					]).then(() => resolve(true));
+				} else {
+					resolve(true);
+				}
+				return;
+			}
+			if (Date.now() >= deadline) {
+				resolve(false);
+				return;
+			}
+			setTimeout(check, 10);
+		}
+		check();
+	})`
+
+	evalFontParams := map[string]interface{}{
+		"expression":    fontAwaitExpr,
+		"awaitPromise":  true,
+		"returnByValue": true,
+	}
+
+	const maxAttempts = 20
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		raw, err := evaluateCDPWithRetry(ctx, ws, evalFontParams, loadCh)
+		if err != nil {
+			return err
+		}
+		var evalResp struct {
+			Result struct {
+				Value bool `json:"value"`
+			} `json:"result"`
+		}
+		if uerr := json.Unmarshal(raw, &evalResp); uerr != nil {
+			return fmt.Errorf("failed to parse font wait response: %w", uerr)
+		}
+		if evalResp.Result.Value {
+			return nil
+		}
+		if attempt < maxAttempts-1 {
+			if werr := waitCDPNavSettling(ctx, loadCh, ws.closed); werr != nil {
+				return werr
+			}
+		}
+	}
+	return errors.New("document did not reach ready file:// state before font wait timeout")
 }
 
 func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) {
@@ -1088,12 +1218,41 @@ func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) 
 		conn:    conn,
 		r:       reader,
 		pending: make(map[int64]chan cdpResponse),
+		events:  make(map[string]map[uint64]chan json.RawMessage),
 		closed:  make(chan struct{}),
 	}
 
 	go ws.readLoop()
 
 	return ws, nil
+}
+
+// Subscribe registers a buffered channel to receive CDP event params for the given method.
+func (ws *cdpWebSocket) Subscribe(method string) (<-chan json.RawMessage, func()) {
+	ch := make(chan json.RawMessage, 16)
+	ws.mu.Lock()
+	if ws.events == nil {
+		ws.events = make(map[string]map[uint64]chan json.RawMessage)
+	}
+	if ws.events[method] == nil {
+		ws.events[method] = make(map[uint64]chan json.RawMessage)
+	}
+	ws.nextSub++
+	subID := ws.nextSub
+	ws.events[method][subID] = ch
+	ws.mu.Unlock()
+
+	unsub := func() {
+		ws.mu.Lock()
+		if subs, ok := ws.events[method]; ok {
+			delete(subs, subID)
+			if len(subs) == 0 {
+				delete(ws.events, method)
+			}
+		}
+		ws.mu.Unlock()
+	}
+	return ch, unsub
 }
 
 func (ws *cdpWebSocket) Close() error {
@@ -1115,6 +1274,12 @@ func (ws *cdpWebSocket) Call(ctx context.Context, method string, params interfac
 
 	respChan := make(chan cdpResponse, 1)
 	ws.mu.Lock()
+	select {
+	case <-ws.closed:
+		ws.mu.Unlock()
+		return nil, errors.New("CDP websocket closed")
+	default:
+	}
 	ws.pending[id] = respChan
 	ws.mu.Unlock()
 
@@ -1144,7 +1309,7 @@ func (ws *cdpWebSocket) Call(ctx context.Context, method string, params interfac
 	select {
 	case resp := <-respChan:
 		if resp.Error != nil {
-			return nil, fmt.Errorf("CDP error %d: %s", resp.Error.Code, resp.Error.Message)
+			return nil, resp.Error
 		}
 		return resp.Result, nil
 	case <-ctx.Done():
@@ -1204,13 +1369,40 @@ func (ws *cdpWebSocket) readLoop() {
 			return
 		}
 
-		var resp cdpResponse
-		if err := json.Unmarshal(msg, &resp); err == nil && resp.ID != 0 {
+		var frame cdpMessage
+		if err := json.Unmarshal(msg, &frame); err != nil {
+			continue
+		}
+
+		if frame.ID != 0 {
 			ws.mu.Lock()
-			ch, ok := ws.pending[resp.ID]
+			ch, ok := ws.pending[frame.ID]
 			ws.mu.Unlock()
 			if ok {
-				ch <- resp
+				ch <- cdpResponse{
+					ID:     frame.ID,
+					Result: frame.Result,
+					Error:  frame.Error,
+				}
+			}
+			continue
+		}
+
+		if frame.Method != "" {
+			ws.mu.Lock()
+			var targets []chan json.RawMessage
+			if subs, ok := ws.events[frame.Method]; ok && len(subs) > 0 {
+				targets = make([]chan json.RawMessage, 0, len(subs))
+				for _, ch := range subs {
+					targets = append(targets, ch)
+				}
+			}
+			ws.mu.Unlock()
+			for _, ch := range targets {
+				select {
+				case ch <- frame.Params:
+				default:
+				}
 			}
 		}
 	}

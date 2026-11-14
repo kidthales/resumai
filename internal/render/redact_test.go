@@ -104,3 +104,24 @@ func TestRedactSecrets_UnixPathAnchoring(t *testing.T) {
 		t.Errorf("expected [USER_HOME] in output, got %s", gotUser)
 	}
 }
+
+func TestRedactCredentials_PreservesPaths(t *testing.T) {
+	dummyPAT := "ghp_" + strings.Repeat("c", 36)
+	dummyFinePAT := "github_pat_" + strings.Repeat("d", 24)
+	dummyWebhook := "https://" + "discord.com/api/webhooks/987654321/super-secret-webhook"
+	packetPath := `C:\Users\alice\.resumai\applications\2026-11-13-acme-staff`
+	unixPath := `/home/alice/.resumai/applications/2026-11-13-acme-staff`
+
+	input := "packet=" + packetPath + " unix=" + unixPath + " pat=" + dummyPAT + " fine=" + dummyFinePAT + " hook=" + dummyWebhook
+	got := render.RedactCredentials(input)
+
+	if strings.Contains(got, dummyPAT) || strings.Contains(got, dummyFinePAT) {
+		t.Errorf("expected GitHub tokens to be scrubbed, got: %s", got)
+	}
+	if strings.Contains(got, "987654321/super-secret-webhook") {
+		t.Errorf("expected Discord webhook to be scrubbed, got: %s", got)
+	}
+	if !strings.Contains(got, packetPath) || !strings.Contains(got, unixPath) {
+		t.Errorf("expected filesystem paths to remain intact in RedactCredentials, got: %s", got)
+	}
+}

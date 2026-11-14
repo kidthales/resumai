@@ -1053,17 +1053,11 @@ func (v *CareerVault) DeleteArchetype(ctx context.Context, id string) error {
 // SaveApplication creates or updates a JobApplication.
 // Returns domain.ErrAlreadySubmitted if the existing persisted row is already Submitted.
 func (v *CareerVault) SaveApplication(ctx context.Context, app *domain.JobApplication) error {
+	if app == nil {
+		return errors.New("application cannot be nil")
+	}
 	if app.ID == "" {
 		return errors.New("application ID cannot be empty")
-	}
-
-	var existingState string
-	err := v.db.QueryRowContext(ctx, `SELECT state FROM applications WHERE id = ?;`, app.ID).Scan(&existingState)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("check existing application state: %w", err)
-	}
-	if err == nil && domain.ApplicationState(existingState) == domain.StateSubmitted {
-		return domain.ErrAlreadySubmitted
 	}
 
 	now := time.Now().UTC()
@@ -1120,30 +1114,45 @@ func (v *CareerVault) SaveApplication(ctx context.Context, app *domain.JobApplic
 		bundle_sha256 = excluded.bundle_sha256,
 		interview_brief_path = excluded.interview_brief_path,
 		submitted_at = excluded.submitted_at,
-		updated_at = excluded.updated_at;`
+		updated_at = excluded.updated_at
+	WHERE applications.state != 'Submitted';`
 
-	_, err = v.db.ExecContext(ctx, query,
-		app.ID,
-		app.RoleTitle,
-		app.Company,
-		app.RawJD,
-		string(app.State),
-		app.RejectionRationale,
-		archetypeID,
-		dossierJSON,
-		draftJSON,
-		auditsJSON,
-		exportJSON,
-		app.BundleSHA256,
-		app.InterviewBriefPath,
-		submittedAt,
-		app.CreatedAt.Format(time.RFC3339),
-		app.UpdatedAt.Format(time.RFC3339),
-	)
-	if err != nil {
-		return fmt.Errorf("save application: %w", err)
-	}
-	return nil
+	return v.WithTx(ctx, func(tx *sql.Tx) error {
+		var existingState string
+		err := tx.QueryRowContext(ctx, `SELECT state FROM applications WHERE id = ?;`, app.ID).Scan(&existingState)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("check existing application state: %w", err)
+		}
+		if err == nil && domain.ApplicationState(existingState) == domain.StateSubmitted {
+			return domain.ErrAlreadySubmitted
+		}
+
+		res, err := tx.ExecContext(ctx, query,
+			app.ID,
+			app.RoleTitle,
+			app.Company,
+			app.RawJD,
+			string(app.State),
+			app.RejectionRationale,
+			archetypeID,
+			dossierJSON,
+			draftJSON,
+			auditsJSON,
+			exportJSON,
+			app.BundleSHA256,
+			app.InterviewBriefPath,
+			submittedAt,
+			app.CreatedAt.Format(time.RFC3339),
+			app.UpdatedAt.Format(time.RFC3339),
+		)
+		if err != nil {
+			return fmt.Errorf("save application: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return domain.ErrAlreadySubmitted
+		}
+		return nil
+	})
 }
 
 // GetApplication retrieves an application by ID (satisfies Vault interface).

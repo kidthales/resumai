@@ -497,3 +497,95 @@ func callToolViaStdio(t *testing.T, srv *mcp.Server, id int, name string, args a
 	}
 	return rpcResp.Result
 }
+
+func TestMCPCredentialsRedacted_SuccessAndProtocolErrors(t *testing.T) {
+	ctx := context.Background()
+	_, srv := newTestVaultAndServer(t)
+
+	leakedPAT := "ghp_" + strings.Repeat("z", 36)
+	leakedFinePAT := "github_pat_" + strings.Repeat("y", 24)
+	leakedWebhook := "https://" + "discord.com/api/webhooks/111222333/secret_hook_token"
+
+	for _, setup := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"resumai_save_organization", map[string]any{"id": "org-sec", "name": "SecCorp"}},
+		{"resumai_save_role", map[string]any{"id": "role-sec", "org_id": "org-sec", "title": "Engineer"}},
+		{"resumai_save_archetype", map[string]any{"id": "arch-sec", "name": "Sec Architect"}},
+		{"resumai_save_fact", map[string]any{
+			"id":              "fact-sec",
+			"role_id":         "role-sec",
+			"headline":        "Handled token rotation",
+			"details":         "Rotated " + leakedPAT + " and webhook " + leakedWebhook,
+			"epistemic_state": "verified",
+		}},
+		{"resumai_save_triage", map[string]any{
+			"application_id": "app-sec",
+			"dossier": map[string]any{
+				"role_title": "Security Engineer",
+				"company":    "SecCorp",
+				"raw_jd":     "Do not leak " + leakedFinePAT + " or " + leakedWebhook,
+			},
+		}},
+		{"resumai_save_draft", map[string]any{
+			"application_id": "app-sec",
+			"draft": map[string]any{
+				"archetype_id": "arch-sec",
+				"headline":     "Security Engineer",
+				"summary":      "Rotated keys.",
+				"experience": []map[string]any{
+					{
+						"role_title":   "Engineer",
+						"organization": "SecCorp",
+						"duration":     "2024 - 2026",
+						"highlights": []map[string]any{
+							{"id": "b-sec", "text": "Rotated keys.", "fact_ids": []string{"fact-sec"}},
+						},
+					},
+				},
+				"page_budget": 1,
+			},
+		}},
+	} {
+		res := callToolViaStdio(t, srv, 1, setup.name, setup.args, &domain.PIIHeader{})
+		if res.IsError {
+			t.Fatalf("setup %s failed: %s", setup.name, res.Content[0].Text)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"resumai_list_facts", map[string]any{"role_id": "role-sec"}},
+		{"resumai_get_application", map[string]any{"application_id": "app-sec"}},
+		{"resumai_get_audit_bundle", map[string]any{"application_id": "app-sec"}},
+	} {
+		res := callToolViaStdio(t, srv, 10, tc.name, tc.args, &domain.PIIHeader{})
+		if res.IsError {
+			t.Fatalf("%s failed: %s", tc.name, res.Content[0].Text)
+		}
+		text := res.Content[0].Text
+		for _, secret := range []string{leakedPAT, leakedFinePAT, "111222333/secret_hook_token"} {
+			if strings.Contains(text, secret) {
+				t.Fatalf("%s leaked credential %q in MCP success payload: %s", tc.name, secret, text)
+			}
+		}
+	}
+
+	// Verify JSON-RPC protocol errors redact credentials and local user paths.
+	protoReq := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"missing ` + leakedPAT + `"}}`,
+		`{"jsonrpc":"2.0","id":21,"method":"unknown/` + leakedWebhook + `"}`,
+	}, "\n") + "\n"
+
+	var protoOut bytes.Buffer
+	if err := srv.ServeStdio(ctx, strings.NewReader(protoReq), &protoOut); err != nil {
+		t.Fatalf("ServeStdio(protoReq): %v", err)
+	}
+	rawProto := protoOut.String()
+	if strings.Contains(rawProto, leakedPAT) || strings.Contains(rawProto, "111222333/secret_hook_token") {
+		t.Fatalf("JSON-RPC protocol error leaked credential: %s", rawProto)
+	}
+}

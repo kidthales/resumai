@@ -362,9 +362,14 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	}
 	if app.State == domain.StateReadyToRender || app.State == domain.StateExported {
 		briefPath := filepath.Join(packetDir, "interview_brief.md")
-		if info, serr := os.Stat(briefPath); serr == nil && !info.IsDir() {
-			_ = ensureWritable(briefPath, 0644)
-			_ = os.Remove(briefPath)
+		if info, serr := os.Lstat(briefPath); serr == nil {
+			if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				return nil, scrubPIIError(fmt.Errorf("refusing symlink or irregular path %s", filepath.Base(briefPath)), pii)
+			}
+			if !info.IsDir() {
+				_ = ensureWritable(briefPath, 0644)
+				_ = os.Remove(briefPath)
+			}
 		}
 	}
 
@@ -438,8 +443,13 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 	}
 
 	auditPath := filepath.Join(packetDir, "audit.md")
-	if info, err := os.Stat(auditPath); err == nil && !info.IsDir() {
-		artifactPaths["audit.md"] = auditPath
+	if info, err := os.Lstat(auditPath); err == nil {
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil, scrubPIIError(fmt.Errorf("%w: audit.md must not be a symlink", domain.ErrMissingExportArtifact), pii)
+		}
+		if !info.IsDir() {
+			artifactPaths["audit.md"] = auditPath
+		}
 	}
 
 	bundleSHA256, fileDigests, err := computeBundleSHA256(artifactPaths)
@@ -467,17 +477,26 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 		mode os.FileMode
 	}
 	var locked []priorPerm
-	for _, target := range lockTargets {
-		info, serr := os.Stat(target)
-		if serr == nil {
-			locked = append(locked, priorPerm{path: target, mode: info.Mode().Perm()})
-		}
-		if err := os.Chmod(target, 0444); err != nil {
-			for _, prev := range locked {
-				if prev.mode&0222 != 0 {
-					_ = os.Chmod(prev.path, prev.mode)
-				}
+	restoreLocked := func() {
+		for _, prev := range locked {
+			if prev.mode&0222 != 0 {
+				_ = os.Chmod(prev.path, prev.mode)
 			}
+		}
+	}
+	for _, target := range lockTargets {
+		info, serr := os.Lstat(target)
+		if serr != nil {
+			restoreLocked()
+			return nil, scrubPIIError(fmt.Errorf("inspect submitted packet artifact %s: %w", filepath.Base(target), serr), pii)
+		}
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			restoreLocked()
+			return nil, scrubPIIError(fmt.Errorf("refusing to lock symlink packet artifact %s", filepath.Base(target)), pii)
+		}
+		locked = append(locked, priorPerm{path: target, mode: info.Mode().Perm()})
+		if err := os.Chmod(target, 0444); err != nil {
+			restoreLocked()
 			return nil, scrubPIIError(fmt.Errorf("lock submitted packet artifact %s: %w", filepath.Base(target), err), pii)
 		}
 	}
@@ -574,12 +593,90 @@ func ensurePathWithinDir(baseDir, target string, allowEqual bool) (string, error
 	if !allowEqual && rel == "." {
 		return "", fmt.Errorf("path %q must be a child inside base directory", target)
 	}
+
+	// Reject any existing symlink or junction segment at or below absBase.
+	if rel != "." {
+		cur := absBase
+		for _, seg := range strings.Split(rel, string(filepath.Separator)) {
+			if seg == "" || seg == "." {
+				continue
+			}
+			cur = filepath.Join(cur, seg)
+			info, lerr := os.Lstat(cur)
+			if lerr != nil {
+				if errors.Is(lerr, os.ErrNotExist) {
+					continue
+				}
+				return "", fmt.Errorf("inspect path %q: %w", cur, lerr)
+			}
+			if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				return "", fmt.Errorf("path %q must not traverse symlink %q", target, cur)
+			}
+		}
+	}
+
+	// Also verify resolved deepest existing ancestors to block escapes via symlinked base/parent directories.
+	resolvedBase, err := resolveDeepestSymlinks(absBase)
+	if err != nil {
+		return "", fmt.Errorf("resolve base symlinks: %w", err)
+	}
+	resolvedTarget, err := resolveDeepestSymlinks(absTarget)
+	if err != nil {
+		return "", fmt.Errorf("resolve target symlinks: %w", err)
+	}
+	resolvedRel, err := filepath.Rel(resolvedBase, resolvedTarget)
+	if err != nil {
+		return "", fmt.Errorf("resolved path %q outside base directory", target)
+	}
+	if resolvedRel == ".." || strings.HasPrefix(resolvedRel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("resolved path %q escapes base directory", target)
+	}
+	if !allowEqual && resolvedRel == "." {
+		return "", fmt.Errorf("resolved path %q must be a child inside base directory", target)
+	}
+
 	return absTarget, nil
 }
 
+func resolveDeepestSymlinks(absPath string) (string, error) {
+	cur := absPath
+	var tail []string
+	for {
+		_, err := os.Lstat(cur)
+		if err == nil {
+			resolved, rerr := filepath.EvalSymlinks(cur)
+			if rerr != nil {
+				return "", rerr
+			}
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return absPath, nil
+		}
+		tail = append(tail, filepath.Base(cur))
+		cur = parent
+	}
+}
+
 func ensureWritable(path string, perm os.FileMode) error {
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return fmt.Errorf("refusing symlink or irregular path %q", path)
+	}
+	if info.IsDir() {
 		return nil
 	}
 	if info.Mode().Perm()&0200 == 0 {
@@ -647,7 +744,15 @@ func computeBundleSHA256(artifactPaths map[string]string) (string, map[string]st
 	fileDigests := make(map[string]string, len(names))
 
 	for _, name := range names {
-		data, err := os.ReadFile(artifactPaths[name])
+		targetPath := artifactPaths[name]
+		info, lerr := os.Lstat(targetPath)
+		if lerr != nil {
+			return "", nil, fmt.Errorf("%w: stat %s for bundle hash: %v", domain.ErrMissingExportArtifact, name, lerr)
+		}
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 || info.IsDir() {
+			return "", nil, fmt.Errorf("%w: %s must be a regular non-symlink file", domain.ErrMissingExportArtifact, name)
+		}
+		data, err := os.ReadFile(targetPath)
 		if err != nil {
 			return "", nil, fmt.Errorf("%w: read %s for bundle hash: %v", domain.ErrMissingExportArtifact, name, err)
 		}

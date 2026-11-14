@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -618,6 +620,113 @@ func TestLocalMaterializer_DirectoryJailAndPartialLockRecovery(t *testing.T) {
 	}
 	if _, statErr := os.Stat(staleBrief); !os.IsNotExist(statErr) {
 		t.Fatalf("expected stale unsubmitted interview_brief.md to be cleaned on re-render, stat err=%v", statErr)
+	}
+}
+
+func TestLocalMaterializer_RejectsSymlinkEscape(t *testing.T) {
+	ctx := context.Background()
+	v, _ := newTestVaultAndServer(t)
+
+	pii := &domain.PIIHeader{FullName: "Alice Tester", Email: "alice@example.test"}
+	if err := v.SetPII(ctx, pii); err != nil {
+		t.Fatalf("SetPII: %v", err)
+	}
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-sym", Name: "SymCorp"})
+	_ = v.SaveRole(ctx, &domain.Role{ID: "role-sym", OrgID: "org-sym", Title: "Engineer"})
+	_ = v.SaveCareerFact(ctx, &domain.CareerFact{
+		ID:             "fact-sym",
+		RoleID:         "role-sym",
+		Details:        "Shipped deterministic storage.",
+		EpistemicState: domain.EpistemicVerified,
+	})
+
+	root := t.TempDir()
+	baseDir := filepath.Join(root, "apps")
+	outsideDir := filepath.Join(root, "outside")
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		t.Fatalf("MkdirAll baseDir: %v", err)
+	}
+	if err := os.MkdirAll(outsideDir, 0755); err != nil {
+		t.Fatalf("MkdirAll outsideDir: %v", err)
+	}
+	outsideSecret := filepath.Join(outsideDir, "secret.txt")
+	if err := os.WriteFile(outsideSecret, []byte("TOP_SECRET"), 0644); err != nil {
+		t.Fatalf("WriteFile outsideSecret: %v", err)
+	}
+
+	// Probe symlink creation capability; on unprivileged Windows, fall back to NTFS directory junction (mklink /J).
+	escapedSub := filepath.Join(baseDir, "escaped")
+	hasSymlink := true
+	if err := os.Symlink(outsideDir, escapedSub); err != nil {
+		hasSymlink = false
+		if runtime.GOOS == "windows" {
+			if jerr := exec.Command("cmd", "/c", "mklink", "/J", escapedSub, outsideDir).Run(); jerr != nil {
+				t.Skipf("skipping symlink/junction jail test: symlink (%v) and junction (%v) unsupported", err, jerr)
+			}
+		} else {
+			t.Skipf("skipping symlink jail test: os.Symlink unsupported in current environment: %v", err)
+		}
+	}
+
+	fakePDF := func(_ context.Context, _ *render.ResumeDocument, _ *domain.PIIHeader, _ *render.ThemeManifest, _ int) ([]byte, *render.LayoutTelemetry, error) {
+		return []byte("%PDF-1.4\n%ok\n"), &render.LayoutTelemetry{PageCount: 1, LastPageFillRatio: 0.5}, nil
+	}
+	mat := mcp.NewLocalMaterializer(v, mcp.WithBaseOutputDir(baseDir), mcp.WithPDFRenderer(fakePDF))
+
+	makeReadyApp := func(id string) *domain.JobApplication {
+		return &domain.JobApplication{
+			ID:        id,
+			RoleTitle: "Engineer",
+			Company:   "SymCorp",
+			State:     domain.StateReadyToRender,
+			Draft: &domain.ApplicationDraft{
+				Experience: []domain.DraftExperience{{
+					RoleTitle:    "Engineer",
+					Organization: "SymCorp",
+					Highlights:   []domain.BulletNode{{ID: "b1", Text: "Shipped deterministic storage.", FactIDs: []string{"fact-sym"}}},
+				}},
+			},
+			Audits: &domain.AuditBundle{
+				FactCheck:      &domain.FactCheckReport{Passed: true},
+				AlignmentCheck: &domain.AlignmentCheckReport{Passed: true},
+			},
+		}
+	}
+
+	// 1. RenderAndMarkExported must reject OutputDir traversing a symlink/junction inside baseDir.
+	app1 := makeReadyApp("app-sym-1")
+	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{
+		Application: app1,
+		OutputDir:   "escaped",
+	}); err == nil {
+		t.Fatalf("expected RenderAndMarkExported to reject symlink/junction OutputDir")
+	}
+
+	if !hasSymlink {
+		return
+	}
+
+	// 2. FinalizeSubmission must reject a symlinked artifact file pointing outside packetDir without modifying external file.
+	app2 := makeReadyApp("app-sym-2")
+	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app2}); err != nil {
+		t.Fatalf("RenderAndMarkExported(app2): %v", err)
+	}
+	if err := os.Remove(app2.Export.HTMLPath); err != nil {
+		t.Fatalf("Remove resume.html: %v", err)
+	}
+	if err := os.Symlink(outsideSecret, app2.Export.HTMLPath); err != nil {
+		t.Fatalf("Symlink resume.html -> outsideSecret: %v", err)
+	}
+
+	if _, err := mat.FinalizeSubmission(ctx, mcp.SubmissionRequest{Application: app2}); err == nil {
+		t.Fatalf("expected FinalizeSubmission to reject symlinked resume.html")
+	}
+	info, statErr := os.Stat(outsideSecret)
+	if statErr != nil {
+		t.Fatalf("Stat outsideSecret: %v", statErr)
+	}
+	if info.Mode().Perm()&0200 == 0 {
+		t.Fatalf("outsideSecret was unexpectedly chmodded read-only (%v)", info.Mode().Perm())
 	}
 }
 

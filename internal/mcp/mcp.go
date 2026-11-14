@@ -149,7 +149,7 @@ func toolJSONResult(v any) (*CallToolResult, error) {
 		Content: []ContentItem{
 			{
 				Type: "text",
-				Text: string(b),
+				Text: render.RedactCredentials(string(b)),
 			},
 		},
 	}, nil

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -250,5 +251,31 @@ func TestMCPSubcommandStdio(t *testing.T) {
 	}
 	if !strings.Contains(lines[3], "invalid application state transition") {
 		t.Errorf("expected state transition error from wired materializer path, got: %s", lines[3])
+	}
+}
+
+func TestMCPSubcommandStderrRedaction(t *testing.T) {
+	leakedPAT := "ghp_" + strings.Repeat("x", 36)
+	// Point --vault inside a regular file so vault.OpenPath fails deterministically and surfaces path + error.
+	blockingFile := filepath.Join(t.TempDir(), "not-a-dir-"+leakedPAT)
+	if err := os.WriteFile(blockingFile, []byte("x"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	targetVault := filepath.Join(blockingFile, "vault.db")
+
+	var out, errOut bytes.Buffer
+	code := runMCPWithIO([]string{"--vault", targetVault}, strings.NewReader(""), &out, &errOut, "")
+	if code != 1 {
+		t.Fatalf("expected exit code 1 when vault open fails, got %d", code)
+	}
+	stderrStr := errOut.String()
+	if strings.Contains(stderrStr, leakedPAT) {
+		t.Fatalf("expected stderr to redact GitHub token, got: %s", stderrStr)
+	}
+	if !strings.Contains(stderrStr, "[REDACTED]") {
+		t.Fatalf("expected [REDACTED] marker in stderr, got: %s", stderrStr)
+	}
+	if tempDir := t.TempDir(); len(tempDir) > 3 && strings.Contains(stderrStr, filepath.Dir(tempDir)) {
+		t.Fatalf("expected temp directory segment to be scrubbed from stderr, got: %s", stderrStr)
 	}
 }

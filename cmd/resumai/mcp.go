@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/kidthales/resumai/internal/mcp"
+	"github.com/kidthales/resumai/internal/render"
 	"github.com/kidthales/resumai/internal/vault"
 )
 
@@ -19,10 +21,14 @@ func runMCP(args []string, stdout, stderr io.Writer, globalVault string) int {
 
 func runMCPWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer, globalVault string) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	var flagErrBuf bytes.Buffer
+	fs.SetOutput(&flagErrBuf)
 
 	vaultPath := fs.String("vault", globalVault, "Path to vault SQLite database")
 	if err := fs.Parse(args); err != nil {
+		if flagErrBuf.Len() > 0 {
+			fmt.Fprint(stderr, render.RedactSecrets(flagErrBuf.String()))
+		}
 		return 1
 	}
 
@@ -31,14 +37,14 @@ func runMCPWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer, glob
 		var err error
 		targetPath, err = vault.DefaultPath()
 		if err != nil {
-			fmt.Fprintf(stderr, "error resolving default vault path: %v\n", err)
+			fmt.Fprintln(stderr, render.RedactSecrets(fmt.Sprintf("error resolving default vault path: %v", err)))
 			return 1
 		}
 	}
 
 	v, err := vault.OpenPath(targetPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "error opening vault (%s): %v\n", targetPath, err)
+		fmt.Fprintln(stderr, render.RedactSecrets(fmt.Sprintf("error opening vault (%s): %v", targetPath, err)))
 		return 1
 	}
 	defer v.Close()
@@ -49,7 +55,7 @@ func runMCPWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer, glob
 	mat := mcp.NewLocalMaterializer(v)
 	srv := mcp.NewServer(v, mcp.WithPacketMaterializer(mat))
 	if err := srv.ServeStdio(ctx, stdin, stdout); err != nil && err != context.Canceled {
-		fmt.Fprintf(stderr, "mcp server error: %v\n", err)
+		fmt.Fprintln(stderr, render.RedactSecrets(fmt.Sprintf("mcp server error: %v", err)))
 		return 1
 	}
 	return 0

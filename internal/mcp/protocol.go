@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/kidthales/resumai/internal/render"
 	"github.com/kidthales/resumai/internal/version"
 )
 
@@ -284,7 +285,7 @@ func (s *Server) dispatchRequest(ctx context.Context, req Request) Response {
 				ID:      id,
 				Error: &RPCError{
 					Code:    errCodeInvalidParams,
-					Message: fmt.Sprintf("unknown tool %q", params.Name),
+					Message: render.RedactSecrets(fmt.Sprintf("unknown tool %q", params.Name)),
 				},
 			}
 		}
@@ -295,7 +296,7 @@ func (s *Server) dispatchRequest(ctx context.Context, req Request) Response {
 				ID:      id,
 				Error: &RPCError{
 					Code:    errCodeInternalError,
-					Message: err.Error(),
+					Message: render.RedactSecrets(err.Error()),
 				},
 			}
 		}
@@ -311,7 +312,7 @@ func (s *Server) dispatchRequest(ctx context.Context, req Request) Response {
 			ID:      id,
 			Error: &RPCError{
 				Code:    errCodeMethodNotFound,
-				Message: fmt.Sprintf("method not found: %q", req.Method),
+				Message: render.RedactSecrets(fmt.Sprintf("method not found: %q", req.Method)),
 			},
 		}
 	}
