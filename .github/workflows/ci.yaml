@@ -5,8 +5,13 @@ on:
   push:
     branches:
       - main
-  pull_request: ~
-  workflow_dispatch: ~
+      - "src-main/epic/55-*"
+  pull_request:
+    branches:
+      - main
+      - "src-main/epic/55-*"
+  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -16,95 +21,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tests:
-    name: Tests
-    runs-on: ubuntu-latest
+  test-and-build:
+    name: Test & Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Build Docker images
-        uses: docker/bake-action@v7
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          pull: true
-          load: true
-          targets: php
-          files: |
-            docker/docker-bake.hcl
-          set: |
-            *.cache-from=type=gha,scope=${{github.ref}}
-            *.cache-from=type=gha,scope=refs/heads/main
-            *.cache-to=type=gha,scope=${{github.ref}},mode=max
+          go-version-file: "go.mod"
+          check-latest: false
+          cache: true
 
-      - name: Start services
-        run: cd docker && docker compose -f compose.yaml -f compose.ci.yaml up --wait --no-build
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
-      - name: Check HTTP reachability
-        run: curl -v --fail-with-body http://localhost
-      # Uncomment when the homepage is configured, or change the path to check
-      # - name: Check HTTPS reachability
-      #   run: curl -v --insecure --fail-with-body https://localhost
-      - name: Check Mercure reachability
-        run: curl -vI --insecure --fail-with-body https://localhost/.well-known/mercure?topic=test
-      # Uncomment if Doctrine ORM is installed
-      # - name: Create test database
-      #   run: docker compose exec -T php bin/console -e test doctrine:database:create
-      # Uncomment if Doctrine Migrations is installed
-      # - name: Run migrations
-      #   run: docker compose exec -T php bin/console -e test doctrine:migrations:migrate --no-interaction
-      # Uncomment if PHPUnit is installed
-      - name: Run PHPUnit
-        run: cd docker && docker compose exec -T php bin/phpunit
-      # Uncomment if Doctrine ORM is installed
-      # - name: Doctrine Schema Validator
-      #   run: docker compose exec -T php bin/console -e test doctrine:schema:validate
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Setup Node
-        id: setup-node
-        background: true
-        uses: actions/setup-node@v7
-        with:
-          node-version: 'lts/*'
-      - name: Setup PHP
-        id: setup-php
-        background: true
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.5'
-
-      - name: Wait for setups
-        wait: [setup-node, setup-php]
-
-      - name: Install vendor/
-        run: composer install --no-progress --no-interaction
-      - name: Install node_modules
-        run: npm ci
-
-      - name: Prettier
-        id: prettier
-        background: true
-        run: npx prettier --check "**/*.{css,json,md,yaml}"
-      - name: PHP CS Fixer
-        id: php-cs-fixer
-        background: true
-        run: php vendor/bin/php-cs-fixer check
-      - name: ESLint
-        id: eslint
-        background: true
-        run: npx eslint .
-
-      - name: Wait for linters
-        wait: [prettier, php-cs-fixer, eslint]
+      - name: Run CI Pipeline (Single Source of Truth)
+        shell: pwsh
+        run: ./scripts/ci-local.ps1 -CI

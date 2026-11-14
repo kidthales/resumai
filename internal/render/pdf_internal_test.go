@@ -1,0 +1,453 @@
+package render
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"math"
+	"net"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestParseDimensionToPX(t *testing.T) {
+	tests := []struct {
+		name      string
+		dim       string
+		defaultPX float64
+		expected  float64
+	}{
+		{"empty string", "", 48.0, 48.0},
+		{"zero value", "0", 48.0, 0.0},
+		{"zero inches", "0in", 48.0, 0.0},
+		{"zero px", "0px", 48.0, 0.0},
+		{"inches", "0.5in", 48.0, 48.0},
+		{"one inch", "1in", 0.0, 96.0},
+		{"points", "72pt", 0.0, 96.0},
+		{"millimeters", "25.4mm", 0.0, 96.0},
+		{"centimeters", "2.54cm", 0.0, 96.0},
+		{"pixels", "96px", 0.0, 96.0},
+		{"invalid fallback", "invalid", 48.0, 48.0},
+		{"trimmed spaces", "  0.75in  ", 0.0, 72.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseDimensionToPX(tt.dim, tt.defaultPX)
+			if math.Abs(got-tt.expected) > 0.001 {
+				t.Errorf("parseDimensionToPX(%q, %v) = %v; want %v", tt.dim, tt.defaultPX, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseDimensionToInches(t *testing.T) {
+	tests := []struct {
+		name          string
+		dim           string
+		defaultInches float64
+		expected      float64
+	}{
+		{"empty string", "", 0.5, 0.5},
+		{"zero value", "0", 0.5, 0.0},
+		{"zero inches", "0in", 0.5, 0.0},
+		{"inches", "0.5in", 0.0, 0.5},
+		{"one inch", "1in", 0.0, 1.0},
+		{"points", "72pt", 0.0, 1.0},
+		{"millimeters", "25.4mm", 0.0, 1.0},
+		{"centimeters", "2.54cm", 0.0, 1.0},
+		{"pixels", "96px", 0.0, 1.0},
+		{"invalid fallback", "unknown", 0.75, 0.75},
+		{"trimmed spaces", "  1.5in  ", 0.0, 1.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseDimensionToInches(tt.dim, tt.defaultInches)
+			if math.Abs(got-tt.expected) > 0.001 {
+				t.Errorf("parseDimensionToInches(%q, %v) = %v; want %v", tt.dim, tt.defaultInches, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPageGeometryInches(t *testing.T) {
+	t.Run("default US letter geometry", func(t *testing.T) {
+		cfg := PageConfig{
+			Size:         "letter",
+			MarginTop:    "0.5in",
+			MarginBottom: "0.5in",
+			MarginLeft:   "0.5in",
+			MarginRight:  "0.5in",
+		}
+		w, h, top, bot, left, right := pageGeometryInches(cfg)
+		if w != 8.5 || h != 11.0 {
+			t.Errorf("expected 8.5x11, got %vx%v", w, h)
+		}
+		if top != 0.5 || bot != 0.5 || left != 0.5 || right != 0.5 {
+			t.Errorf("expected 0.5 margins, got top=%v bot=%v left=%v right=%v", top, bot, left, right)
+		}
+	})
+
+	t.Run("A4 page geometry with metric margins", func(t *testing.T) {
+		cfg := PageConfig{
+			Size:         "a4",
+			MarginTop:    "25.4mm",
+			MarginBottom: "25.4mm",
+			MarginLeft:   "12.7mm",
+			MarginRight:  "12.7mm",
+		}
+		w, h, top, bot, left, right := pageGeometryInches(cfg)
+		expectedW := 210.0 / 25.4
+		expectedH := 297.0 / 25.4
+		if math.Abs(w-expectedW) > 0.001 || math.Abs(h-expectedH) > 0.001 {
+			t.Errorf("expected A4 %vx%v, got %vx%v", expectedW, expectedH, w, h)
+		}
+		if math.Abs(top-1.0) > 0.001 || math.Abs(bot-1.0) > 0.001 {
+			t.Errorf("expected 1.0in vertical margins, got top=%v bot=%v", top, bot)
+		}
+		if math.Abs(left-0.5) > 0.001 || math.Abs(right-0.5) > 0.001 {
+			t.Errorf("expected 0.5in horizontal margins, got left=%v right=%v", left, right)
+		}
+	})
+
+	t.Run("empty page config defaults to US letter and 0.5in margins", func(t *testing.T) {
+		cfg := PageConfig{}
+		w, h, top, bot, left, right := pageGeometryInches(cfg)
+		if w != 8.5 || h != 11.0 {
+			t.Errorf("expected default 8.5x11, got %vx%v", w, h)
+		}
+		if top != 0.5 || bot != 0.5 || left != 0.5 || right != 0.5 {
+			t.Errorf("expected default 0.5 margins, got top=%v bot=%v left=%v right=%v", top, bot, left, right)
+		}
+	})
+}
+
+func TestPageGeometryPX(t *testing.T) {
+	t.Run("letter height and margin calculation", func(t *testing.T) {
+		cfg := PageConfig{
+			Size:         "letter",
+			MarginTop:    "0.5in",
+			MarginBottom: "0.5in",
+		}
+		h, marginY := pageGeometryPX(cfg)
+		if h != 1056.0 {
+			t.Errorf("expected 1056px height, got %v", h)
+		}
+		if marginY != 96.0 {
+			t.Errorf("expected 96px marginY, got %v", marginY)
+		}
+	})
+
+	t.Run("A4 height calculation", func(t *testing.T) {
+		cfg := PageConfig{
+			Size:         "A4",
+			MarginTop:    "1in",
+			MarginBottom: "1in",
+		}
+		h, marginY := pageGeometryPX(cfg)
+		expectedH := 297.0 * 96.0 / 25.4
+		if math.Abs(h-expectedH) > 0.001 {
+			t.Errorf("expected A4 %v px, got %v", expectedH, h)
+		}
+		if marginY != 192.0 {
+			t.Errorf("expected 192px marginY, got %v", marginY)
+		}
+	})
+}
+
+func TestChromiumLaunchArgs(t *testing.T) {
+	t.Run("headless base flags", func(t *testing.T) {
+		args := chromiumLaunchArgs("/tmp/resumai-test-profile")
+		joined := strings.Join(args, " ")
+
+		baseFlags := []string{
+			"--headless=new",
+			"--remote-debugging-port=0",
+			"--disable-software-rasterizer",
+			"--user-data-dir=/tmp/resumai-test-profile",
+		}
+
+		for _, flag := range baseFlags {
+			if !strings.Contains(joined, flag) {
+				t.Errorf("expected chromiumLaunchArgs to include %q, got %v", flag, args)
+			}
+		}
+	})
+
+	t.Run("ci environment sandbox disable flags", func(t *testing.T) {
+		t.Setenv("CI", "true")
+		args := chromiumLaunchArgs("/tmp/resumai-test-profile")
+		joined := strings.Join(args, " ")
+
+		for _, flag := range []string{"--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"} {
+			if !strings.Contains(joined, flag) {
+				t.Errorf("expected CI invocation to include %q, got %v", flag, args)
+			}
+		}
+	})
+}
+
+func TestExtractDevToolsPort(t *testing.T) {
+	t.Run("extracts port and drains remaining stderr", func(t *testing.T) {
+		stderrInput := "Fontconfig warning: ignoring UTF-8\nDevTools listening on ws://127.0.0.1:41923/devtools/browser/abc-123\nTrailing log line\n"
+		port, err := extractDevToolsPort(strings.NewReader(stderrInput), 2*time.Second)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if port != 41923 {
+			t.Errorf("expected port 41923, got %d", port)
+		}
+	})
+
+	t.Run("includes collected stderr when stream closes without port", func(t *testing.T) {
+		stderrInput := "[0101/000000.000:ERROR:zygote_host_impl_linux.cc] Running as root without --no-sandbox is not supported.\n"
+		_, err := extractDevToolsPort(strings.NewReader(stderrInput), 2*time.Second)
+		if err == nil {
+			t.Fatal("expected error when stderr closes without devtools port")
+		}
+		if !strings.Contains(err.Error(), "Running as root without --no-sandbox") {
+			t.Errorf("expected error to include stderr diagnostics, got: %v", err)
+		}
+	})
+
+	t.Run("includes collected stderr on timeout", func(t *testing.T) {
+		pr, pw := io.Pipe()
+		defer pr.Close()
+		defer pw.Close()
+
+		go func() {
+			_, _ = pw.Write([]byte("[0101/000000.000:WARNING:dbus] D-Bus connection stalled\n"))
+		}()
+
+		_, err := extractDevToolsPort(pr, 80*time.Millisecond)
+		if err == nil {
+			t.Fatal("expected timeout error")
+		}
+		if !strings.Contains(err.Error(), "timeout waiting for chromium devtools port") {
+			t.Errorf("expected timeout message, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "D-Bus connection stalled") {
+			t.Errorf("expected timeout error to include collected stderr output, got: %v", err)
+		}
+	})
+
+	t.Run("redacts secrets and user paths in error diagnostics", func(t *testing.T) {
+		dummyToken := "ghp_" + strings.Repeat("b", 36)
+		stderrInput := "[0101/000000.000:ERROR] Failed to bind to C:\\Users\\secretdev\\AppData\\Local\\Temp with token " + dummyToken + "\n"
+		_, err := extractDevToolsPort(strings.NewReader(stderrInput), 2*time.Second)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		errStr := err.Error()
+		if strings.Contains(errStr, "secretdev") {
+			t.Errorf("expected username in path to be redacted, got: %s", errStr)
+		}
+		if strings.Contains(errStr, dummyToken) {
+			t.Errorf("expected token to be redacted, got: %s", errStr)
+		}
+		if !strings.Contains(errStr, "[REDACTED]") {
+			t.Errorf("expected [REDACTED] in error, got: %s", errStr)
+		}
+	})
+}
+
+func TestFilePathToURI(t *testing.T) {
+	if got := filePathToURI("/tmp/resumai-render-123.html"); got != "file:///tmp/resumai-render-123.html" {
+		t.Errorf("unix temp path URI = %q, want %q", got, "file:///tmp/resumai-render-123.html")
+	}
+	if got := filePathToURI("/tmp/dir with spaces/resumai.html"); got != "file:///tmp/dir%20with%20spaces/resumai.html" {
+		t.Errorf("unix space path URI = %q, want %q", got, "file:///tmp/dir%20with%20spaces/resumai.html")
+	}
+	if runtime.GOOS == "windows" {
+		if got := filePathToURI(`C:\Users\dev\Temp\resumai-render-123.html`); got != "file:///C:/Users/dev/Temp/resumai-render-123.html" {
+			t.Errorf("windows path URI = %q, want %q", got, "file:///C:/Users/dev/Temp/resumai-render-123.html")
+		}
+	}
+}
+
+func readClientWSFrame(r *bufio.Reader) ([]byte, error) {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, err
+	}
+	masked := (header[1] & 0x80) != 0
+	length := int(header[1] & 0x7F)
+	if length == 126 {
+		ext := make([]byte, 2)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return nil, err
+		}
+		length = int(binary.BigEndian.Uint16(ext))
+	}
+	var mask [4]byte
+	if masked {
+		if _, err := io.ReadFull(r, mask[:]); err != nil {
+			return nil, err
+		}
+	}
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, err
+	}
+	if masked {
+		for i := range payload {
+			payload[i] ^= mask[i%4]
+		}
+	}
+	return payload, nil
+}
+
+func writeServerWSFrame(w io.Writer, payload []byte) error {
+	var buf bytes.Buffer
+	buf.WriteByte(0x81)
+	if len(payload) < 126 {
+		buf.WriteByte(byte(len(payload)))
+	} else {
+		buf.WriteByte(126)
+		var ext [2]byte
+		binary.BigEndian.PutUint16(ext[:], uint16(len(payload)))
+		buf.Write(ext[:])
+	}
+	buf.Write(payload)
+	_, err := w.Write(buf.Bytes())
+	return err
+}
+
+func TestCDPWebSocket_EventsAndContextRetry(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	ws := &cdpWebSocket{
+		conn:    clientConn,
+		r:       bufio.NewReader(clientConn),
+		pending: make(map[int64]chan cdpResponse),
+		events:  make(map[string]map[uint64]chan json.RawMessage),
+		closed:  make(chan struct{}),
+	}
+	go ws.readLoop()
+	defer ws.Close()
+
+	loadCh, unsub := ws.Subscribe("Page.loadEventFired")
+	defer unsub()
+
+	errCh := make(chan error, 1)
+	go func() {
+		sr := bufio.NewReader(serverConn)
+		// 1. Expect Page.navigate
+		rawNav, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var navCmd struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(rawNav, &navCmd); err != nil {
+			errCh <- err
+			return
+		}
+		// Reply to Page.navigate, then emit Page.loadEventFired
+		if err := writeServerWSFrame(serverConn, []byte(`{"id":1,"result":{"frameId":"f1","loaderId":"l1"}}`)); err != nil {
+			errCh <- err
+			return
+		}
+		if err := writeServerWSFrame(serverConn, []byte(`{"method":"Page.loadEventFired","params":{"timestamp":123.45}}`)); err != nil {
+			errCh <- err
+			return
+		}
+
+		// 2. First Runtime.evaluate -> transient -32000 Execution context was destroyed
+		rawEval1, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var evalCmd1 struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(rawEval1, &evalCmd1)
+		resp1, _ := json.Marshal(map[string]any{
+			"id": evalCmd1.ID,
+			"error": map[string]any{
+				"code":    -32000,
+				"message": "Execution context was destroyed.",
+			},
+		})
+		if err := writeServerWSFrame(serverConn, resp1); err != nil {
+			errCh <- err
+			return
+		}
+
+		// 3. Second Runtime.evaluate -> resolves false (stale about:blank load event)
+		rawEval2, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var evalCmd2 struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(rawEval2, &evalCmd2)
+		resp2, _ := json.Marshal(map[string]any{
+			"id":     evalCmd2.ID,
+			"result": map[string]any{"result": map[string]any{"value": false}},
+		})
+		if err := writeServerWSFrame(serverConn, resp2); err != nil {
+			errCh <- err
+			return
+		}
+
+		// Emit committed Page.loadEventFired before third evaluation
+		if err := writeServerWSFrame(serverConn, []byte(`{"method":"Page.loadEventFired","params":{"timestamp":124.00}}`)); err != nil {
+			errCh <- err
+			return
+		}
+
+		// 4. Third Runtime.evaluate -> resolves true
+		rawEval3, err := readClientWSFrame(sr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var evalCmd3 struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(rawEval3, &evalCmd3)
+		resp3, _ := json.Marshal(map[string]any{
+			"id":     evalCmd3.ID,
+			"result": map[string]any{"result": map[string]any{"value": true}},
+		})
+		if err := writeServerWSFrame(serverConn, resp3); err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := ws.Call(ctx, "Page.navigate", map[string]any{"url": "file:///tmp/test.html"}); err != nil {
+		t.Fatalf("Page.navigate failed: %v", err)
+	}
+	select {
+	case <-loadCh:
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for Page.loadEventFired: %v", ctx.Err())
+	}
+
+	if err := awaitDocumentAndFonts(ctx, ws, loadCh); err != nil {
+		t.Fatalf("awaitDocumentAndFonts failed: %v", err)
+	}
+	if serr := <-errCh; serr != nil {
+		t.Fatalf("mock CDP server error: %v", serr)
+	}
+}

@@ -1,0 +1,12 @@
+{
+  "name": "resumai",
+  "displayName": "ResumAI — Deterministic Resume Vault & Typesetter",
+  "version": "0.2.0-dev",
+  "disabled": true,
+  "description": "Deterministic career biographer vault, AST validator, headless Chrome CDP typesetter press, and stdio MCP server for verifiable resume generation.",
+  "suggestedPrompts": [
+    "Run resumai version to inspect binary build information",
+    "Run resumai vault status to inspect local career fact provenance",
+    "Triage a job description and generate a tailored resume draft"
+  ]
+}

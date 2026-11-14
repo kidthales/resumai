@@ -1,7 +1,0 @@
-.agents/skills
-bin
-composer.json
-composer.lock
-package-lock.json
-package.json
-skills-lock.json

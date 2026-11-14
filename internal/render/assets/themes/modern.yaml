@@ -1,0 +1,51 @@
+name: "modern"
+version: "1.0.0"
+description: "Contemporary tech and engineering theme with sapphire accents"
+
+page:
+  size: "letter"
+  margin_top: "0.5in"
+  margin_bottom: "0.5in"
+  margin_left: "0.5in"
+  margin_right: "0.5in"
+
+typography:
+  font_family_primary: "Inter"
+  font_family_mono: "JetBrains Mono"
+  font_size_base: "9.5pt"
+  font_size_title: "19pt"
+  font_size_subtitle: "10pt"
+  font_size_section: "11pt"
+  font_size_small: "8.5pt"
+  line_height: 1.3
+
+colors:
+  primary: "#0f172a"
+  secondary: "#334155"
+  accent: "#2563eb"
+  muted: "#64748b"
+  border: "#cbd5e1"
+  background: "#ffffff"
+
+spacing:
+  section_gap: "10pt"
+  item_gap: "5pt"
+  bullet_gap: "2pt"
+  header_gap: "6pt"
+
+header:
+  layout: "split"
+  show_headline: true
+  show_divider: true
+
+sections:
+  uppercase: true
+  border_bottom: true
+  order:
+    - "summary"
+    - "experience"
+    - "projects"
+    - "skills"
+    - "education"
+    - "certifications"
+    - "custom"

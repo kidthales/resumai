@@ -1,0 +1,51 @@
+name: "default"
+version: "1.0.0"
+description: "Professional ATS-optimized single-column executive theme"
+
+page:
+  size: "letter"
+  margin_top: "0.5in"
+  margin_bottom: "0.5in"
+  margin_left: "0.5in"
+  margin_right: "0.5in"
+
+typography:
+  font_family_primary: "Inter"
+  font_family_mono: "JetBrains Mono"
+  font_size_base: "10pt"
+  font_size_title: "18pt"
+  font_size_subtitle: "10.5pt"
+  font_size_section: "11.5pt"
+  font_size_small: "9pt"
+  line_height: 1.35
+
+colors:
+  primary: "#111827"
+  secondary: "#374151"
+  accent: "#0f766e"
+  muted: "#6b7280"
+  border: "#d1d5db"
+  background: "#ffffff"
+
+spacing:
+  section_gap: "11pt"
+  item_gap: "6pt"
+  bullet_gap: "2.5pt"
+  header_gap: "6pt"
+
+header:
+  layout: "left"
+  show_headline: true
+  show_divider: true
+
+sections:
+  uppercase: true
+  border_bottom: true
+  order:
+    - "summary"
+    - "experience"
+    - "education"
+    - "skills"
+    - "projects"
+    - "certifications"
+    - "custom"
