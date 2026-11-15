@@ -140,6 +140,23 @@ func decodeArgs[T any](raw json.RawMessage) (T, error) {
 	return out, nil
 }
 
+func decodeArgsStrict[T any](raw json.RawMessage) (T, error) {
+	var out T
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return out, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&out); err != nil {
+		return out, fmt.Errorf("invalid tool arguments: %w", err)
+	}
+	if dec.More() {
+		return out, errors.New("invalid tool arguments: unexpected trailing JSON data")
+	}
+	return out, nil
+}
+
 func toolJSONResult(v any) (*CallToolResult, error) {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

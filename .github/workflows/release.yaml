@@ -43,7 +43,16 @@ jobs:
 
       - name: Build cross-platform stripped release binaries
         run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Error: tag '$TAG' is not valid semver (expected vMAJOR.MINOR.PATCH[-prerelease])"
+            exit 1
+          fi
           VERSION="${TAG#v}"
+          MANIFEST_VERSION=$(jq -er '.version' plugin.json)
+          if [[ "$VERSION" != "$MANIFEST_VERSION" ]]; then
+            echo "Error: tag version '$VERSION' does not match plugin.json version '$MANIFEST_VERSION'"
+            exit 1
+          fi
           COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           LDFLAGS="-s -w -X github.com/kidthales/resumai/internal/version.Version=${VERSION} -X github.com/kidthales/resumai/internal/version.Commit=${COMMIT} -X github.com/kidthales/resumai/internal/version.Date=${DATE}"
@@ -69,8 +78,8 @@ jobs:
           chmod +x ./resumai-linux-amd64
           OUTPUT=$(./resumai-linux-amd64 version)
           echo "Binary version output: $OUTPUT"
-          if [[ "$OUTPUT" != *"$VERSION"* ]]; then
-            echo "Error: version output does not contain version $VERSION"
+          if [[ "$OUTPUT" != "resumai version ${VERSION}" ]]; then
+            echo "Error: version output '$OUTPUT' did not equal 'resumai version ${VERSION}'"
             exit 1
           fi
 
@@ -78,6 +87,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          PRERELEASE_FLAG=()
+          if [[ "$TAG" == *-* ]]; then
+            PRERELEASE_FLAG=(--prerelease)
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               resumai-windows-amd64.exe \
@@ -96,5 +109,6 @@ jobs:
               resumai-darwin-arm64 \
               SHA256SUMS \
               --title "$TAG" \
-              --generate-notes
+              --generate-notes \
+              "${PRERELEASE_FLAG[@]}"
           fi

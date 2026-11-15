@@ -28,18 +28,24 @@ Guide a `Triaged` `JobApplication` through grounded AST drafting, clean-room cri
 - Select the single best `archetype_id` in strict order: (1) IC vs. Management gate, (2) Seniority & Scope alignment, (3) Tech Stack overlap.
 
 ### 2. Author Grounded `ApplicationDraft` (`Triaged -> Drafted`)
-Construct the `draft` object:
+Construct the `draft` object using exact `ApplicationDraft` JSON keys (do **not** use guessed keys such as `bullets`, `title`, or `company`, or a flat `string[]` for `skills`):
 - `archetype_id`: Selected archetype ID.
 - `headline`, `summary`: Tailored 2–3 sentence summary grounded in verified career history.
-- `experience`, `education`, `skills`, `projects`, `certifications`, `custom_sections`, `page_budget` (`1` or `2`).
-- Frame every bullet using Google X-Y-Z (**Accomplished [X], as measured by [Y], by doing [Z]**) with `id`, `text`, and non-empty `fact_ids`.
+- `experience[]`: `{id?, role_title, organization, location?, start_date?, end_date?, duration?, highlights: [{id, text, fact_ids}]}`
+- `education[]`: `{id?, institution, degree, field_of_study?, location?, start_date?, end_date?, duration?, honors?, highlights?: [{id, text, fact_ids}]}`
+- `skills[]`: `{name, skills: string[]}`
+- `projects[]`: `{name, role?, url?, duration?, technologies?: string[], highlights?: [{id, text, fact_ids}]}`
+- `certifications`: `string[]`
+- `custom_sections[]`: `{title, highlights: [{id, text, fact_ids}]}`
+- `page_budget`: `1` or `2`.
+- Frame every `highlights[]` bullet using Google X-Y-Z (**Accomplished [X], as measured by [Y], by doing [Z]**) with `id`, `text`, and non-empty `fact_ids`.
 
 Call `resumai_save_draft` (`application_id`, `draft`). Note: saving a draft from `Drafted`, `Audited`, `ReadyToRender`, or `Exported` resets the state to `Drafted` and clears prior audits/exports.
 
 ### 3. Dispatch Clean-Room Critic Audits (`Drafted -> Audited`)
-Invoke **both** clean-room subagents independently, passing **only** `application_id` (and no parent assumptions or inline draft overrides) so each critic fetches the air-gapped ground truth directly via `resumai_get_audit_bundle`:
-1. `resume-fact-checker` -> produces `FactCheckReport` (`critic_agent: "resume-fact-checker"`, `summary`, `discrepancies`, `passed`).
-2. `resume-alignment-checker` -> produces `AlignmentCheckReport` (`critic_agent: "resume-alignment-checker"`, `summary`, `matched_signals`, `missing_signals`, `recommendations`, `passed`).
+Invoke **both** clean-room subagents independently with `Model: "flash"` (required for `GUARD-12` / `LINT-MODEL-01`), passing **only** `application_id` (and no parent assumptions or inline draft overrides) so each critic fetches the air-gapped ground truth directly via `resumai_get_audit_bundle`:
+1. `resume-fact-checker` (`Model: "flash"`) -> produces `FactCheckReport` (`critic_agent: "resume-fact-checker"`, `summary`, `discrepancies`, `passed`).
+2. `resume-alignment-checker` (`Model: "flash"`) -> produces `AlignmentCheckReport` (`critic_agent: "resume-alignment-checker"`, `summary`, `matched_signals`, `missing_signals`, `recommendations`, `passed`).
 
 Persist both reports via `resumai_record_audits` (`application_id`, `fact_check`, `alignment_check`).
 
