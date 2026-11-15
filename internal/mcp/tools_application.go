@@ -57,15 +57,83 @@ func (s *Server) registerApplicationTools() {
 		}, "application_id", "rationale"),
 	}, s.handlePassRole)
 
+	bulletNodeSchema := schemaObject(map[string]any{
+		"id":       strProp("Unique bullet identifier"),
+		"text":     strProp("Google X-Y-Z bullet text"),
+		"fact_ids": strArrayProp("Non-empty array of CareerFact IDs grounding this bullet"),
+		"verified": boolProp("Server-computed verification flag"),
+	}, "id", "text", "fact_ids")
+	highlightsProp := map[string]any{
+		"type":        "array",
+		"description": "Fact-grounded bullet nodes",
+		"items":       bulletNodeSchema,
+	}
+
 	s.registerTool(Tool{
 		Name:        "resumai_save_draft",
 		Description: "Save a tailored ApplicationDraft on a Triaged/Drafted/Audited/ReadyToRender/Exported application, verifying archetype_id and grounding every bullet fact_id in CareerVault.",
 		InputSchema: schemaObject(map[string]any{
 			"application_id": strProp("JobApplication ID"),
-			"draft": map[string]any{
-				"type":        "object",
-				"description": "ApplicationDraft AST with archetype_id, sections, and fact-cited bullets",
-			},
+			"draft": schemaObject(map[string]any{
+				"archetype_id": strProp("Target persona archetype ID"),
+				"headline":     strProp("Tailored resume headline"),
+				"summary":      strProp("Tailored 2-3 sentence summary"),
+				"experience": map[string]any{
+					"type": "array",
+					"items": schemaObject(map[string]any{
+						"id":           strProp("Optional role ID"),
+						"role_title":   strProp("Role title"),
+						"organization": strProp("Organization/employer name"),
+						"location":     strProp("Role location"),
+						"start_date":   strProp("Start date"),
+						"end_date":     strProp("End date"),
+						"duration":     strProp("Formatted duration"),
+						"highlights":   highlightsProp,
+					}, "role_title", "organization", "highlights"),
+				},
+				"education": map[string]any{
+					"type": "array",
+					"items": schemaObject(map[string]any{
+						"id":             strProp("Optional education ID"),
+						"institution":    strProp("Institution name"),
+						"degree":         strProp("Degree name"),
+						"field_of_study": strProp("Field of study"),
+						"location":       strProp("Institution location"),
+						"start_date":     strProp("Start date"),
+						"end_date":       strProp("End date"),
+						"duration":       strProp("Formatted duration"),
+						"honors":         strProp("Honors or distinction"),
+						"highlights":     highlightsProp,
+					}, "institution", "degree"),
+				},
+				"skills": map[string]any{
+					"type": "array",
+					"items": schemaObject(map[string]any{
+						"name":   strProp("Skill category heading"),
+						"skills": strArrayProp("Skills within this category"),
+					}, "name", "skills"),
+				},
+				"projects": map[string]any{
+					"type": "array",
+					"items": schemaObject(map[string]any{
+						"name":         strProp("Project name"),
+						"role":         strProp("Candidate role on project"),
+						"url":          strProp("Project URL"),
+						"duration":     strProp("Project duration"),
+						"technologies": strArrayProp("Technologies used"),
+						"highlights":   highlightsProp,
+					}, "name"),
+				},
+				"certifications": strArrayProp("List of certification names"),
+				"custom_sections": map[string]any{
+					"type": "array",
+					"items": schemaObject(map[string]any{
+						"title":      strProp("Custom section heading"),
+						"highlights": highlightsProp,
+					}, "title", "highlights"),
+				},
+				"page_budget": intProp("Target page budget (1 or 2)"),
+			}, "archetype_id"),
 		}, "application_id", "draft"),
 	}, s.handleSaveDraft)
 
@@ -292,7 +360,7 @@ func (s *Server) handleSaveDraft(ctx context.Context, raw json.RawMessage) (any,
 		ApplicationID string                   `json:"application_id"`
 		Draft         *domain.ApplicationDraft `json:"draft"`
 	}
-	in, err := decodeArgs[input](raw)
+	in, err := decodeArgsStrict[input](raw)
 	if err != nil {
 		return nil, err
 	}

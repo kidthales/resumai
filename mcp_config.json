@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "resumai": {
+      "command": "resumai",
+      "args": ["mcp"]
+    }
+  }
+}

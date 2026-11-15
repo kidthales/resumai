@@ -1,232 +1,167 @@
-# ResumAI
+# ResumAI (`v0.2.0`)
 
 [![CI](https://github.com/kidthales/resumai/actions/workflows/ci.yaml/badge.svg)](https://github.com/kidthales/resumai/actions/workflows/ci.yaml)
 
-A resume generation system that leverages LLMs.
+**The Biographer's Vault & Typesetter's Press** — an Antigravity Plugin paired with a single-static pure-Go CLI and stdio MCP kernel (`resumai`) for verifiable, ATS-linearized resume generation.
+
+## Architecture Overview
+
+ResumAI `v0.2.0` replaces the legacy `v0.1.0` Docker/PHP/Symfony/Pandoc stack with two tightly bounded components:
+
+- **Pure-Go CLI & Stdio MCP Kernel (`cmd/resumai`)**:
+  - Embedded pure-Go SQLite `CareerVault` (`modernc.org/sqlite`, zero CGO required).
+  - Structural **PII Air-Gap**: contact PII (`pii_header`) is stored in SQLite, managed strictly via local CLI commands (`resumai pii`), and injected only during local file rendering (`resumai_render_bundle`). It is structurally unreachable over MCP.
+  - Deterministic `JobApplication` finite-state machine (`Triaged` -> `Drafted` -> `Audited` -> `ReadyToRender` -> `Exported` -> `Submitted` / `DeclinedByCandidate`).
+  - Embedded HTML and pure-Go OpenXML `.docx` renderers (`default`, `modern`, and `classic` themes) plus headless Chromium CDP `.pdf` printing and DOM layout telemetry (`Range.getClientRects()`).
+- **Antigravity Plugin (`plugin.json`, `mcp_config.json`)**:
+  - Progressive-disclosure **Skills** (`skills/`) covering Loops 0–4 with **zero** always-on `rules/AGENTS.md` context bloat.
+  - Clean-room read-only **Subagents** (`agents/resume-fact-checker.md`, `agents/resume-alignment-checker.md`) enforcing strict **Fact-over-Keyword** precedence via `resumai_get_audit_bundle`.
 
 ## Requirements
 
-- [Docker Compose](https://docs.docker.com/compose/install/) (v2.10+)
-- [GNU Make](https://www.gnu.org/software/make/) and [GNU Bash](https://www.gnu.org/software/bash/)
-- [Git](https://git-scm.com/install/)
+- **`resumai` binary** on `PATH` (for CLI usage and `mcp_config.json`: `"command": "resumai", "args": ["mcp"]`).
+- **Google Chrome or Microsoft Edge** on the host for `.pdf` export and page-budget DOM telemetry (optional override: `RESUMAI_CHROME_BIN` or `CHROME_BIN`).
+- **Building from source (optional)**: Go `1.26.7+` (`go.mod`) and PowerShell (`pwsh`) for `./scripts/build.ps1` and `./scripts/ci-local.ps1`.
 
-## Quickstart
+## Installation
 
-1. `git clone https://github.com/kidthales/resumai.git`
-2. `cd resumai`
-3. `make start`
-    - First-time project starts will take a few minutes to complete while docker images are built and services are started.
-    - Once started, Docker logging will continue in the current shell. When all services are healthy, the application is ready to accept commands in another shell.
-4. Within the `content/pii/` directory, create and populate `education_history.md`, `extras.md`, `personal_info.md`, and `work_history.md` with your own information; refer to the corresponding sample files for guidance.
-5. Within the `content/archetypes/` directory, create and populate at least 2–3 of your own git-ignored files with your own archetypes; refer to the corresponding sample files for guidance. Keep these archetypes aligned with the content you've added in `content/pii/work_history.md`.
-6. Pull the required agent models used by the Ollama platform: `make ollama-pull`.
-7. Open a web browser and navigate to https://aistudio.google.com/api-keys and click the _Create API key_ button.
-    1. Create a new project or select an existing one.
-    2. Copy the API key and save it in the git-ignored `.env.local` file as:
-        ```dotenv
-        GEMINI_API_KEY=<gemini_api_key>
-        ```
-8. Generate a general-purpose resume, based only on `content/pii/`, and write the result to `var/resume_draft.md`:
-    ```shell
-    # Ollama
-    make resume-draft c='var/resume_draft.md'
+### Option 1: Prebuilt Release Binary (Recommended)
 
-    # Gemini
-    make resume-draft c='var/resume_draft.md --platform gemini'
-    ```
-    Generate a resume tailored to an archetype created at `content/archetypes/archetype.md`, using `content/pii/`, and write the result to `var/resume_draft.archetype.md`:
-    ```shell
-    # Ollama
-    make resume-draft c='var/resume_draft.archetype.md --archetype archetype.md'
+Download the binary for your platform and `SHA256SUMS` from [GitHub Releases](https://github.com/kidthales/resumai/releases):
 
-    # Gemini
-    make resume-draft c='var/resume_draft.archetype.md --archetype archetype.md --platform gemini'
-    ```
-9. Export the resume to `docx`, `html`, and `pdf` formats:
-    ```shell
-    # Creates var/resume_draft.docx, var/resume_draft.html, and var/resume_draft.pdf
-    make resume-export c='var/resume_draft.md'
-    ```
+- Windows (`amd64`): `resumai-windows-amd64.exe`
+- Linux (`amd64` / `arm64`): `resumai-linux-amd64`, `resumai-linux-arm64`
+- macOS (`amd64` / `arm64`): `resumai-darwin-amd64`, `resumai-darwin-arm64`
 
-## Usage
+Verify the SHA-256 checksum, place the binary on your `PATH` as `resumai` (`resumai.exe` on Windows), and confirm installation:
 
-> [!TIP]
-> Use `make help` to reference available make targets and descriptions.
+```shell
+# Linux / macOS
+sha256sum -c SHA256SUMS --ignore-missing
+chmod +x resumai-linux-amd64
+mv resumai-linux-amd64 ~/.local/bin/resumai
+resumai version
+```
 
-The app is composed of five commands (two of which are optional). The commands are designed to run in a sequence, but there is no explicit automation provided. The lack of automation is for two reasons:
+```powershell
+# Windows (PowerShell)
+Get-FileHash .\resumai-windows-amd64.exe -Algorithm SHA256
+Move-Item .\resumai-windows-amd64.exe "$env:USERPROFILE\go\bin\resumai.exe"
+resumai version
+```
 
-1. Workflow flexibility.
-2. Unreliability of free-tier and local LLM service/output. _**TODO:** Service issues can be mitigated with backoff/retry logic._
+### Option 2: Build from Source
 
-All commands support the `--platform ollama` and `--platform gemini` flags; by default, the `ollama` platform is used.
+```powershell
+git clone https://github.com/kidthales/resumai.git
+cd resumai
+pwsh ./scripts/build.ps1
+resumai version
+```
 
-Finally, support is provided to export the generated Markdown files via Pandoc.
+`scripts/build.ps1` runs unit tests, builds `bin/resumai(.exe)` with version metadata from `plugin.json`, and installs a copy to `GOPATH/bin` (default `~/go/bin`).
 
-### 1. Resume Archetype Selector (Optional)
+### Option 3: Antigravity Plugin Activation
 
-Given a **job description**, this agent compares it against a set of candidate **archetypes** (Markdown files located in `content/archetypes/`), and determines the best **archetype** (with corresponding rationale) that satisfies the **job description**. The agent will attempt to provide structured output (JSON), for example:
+Install or link this repository as an Antigravity plugin (`plugin.json` is enabled with `"disabled": false`). Antigravity automatically starts the stdio MCP server using `mcp_config.json`:
 
 ```json
 {
-    "archetype_filename": "technical_lead.sample.md",
-    "rationale": "A brief explanation as to why this archetype was selected."
+  "mcpServers": {
+    "resumai": {
+      "command": "resumai",
+      "args": ["mcp"]
+    }
+  }
 }
 ```
 
-<img alt="Resume Archetype Selector Flowchart" src="assets/flowcharts/resume_archetype_selector.svg" width="100%" />
+## Quickstart: CLI Onboarding
 
-> [!NOTE]
-> If at least one non-sample file exists in `content/archetypes/`, all sample files will be excluded from the `list_archetypes` tool call result. A non-sample file is any `*.md` that does not end with `*.sample.md`.
+By default, ResumAI stores your SQLite vault at `~/.resumai/vault.db` (override with `--vault <path>` or `RESUMAI_VAULT_PATH`).
 
-Examples:
+### 1. Configure Air-Gapped Contact PII (`resumai pii`)
 
-```shell
-# Output archetype selection to console only
-make resume-arch c='path/to/input/job_description.txt'
-
-# Output archetype selection to console and file
-make resume-arch c='path/to/input/job_description.txt --output path/to/output/archetype_selection.json'
-```
-
-> [!TIP]
-> `make resume-arch c='--help'`
-
-### 2. Resume Drafter
-
-This agent encapsulates the contents of `content/pii/` within its system prompt and will use that information to generate a **resume**. You may provide optional inputs, **job description** and/or **archetype**, to help tailor the generated **resume**.
-
-<img alt="Resume Drafter Flowchart" src="assets/flowcharts/resume_drafter.svg" width="100%" />
-
-Examples:
+Contact details never enter LLM prompts or MCP responses. Set them locally in your terminal:
 
 ```shell
-# Output a general-purpose resume
-make resume-draft c='path/to/output/resume_draft.md'
+resumai pii set \
+  --name "Jane Doe" \
+  --email "jane@example.com" \
+  --phone "+1-555-0100" \
+  --location "Seattle, WA" \
+  --linkedin "https://linkedin.com/in/janedoe" \
+  --github "https://github.com/janedoe" \
+  --portfolio "https://janedoe.dev"
 
-# Output a resume tailored for job description
-make resume-draft c='path/to/output/resume_draft.md --job path/to/input/job_description.txt'
-
-# Output a resume tailored for archetype
-make resume-draft c='path/to/output/resume_draft.md --archetype archetype_filename'
-
-# Output a resume tailored for job description and archetype
-make resume-draft c='path/to/output/resume_draft.md --job path/to/input/job_description.txt --archetype archetype_filename'
+resumai pii show
 ```
 
-> [!TIP]
-> `make resume-draft c='--help'`
+Supported aliases: `--full-name`, `--linkedin-url`, `--github-url`, `--portfolio-url`, plus `--json` on `resumai pii show`.
 
-### 3. Resume Checkers
+### 2. Migrate from `v0.1.0` Markdown (Optional)
 
-These agent commands are designed to provide checks and feedback for a resume. Generated feedback can then be used with [step 4](#4-resume-editor).
-
-> [!NOTE]
-> These may also be used as standalone commands to check a hand-crafted resume.
-
-#### 3.1. Resume Fact Checker
-
-Similar to the `resume_drafter` agent, this agent encapsulates the contents of `content/pii/` within its system prompt but will use that information to **fact-check** a **resume** and generate a report.
-
-<img alt="Resume Fact Checker Flowchart" src="assets/flowcharts/resume_fact_checker.svg" width="100%" />
-
-Examples:
+Import legacy `personal_info.md`, `education_history.md`, `work_history.md`, `extras.md`, and `archetypes/*.md`:
 
 ```shell
-make resume-fc c='path/to/input/resume.md path/to/output/resume_fact_check.md'
+resumai import-legacy ./content --default-state raw_note
 ```
 
-> [!TIP]
-> `make resume-fc c='--help'`
+- `--default-state verified|raw_note`: set to `raw_note` (recommended) when imported bullets need metric verification before rendering.
+- `--skip-pii`: omit `personal_info.md` import when preserving existing local PII or testing sample files.
 
-#### 3.2. Resume Job Alignment Checker (Optional)
-
-This agent will perform a **job-alignment-check** for a given **resume** and **job description**, generating a report.
-
-<img alt="Resume Job Alignment Checker Flowchart" src="assets/flowcharts/resume_job_alignment_checker.svg" width="100%" />
-
-Examples:
+### 3. Back Up & Edit Structured YAML (`dump` / `load`)
 
 ```shell
-make resume-jac c='path/to/input/resume.md path/to/input/job_description.txt path/to/output/resume_job_alignment_check.md'
+# Export non-PII vault records to YAML (omits pii.yaml by default)
+resumai dump ./vault-backup
+
+# Include pii.yaml ONLY for private local backups (never commit to public VCS)
+resumai dump ./vault-backup --include-pii
+
+# Restore or sync edited YAML back into SQLite
+resumai load ./vault-backup
 ```
 
-> [!TIP]
-> `make resume-jac c='--help'`
+`resumai load` preserves existing `pii_header` when `pii.yaml` is absent and automatically soft-archives (`archived`) any fact cited by a `Submitted` application if removed from the YAML bundle.
 
-### 4. Resume Editor
-
-This agent is responsible for accepting a **resume**, **resume fact-check**, and optionally a **resume job-alignment-check**, to generate an edited **resume** that is (hopefully) corrected and aligned.
-
-<img alt="Resume Editor Flowchart" src="assets/flowcharts/resume_editor.svg" width="100%" />
-
-Examples:
+### 4. Run the Stdio MCP Server Manually (Optional)
 
 ```shell
-# Edit resume with only a resume fact-check
-make resume-edit c='path/to/input/resume.md path/to/input/resume_fact_check.md path/to/output/resume.md'
-
-# Edit resume with a resume fact-check and a resume job-alignment-check
-make resume-edit c='path/to/input/resume.md path/to/input/resume_fact_check.md path/to/output/resume.md --job path/to/input/resume_job_alignment_check.md'
+resumai mcp [--vault <path>]
 ```
 
-> [!TIP]
-> `make resume-edit c='--help'`
+## Loops 0–4 Plugin Workflow
 
-### Resume Export
+Once the plugin is active in Antigravity, the four progressive-disclosure skills and two clean-room critic subagents guide applications end-to-end:
 
-While Markdown is fine for editing/revising/iterating resume content, we usually want the final result as a PDF or DOCX. Additionally, the ability to customize or otherwise style how the converted Markdown is presented is a critical feature.
+| Loop | Skill / Agents | Purpose & Key Transitions |
+| :--- | :--- | :--- |
+| **Loop 0** | `skills/career-archaeology` | Socratic interview to curate organizations, roles, Google X-Y-Z atomic facts (`raw_note`, `metric_pending`, `verified`, `archived`), education, job-search logistics, and persona archetypes. |
+| **Loop 1** | `skills/vault-portability` | Local CLI management for `resumai pii`, `resumai dump`, `resumai load`, and `resumai import-legacy`. |
+| **Loop 2** | `skills/opportunity-triage` | JD reconnaissance (`[*] -> Triaged` via `resumai_save_triage`, enforcing verbatim `raw_jd` quotes and cited URLs / `unknown_ask_recruiter`) and Go/No-Go decision (`Triaged -> DeclinedByCandidate` via `resumai_pass_role`). |
+| **Loop 3** | `skills/resume-tailor` + `agents/resume-fact-checker` + `agents/resume-alignment-checker` | Grounded `ApplicationDraft` authoring (`Triaged -> Drafted`), clean-room dual-critic audits via `resumai_get_audit_bundle` (`Drafted -> Audited`) under strict **Fact-over-Keyword** precedence, and verified promotion (`Audited -> ReadyToRender` with `0` High discrepancies, `100%` `verified` facts, and `0` `[METRIC:` tokens). |
+| **Loop 4** | `skills/resume-tailor` | Local PII-injected typesetting (`ReadyToRender -> Exported` via `resumai_render_bundle` into `~/.resumai/applications` or `RESUMAI_APPLICATIONS_DIR` with `.html`, `.docx`, `.pdf`, and Chrome CDP telemetry) and immutable packet lock (`Exported -> Submitted` via `resumai_mark_submitted` with SHA-256 hash and `interview_brief.md`). |
 
-To support the above, we leverage Pandoc with two main export paths:
+### Registered MCP Tools (`resumai mcp`)
 
-1. Markdown → DOCX
-2. Markdown → HTML
+- **CareerVault**: `resumai_vault_status`, `resumai_get_logistics`, `resumai_save_logistics`, `resumai_list_organizations`, `resumai_save_organization`, `resumai_list_roles`, `resumai_save_role`, `resumai_list_facts`, `resumai_save_fact`, `resumai_archive_fact`, `resumai_list_education`, `resumai_save_education`, `resumai_list_archetypes`, `resumai_save_archetype`
+- **JobApplication FSM & Press**: `resumai_list_applications`, `resumai_get_application`, `resumai_save_triage`, `resumai_pass_role`, `resumai_save_draft`, `resumai_get_audit_bundle`, `resumai_record_audits`, `resumai_promote_ready`, `resumai_render_bundle`, `resumai_mark_submitted`
 
-To perform the HTML → PDF conversion, a [script](./bin/render-pdf.mjs) that leverages [puppeteer](https://www.npmjs.com/package/puppeteer) and headless chromium is used.
+## Development & Verification
 
-To add custom styles, create git-ignored CSS files in `assets/styles/resumes/` and refer to `resume.sample.css` for guidance. By default, `resume.sample.css` is applied.
+Run the single-source local CI pipeline (workflow Gate 0/1 checks, `gofmt`, `go vet`, unit & hexagonal architecture boundary tests, `govulncheck`, `-race`, PowerShell AST checks, and build verification):
 
-Examples:
-
-```shell
-# Creates var/resume.{docx,html,pdf} files, html & pdf have default styles applied
-make resume-export c='var/resume.md'
-
-# Creates var/resume.{docx,html,pdf} files, html & pdf have custom styles applied
-make resume-export c='var/resume.md assets/styles/resumes/custom.css'
+```powershell
+pwsh ./scripts/ci-local.ps1
 ```
 
-## Content Structure
+For quick iteration during development:
 
-```
-resumai/
-└── content/
-    ├── archetypes/                          # Candidate archetypes
-    │   ├── .gitignore                       # Ignores all non-sample files
-    │   └── *.sample.md                      # Sample archetype files
-    │
-    ├── pii/                                 # Personally Identifiable Information
-    │   ├── .gitignore                       # Ignores all non-sample files
-    │   ├── education_history.sample.md      # Sample education history file
-    │   ├── extras.sample.md                 # Sample extras file
-    │   ├── personal_info.sample.md          # Sample personal information file
-    │   └── work_history.sample.md           # Sample work history file
-    │
-    └── prompts/                             # Agent prompts
-        ├── resume_archetype_selector.md     # Resume archetype selector agent prompt
-        ├── resume_drafter.md                # Resume drafter agent prompt
-        ├── resume_editor.md                 # Resume editor agent prompt
-        ├── resume_fact_checker.md           # Resume fact checker agent prompt
-        └── resume_job_alignment_checker.md  # Resume job alignment checker agent prompt
+```powershell
+go test ./...
 ```
 
-## Licenses
+## License
 
-Application source code and content are licensed under the GNU Affero General Public License v3.0 or later. See [LICENSE](./LICENSE) for the full license text.
-
-Docker FrankenPHP image is licensed under the MIT License. See [docker/php/LICENSE](./docker/php/LICENSE) for the full license text.
-
-Symfony is licensed under the MIT License. See https://github.com/symfony/symfony/blob/8.1/LICENSE for the full license text.
-
----
-
-[.](https://www.youtube.com/watch?v=sl0GGrA73Es)
+ResumAI is licensed under the GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`). See [LICENSE](./LICENSE) for the full license text.

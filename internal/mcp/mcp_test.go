@@ -588,3 +588,125 @@ func TestGetAuditBundleDeterministicOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestSaveDraftStrictDecodingAndSchema(t *testing.T) {
+	_, srv := newTestVaultAndServer(t)
+
+	// Verify resumai_save_draft InputSchema documents nested ApplicationDraft properties.
+	var saveDraftTool *mcp.Tool
+	for _, tool := range srv.ListTools() {
+		if tool.Name == "resumai_save_draft" {
+			tCopy := tool
+			saveDraftTool = &tCopy
+			break
+		}
+	}
+	if saveDraftTool == nil {
+		t.Fatalf("resumai_save_draft tool not registered")
+	}
+	props, ok := saveDraftTool.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected properties map in InputSchema")
+	}
+	draftSchema, ok := props["draft"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected draft schema map")
+	}
+	draftProps, ok := draftSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected nested properties on draft schema")
+	}
+	for _, key := range []string{"archetype_id", "headline", "summary", "experience", "education", "skills", "projects", "certifications", "custom_sections", "page_budget"} {
+		if _, exists := draftProps[key]; !exists {
+			t.Errorf("draft InputSchema missing property %q", key)
+		}
+	}
+
+	// Seed minimal vault + triaged app
+	callToolJSON(t, srv, "resumai_save_organization", map[string]any{"id": "org-1", "name": "Acme"})
+	callToolJSON(t, srv, "resumai_save_role", map[string]any{"id": "role-1", "org_id": "org-1", "title": "Staff Engineer"})
+	callToolJSON(t, srv, "resumai_save_fact", map[string]any{
+		"id": "fact-1", "role_id": "role-1", "headline": "Cut P99", "details": "Cut P99 by 42%.", "epistemic_state": "verified",
+	})
+	callToolJSON(t, srv, "resumai_save_archetype", map[string]any{"id": "arch-1", "name": "Systems"})
+	res, _ := callToolJSON(t, srv, "resumai_save_triage", map[string]any{
+		"application_id": "app-strict",
+		"role_title":     "Staff Engineer",
+		"company":        "Acme",
+		"raw_jd":         "Build pure-Go systems.",
+	})
+	if res.IsError {
+		t.Fatalf("save_triage failed: %s", res.Content[0].Text)
+	}
+
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{
+			name: "guessed_experience_keys_title_company_bullets",
+			args: map[string]any{
+				"application_id": "app-strict",
+				"draft": map[string]any{
+					"archetype_id": "arch-1",
+					"experience": []map[string]any{
+						{
+							"title":   "Staff Engineer",
+							"company": "Acme",
+							"bullets": []map[string]any{
+								{"id": "b-1", "text": "Cut P99 by 42%.", "fact_ids": []string{"fact-1"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "flat_skills_string_array",
+			args: map[string]any{
+				"application_id": "app-strict",
+				"draft": map[string]any{
+					"archetype_id": "arch-1",
+					"experience": []map[string]any{
+						{
+							"role_title":   "Staff Engineer",
+							"organization": "Acme",
+							"highlights": []map[string]any{
+								{"id": "b-1", "text": "Cut P99 by 42%.", "fact_ids": []string{"fact-1"}},
+							},
+						},
+					},
+					"skills": []string{"Go", "SQLite"},
+				},
+			},
+		},
+		{
+			name: "unknown_top_level_key",
+			args: map[string]any{
+				"application_id": "app-strict",
+				"extra_field":    true,
+				"draft": map[string]any{
+					"archetype_id": "arch-1",
+					"experience": []map[string]any{
+						{
+							"role_title":   "Staff Engineer",
+							"organization": "Acme",
+							"highlights": []map[string]any{
+								{"id": "b-1", "text": "Cut P99 by 42%.", "fact_ids": []string{"fact-1"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, _ := callToolJSON(t, srv, "resumai_save_draft", tc.args)
+			if !res.IsError {
+				t.Fatalf("expected error for %s, but succeeded: %s", tc.name, res.Content[0].Text)
+			}
+		})
+	}
+}

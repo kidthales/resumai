@@ -34,6 +34,11 @@ ResumAI `v0.2.0` replaces the legacy prototype with a high-performance, single-s
 
 ```
 plugins/resumai/
+├── agents/                  # Clean-room read-only critic subagents
+│   ├── resume-alignment-checker.md
+│   └── resume-fact-checker.md
+├── assets/                  # Plugin branding & static assets
+│   └── logo.svg
 ├── cmd/
 │   └── resumai/             # CLI & stdio MCP server entrypoint
 │       └── main.go
@@ -48,13 +53,20 @@ plugins/resumai/
 │   │   └── mcp.go
 │   ├── version/             # Semantic version definition
 │   │   └── version.go
-│   └── arch_test.go         # Hexagonal boundary purity unit tests
+│   ├── arch_test.go         # Hexagonal boundary purity unit tests
+│   └── plugin_bundle_test.go # Plugin manifest, MCP config, skills & critic contracts
 ├── docs/
 │   └── RUNBOOK_EPIC_55.md   # Architectural runbook and sub-issue roadmap
 ├── scripts/
 │   ├── build.ps1            # Lock-rotating build script
 │   └── ci-local.ps1         # Local CI runner (vet, test, race, build)
-├── plugin.json              # Antigravity plugin manifest (starts disabled)
+├── skills/                  # Progressive-disclosure Loops 0-4 skills
+│   ├── career-archaeology/SKILL.md
+│   ├── opportunity-triage/SKILL.md
+│   ├── resume-tailor/SKILL.md
+│   └── vault-portability/SKILL.md
+├── mcp_config.json          # OS-agnostic stdio MCP launcher (`resumai mcp`)
+├── plugin.json              # Antigravity plugin manifest (enabled: disabled=false)
 ├── go.mod                   # Go module definition (github.com/kidthales/resumai)
 └── LICENSE                  # AGPL-3.0-or-later
 ```
@@ -77,11 +89,11 @@ plugins/resumai/
 
 ## 5. Sub-Issue Implementation Roadmap
 
-- **#56 [Active]**: Demolish legacy stack, bootstrap Go module, hexagonal skeleton, boundary tests, runbook, build/CI scripts, and plugin manifest.
-- **#57 [Queued]**: Implement pure-Go SQLite CareerVault, CLI PII air-gap, YAML dump/load, and legacy data migration.
-- **#58 [Queued]**: Implement ResumeDocument AST validator, embedded HTML and OpenXML `.docx` renderers, and Chrome CDP telemetry.
-- **#59 [Queued]**: Implement `resumai` stdio MCP server, triage citation guards, and `JobApplication` FSM transitions.
-- **#60 [Queued]**: Author Antigravity plugin skills (`resume-biographer`, `job-triager`, `resume-builder`), clean-room subagents, and release workflow.
+- **#56 [Done]**: Demolish legacy stack, bootstrap Go module, hexagonal skeleton, boundary tests, runbook, build/CI scripts, and plugin manifest.
+- **#57 [Done]**: Implement pure-Go SQLite CareerVault, CLI PII air-gap, YAML dump/load, and legacy data migration.
+- **#58 [Done]**: Implement ResumeDocument AST validator, embedded HTML and OpenXML `.docx` renderers, and Chrome CDP telemetry.
+- **#59 [Done]**: Implement `resumai` stdio MCP server, triage citation guards, and `JobApplication` FSM transitions.
+- **#60 [Active]**: Author Antigravity plugin skills (`career-archaeology`, `vault-portability`, `opportunity-triage`, `resume-tailor`), clean-room subagents (`resume-fact-checker`, `resume-alignment-checker`), OS-agnostic `mcp_config.json`, and release workflow.
 
 ---
 
