@@ -182,12 +182,68 @@ func TestChromiumLaunchArgs(t *testing.T) {
 
 	t.Run("ci environment sandbox disable flags", func(t *testing.T) {
 		t.Setenv("CI", "true")
+		t.Setenv("GITHUB_ACTIONS", "")
+		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "")
 		args := chromiumLaunchArgs("/tmp/resumai-test-profile")
 		joined := strings.Join(args, " ")
 
 		for _, flag := range []string{"--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"} {
 			if !strings.Contains(joined, flag) {
 				t.Errorf("expected CI invocation to include %q, got %v", flag, args)
+			}
+		}
+	})
+
+	t.Run("desktop linux keeps sandbox active when not root container or CI", func(t *testing.T) {
+		t.Setenv("CI", "")
+		t.Setenv("GITHUB_ACTIONS", "")
+		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "")
+
+		if shouldDisableChromiumSandboxFor("linux", 1000, false) {
+			t.Fatal("expected desktop Linux non-root non-container non-CI host to keep Chromium sandbox enabled")
+		}
+
+		args := chromiumLaunchArgsFor("/tmp/resumai-test-profile", "linux", false)
+		joined := strings.Join(args, " ")
+		for _, forbidden := range []string{"--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--no-zygote"} {
+			if strings.Contains(joined, forbidden) {
+				t.Errorf("expected desktop Linux invocation not to include %q, got %v", forbidden, args)
+			}
+		}
+	})
+
+	t.Run("falsy CI env does not disable sandbox", func(t *testing.T) {
+		t.Setenv("CI", "false")
+		t.Setenv("GITHUB_ACTIONS", "0")
+		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "")
+
+		if shouldDisableChromiumSandboxFor("linux", 1000, false) {
+			t.Fatal("expected CI=false and GITHUB_ACTIONS=0 not to disable Chromium sandbox")
+		}
+	})
+
+	t.Run("explicit opt-out, container, and root disable sandbox", func(t *testing.T) {
+		t.Setenv("CI", "")
+		t.Setenv("GITHUB_ACTIONS", "")
+		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "")
+
+		if !shouldDisableChromiumSandboxFor("linux", 0, false) {
+			t.Error("expected euid=0 to disable sandbox")
+		}
+		if !shouldDisableChromiumSandboxFor("linux", 1000, true) {
+			t.Error("expected /.dockerenv to disable sandbox")
+		}
+
+		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "1")
+		if !shouldDisableChromiumSandboxFor("linux", 1000, false) {
+			t.Error("expected RESUMAI_CHROMIUM_NO_SANDBOX=1 to disable sandbox")
+		}
+
+		args := chromiumLaunchArgsFor("/tmp/resumai-test-profile", "linux", true)
+		joined := strings.Join(args, " ")
+		for _, flag := range []string{"--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--no-zygote"} {
+			if !strings.Contains(joined, flag) {
+				t.Errorf("expected sandbox-disabled Linux invocation to include %q, got %v", flag, args)
 			}
 		}
 	})

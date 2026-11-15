@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kidthales/resumai/internal/domain"
@@ -111,11 +112,13 @@ func DefaultPath() (string, error) {
 }
 
 // OpenPath opens or creates a CareerVault database file at the specified filesystem path,
-// ensuring parent directories exist and running all pending migrations.
+// ensuring parent directories exist with owner-only permissions (0700), running all pending
+// migrations, and restricting the database file mode to 0600.
 func OpenPath(path string) (*CareerVault, error) {
-	if path != ":memory:" {
+	isFileDB := path != ":memory:" && !strings.HasPrefix(path, "file:")
+	if isFileDB {
 		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, fmt.Errorf("create vault dir: %w", err)
 		}
 	}
@@ -128,6 +131,17 @@ func OpenPath(path string) (*CareerVault, error) {
 	if err := v.Migrate(context.Background()); err != nil {
 		_ = v.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	if isFileDB {
+		for _, dbFile := range []string{path, path + "-wal", path + "-shm"} {
+			if _, serr := os.Stat(dbFile); serr == nil {
+				if cerr := os.Chmod(dbFile, 0600); cerr != nil {
+					_ = v.Close()
+					return nil, fmt.Errorf("restrict vault file mode %s: %w", dbFile, cerr)
+				}
+			}
+		}
 	}
 
 	return v, nil

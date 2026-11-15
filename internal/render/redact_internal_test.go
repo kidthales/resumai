@@ -59,6 +59,12 @@ func TestRedactSecretsCustom_UnixUserPathAnchoring(t *testing.T) {
 		t.Errorf("expected /var/Users path to remain unredacted, got: %s", gotVar)
 	}
 
+	optRootInput := "found artifact at /opt/root/app/config.yaml and /rootfs/etc/hosts"
+	gotOptRoot := redactSecretsCustom(optRootInput, "", "")
+	if gotOptRoot != optRootInput {
+		t.Errorf("expected /opt/root and /rootfs paths to remain unredacted, got: %s", gotOptRoot)
+	}
+
 	// Paths anchored by delimiters or start of string must be redacted
 	tests := []struct {
 		input    string
@@ -67,6 +73,22 @@ func TestRedactSecretsCustom_UnixUserPathAnchoring(t *testing.T) {
 		{
 			input:    "/home/charlie/.bashrc",
 			expected: "[USER_HOME]/.bashrc",
+		},
+		{
+			input:    "/root/.bashrc",
+			expected: "[USER_HOME]/.bashrc",
+		},
+		{
+			input:    "path=/root",
+			expected: "path=[USER_HOME]",
+		},
+		{
+			input:    "copy /root /root/backup",
+			expected: "copy [USER_HOME] [USER_HOME]/backup",
+		},
+		{
+			input:    "located at (/root/workspace)",
+			expected: "located at ([USER_HOME]/workspace)",
 		},
 		{
 			input:    "path=/home/charlie/resume.pdf",

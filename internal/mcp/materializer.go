@@ -22,6 +22,20 @@ type PIIProvider interface {
 	GetPII(ctx context.Context) (*domain.PIIHeader, error)
 }
 
+// SubmittedPacketVerifier re-verifies that a StateSubmitted application's
+// locked packet directory and sealed bundle hash remain intact on disk.
+type SubmittedPacketVerifier interface {
+	VerifySubmittedPacket(ctx context.Context, app *domain.JobApplication) error
+}
+
+type applicationContextProvider interface {
+	GetApplicationContext(ctx context.Context, id string) (*domain.JobApplication, error)
+}
+
+type applicationListProvider interface {
+	ListApplications(ctx context.Context) ([]*domain.JobApplication, error)
+}
+
 // PDFRenderFunc renders a ResumeDocument to PDF bytes and DOM layout telemetry.
 type PDFRenderFunc func(ctx context.Context, doc *render.ResumeDocument, pii *domain.PIIHeader, theme *render.ThemeManifest, targetPages int) ([]byte, *render.LayoutTelemetry, error)
 
@@ -69,7 +83,10 @@ type LocalMaterializer struct {
 	now           func() time.Time
 }
 
-var _ PacketMaterializer = (*LocalMaterializer)(nil)
+var (
+	_ PacketMaterializer      = (*LocalMaterializer)(nil)
+	_ SubmittedPacketVerifier = (*LocalMaterializer)(nil)
+)
 
 // NewLocalMaterializer constructs a LocalMaterializer backed by the provided local PIIProvider.
 // If piiProvider also implements render.FactResolver (e.g. *vault.CareerVault), it is wired automatically.
@@ -242,7 +259,7 @@ func DraftToResumeDocument(app *domain.JobApplication) (*render.ResumeDocument, 
 
 // RenderAndMarkExported converts the application draft to a ResumeDocument, injects local PII
 // strictly into isolated render clones, enforces page_count <= max_pages, writes
-// resume.{html,docx,pdf} + audit.md under ~/.resumai/applications/YYYY-MM-DD-<org>-<role>/,
+// resume.{html,docx,pdf} + audit.md under ~/.resumai/applications/YYYY-MM-DD-<org>-<role>-<hash>/,
 // and transitions ReadyToRender -> Exported.
 func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req RenderBundleRequest) (*RenderBundleResult, error) {
 	app := req.Application
@@ -250,13 +267,18 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 		return nil, fmt.Errorf("%w: nil JobApplication", domain.ErrInvalidStateTransition)
 	}
 	if app.State == domain.StateSubmitted {
-		return nil, domain.ErrAlreadySubmitted
+		return nil, m.VerifySubmittedPacket(ctx, app)
 	}
 	if app.State != domain.StateReadyToRender && app.State != domain.StateExported {
 		return nil, fmt.Errorf("%w: cannot render bundle from state %q", domain.ErrInvalidStateTransition, app.State)
 	}
 	if m.piiProvider == nil {
 		return nil, fmt.Errorf("%w: local PII provider is not configured", domain.ErrMissingPIIHeader)
+	}
+	if lp, ok := m.piiProvider.(applicationContextProvider); ok && strings.TrimSpace(app.ID) != "" {
+		if persisted, perr := lp.GetApplicationContext(ctx, app.ID); perr == nil && persisted != nil && persisted.State == domain.StateSubmitted {
+			return nil, m.VerifySubmittedPacket(ctx, persisted)
+		}
 	}
 
 	pii, err := m.piiProvider.GetPII(ctx)
@@ -268,6 +290,20 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	}
 	if pii == nil || strings.TrimSpace(pii.FullName) == "" {
 		return nil, scrubPIIError(fmt.Errorf("%w: full_name must be populated via 'resumai pii set' before rendering", domain.ErrMissingPIIHeader), pii)
+	}
+	if m.factResolver == nil {
+		return nil, scrubPIIError(fmt.Errorf("%w: live fact resolver is required for render-time verification", domain.ErrUnverifiedFactOrPlaceholder), pii)
+	}
+	if app.Draft != nil {
+		for _, factID := range app.Draft.CitedFactIDs() {
+			fact, ferr := m.factResolver.GetCareerFact(factID)
+			if ferr != nil || fact == nil {
+				return nil, scrubPIIError(fmt.Errorf("%w: cited career fact %q could not be resolved from vault: %v", domain.ErrUngroundedBullet, factID, ferr), pii)
+			}
+			if !fact.Verified || fact.EpistemicState != domain.EpistemicVerified {
+				return nil, scrubPIIError(fmt.Errorf("%w: cited career fact %q is not verified (verified=%t, epistemic_state=%q)", domain.ErrUnverifiedFactOrPlaceholder, factID, fact.Verified, fact.EpistemicState), pii)
+			}
+		}
 	}
 
 	doc, err := DraftToResumeDocument(app)
@@ -282,6 +318,14 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	}
 	validationClone.InjectPII(pii)
 	if err := render.ValidateReadyToRender(validationClone, m.factResolver); err != nil {
+		return nil, scrubPIIError(err, pii)
+	}
+
+	packetDir, err := m.resolvePacketDir(app, req.OutputDir)
+	if err != nil {
+		return nil, scrubPIIError(err, pii)
+	}
+	if err := m.ensurePacketDirAvailable(ctx, app, packetDir); err != nil {
 		return nil, scrubPIIError(err, pii)
 	}
 
@@ -332,10 +376,6 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 		)
 	}
 
-	packetDir, err := m.resolvePacketDir(app, req.OutputDir)
-	if err != nil {
-		return nil, scrubPIIError(err, pii)
-	}
 	if err := os.MkdirAll(packetDir, 0755); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("create packet directory: %w", err), pii)
 	}
@@ -346,29 +386,33 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	pdfPath := filepath.Join(packetDir, "resume.pdf")
 	auditPath := filepath.Join(packetDir, "audit.md")
 
-	if err := writeFileEnsuringWritable(htmlPath, htmlBytes, 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, htmlPath, htmlBytes, 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.html: %w", err), pii)
 	}
-	if err := writeFileEnsuringWritable(docxPath, docxBytes, 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, docxPath, docxBytes, 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.docx: %w", err), pii)
 	}
-	if err := writeFileEnsuringWritable(pdfPath, pdfBytes, 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, pdfPath, pdfBytes, 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.pdf: %w", err), pii)
 	}
 
 	auditMD := buildAuditMarkdown(app, theme.Name, telemetry, maxPages, now)
-	if err := writeFileEnsuringWritable(auditPath, []byte(auditMD), 0644); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, auditPath, []byte(auditMD), 0644); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write audit.md: %w", err), pii)
 	}
-	if app.State == domain.StateReadyToRender || app.State == domain.StateExported {
+	if app.State == domain.StateExported && app.Export != nil && filepath.Clean(app.Export.PacketDir) == filepath.Clean(packetDir) {
 		briefPath := filepath.Join(packetDir, "interview_brief.md")
 		if info, serr := os.Lstat(briefPath); serr == nil {
 			if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 				return nil, scrubPIIError(fmt.Errorf("refusing symlink or irregular path %s", filepath.Base(briefPath)), pii)
 			}
 			if !info.IsDir() {
-				_ = ensureWritable(briefPath, 0644)
-				_ = os.Remove(briefPath)
+				if cerr := m.ensureWritableForApp(ctx, app, briefPath, 0644); cerr != nil {
+					return nil, scrubPIIError(fmt.Errorf("prepare %s: %w", filepath.Base(briefPath), cerr), pii)
+				}
+				if rerr := os.Remove(briefPath); rerr != nil {
+					return nil, scrubPIIError(fmt.Errorf("remove stale %s: %w", filepath.Base(briefPath), rerr), pii)
+				}
 			}
 		}
 	}
@@ -400,7 +444,7 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 		return nil, fmt.Errorf("%w: nil JobApplication", domain.ErrInvalidStateTransition)
 	}
 	if app.State == domain.StateSubmitted {
-		return nil, domain.ErrAlreadySubmitted
+		return nil, m.VerifySubmittedPacket(ctx, app)
 	}
 	if app.State != domain.StateExported {
 		return nil, fmt.Errorf("%w: cannot finalize submission from state %q", domain.ErrInvalidStateTransition, app.State)
@@ -411,6 +455,11 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 
 	var pii *domain.PIIHeader
 	if m.piiProvider != nil {
+		if lp, ok := m.piiProvider.(applicationContextProvider); ok && strings.TrimSpace(app.ID) != "" {
+			if persisted, perr := lp.GetApplicationContext(ctx, app.ID); perr == nil && persisted != nil && persisted.State == domain.StateSubmitted {
+				return nil, m.VerifySubmittedPacket(ctx, persisted)
+			}
+		}
 		if loaded, err := m.piiProvider.GetPII(ctx); err == nil {
 			pii = loaded
 		}
@@ -460,7 +509,7 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 	now := m.now().UTC()
 	briefPath := filepath.Join(packetDir, "interview_brief.md")
 	briefMD := buildInterviewBriefMarkdown(app, bundleSHA256, fileDigests, req.Notes, now)
-	if err := writeFileEnsuringWritable(briefPath, []byte(briefMD), 0644); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, briefPath, []byte(briefMD), 0644); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write interview_brief.md: %w", err), pii)
 	}
 
@@ -574,6 +623,12 @@ func (m *LocalMaterializer) resolvePacketDir(app *domain.JobApplication, outputD
 	return ensurePathWithinDir(absBase, packetDir, false)
 }
 
+// ensurePathWithinDir jails target inside baseDir and rejects any existing symlink
+// or junction segment along the relative path.
+//
+// Threat model note: directory-segment traversal is checked via os.Lstat + EvalSymlinks,
+// assuming no concurrent local attacker races intermediate directories under the user's
+// private applications root; leaf file writes additionally use O_NOFOLLOW on Unix.
 func ensurePathWithinDir(baseDir, target string, allowEqual bool) (string, error) {
 	absBase, err := filepath.Abs(filepath.Clean(baseDir))
 	if err != nil {
@@ -665,6 +720,188 @@ func resolveDeepestSymlinks(absPath string) (string, error) {
 	}
 }
 
+// VerifySubmittedPacket re-verifies that a StateSubmitted application's packet directory,
+// artifacts, and SHA-256 manifest match app.BundleSHA256. It always returns an error
+// wrapping domain.ErrAlreadySubmitted.
+func (m *LocalMaterializer) VerifySubmittedPacket(ctx context.Context, app *domain.JobApplication) error {
+	if app == nil {
+		return fmt.Errorf("%w: nil JobApplication", domain.ErrInvalidStateTransition)
+	}
+	if app.State != domain.StateSubmitted {
+		return nil
+	}
+	var pii *domain.PIIHeader
+	if m.piiProvider != nil {
+		if loaded, err := m.piiProvider.GetPII(ctx); err == nil {
+			pii = loaded
+		}
+	}
+	if app.Export == nil || strings.TrimSpace(app.Export.PacketDir) == "" || strings.TrimSpace(app.BundleSHA256) == "" {
+		return fmt.Errorf("%w: submitted application %q missing sealed export metadata", domain.ErrAlreadySubmitted, app.ID)
+	}
+
+	absBase, err := m.resolvedBaseDir()
+	if err != nil {
+		return scrubPIIError(fmt.Errorf("%w: resolve packet root: %v", domain.ErrAlreadySubmitted, err), pii)
+	}
+	packetDir, err := ensurePathWithinDir(absBase, app.Export.PacketDir, false)
+	if err != nil {
+		return scrubPIIError(fmt.Errorf("%w: sealed packet verification failed: %v", domain.ErrAlreadySubmitted, err), pii)
+	}
+
+	rawPaths := map[string]string{
+		"resume.html": app.Export.HTMLPath,
+		"resume.docx": app.Export.DocxPath,
+		"resume.pdf":  app.Export.PDFPath,
+	}
+	artifactPaths := make(map[string]string, len(rawPaths)+1)
+	for name, raw := range rawPaths {
+		if strings.TrimSpace(raw) == "" {
+			return scrubPIIError(fmt.Errorf("%w: sealed packet verification failed: missing path for %s", domain.ErrAlreadySubmitted, name), pii)
+		}
+		jailedPath, jerr := ensurePathWithinDir(packetDir, raw, false)
+		if jerr != nil {
+			return scrubPIIError(fmt.Errorf("%w: sealed packet verification failed: %s escapes packet directory: %v", domain.ErrAlreadySubmitted, name, jerr), pii)
+		}
+		artifactPaths[name] = jailedPath
+	}
+
+	auditPath := filepath.Join(packetDir, "audit.md")
+	if info, lerr := os.Lstat(auditPath); lerr == nil {
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 || info.IsDir() {
+			return scrubPIIError(fmt.Errorf("%w: sealed packet verification failed: audit.md must be a regular non-symlink file", domain.ErrAlreadySubmitted), pii)
+		}
+		artifactPaths["audit.md"] = auditPath
+	} else if !errors.Is(lerr, os.ErrNotExist) {
+		return scrubPIIError(fmt.Errorf("%w: sealed packet verification failed: inspect audit.md: %v", domain.ErrAlreadySubmitted, lerr), pii)
+	}
+
+	if briefRaw := strings.TrimSpace(app.InterviewBriefPath); briefRaw != "" {
+		briefPath, jerr := ensurePathWithinDir(packetDir, briefRaw, false)
+		if jerr != nil {
+			return scrubPIIError(fmt.Errorf("%w: sealed packet verification failed: interview_brief.md escapes packet directory: %v", domain.ErrAlreadySubmitted, jerr), pii)
+		}
+		info, lerr := os.Lstat(briefPath)
+		if lerr != nil || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 || info.IsDir() {
+			return scrubPIIError(fmt.Errorf("%w: sealed packet verification failed: interview_brief.md invalid: %v", domain.ErrAlreadySubmitted, lerr), pii)
+		}
+	}
+
+	actualSHA, _, err := computeBundleSHA256(artifactPaths)
+	if err != nil {
+		return scrubPIIError(fmt.Errorf("%w: sealed packet integrity check failed: %v", domain.ErrAlreadySubmitted, err), pii)
+	}
+	if !strings.EqualFold(actualSHA, strings.TrimSpace(app.BundleSHA256)) {
+		return scrubPIIError(fmt.Errorf("%w: sealed packet integrity mismatch (expected sha256=%s, got %s)", domain.ErrAlreadySubmitted, app.BundleSHA256, actualSHA), pii)
+	}
+	return domain.ErrAlreadySubmitted
+}
+
+func (m *LocalMaterializer) ensurePacketDirAvailable(ctx context.Context, app *domain.JobApplication, packetDir string) error {
+	cleanTarget := filepath.Clean(packetDir)
+
+	if lp, ok := m.piiProvider.(applicationListProvider); ok {
+		if apps, err := lp.ListApplications(ctx); err == nil {
+			for _, other := range apps {
+				if other == nil || other.ID == app.ID || other.Export == nil || strings.TrimSpace(other.Export.PacketDir) == "" {
+					continue
+				}
+				otherAbs, aerr := filepath.Abs(filepath.Clean(other.Export.PacketDir))
+				if aerr != nil {
+					continue
+				}
+				if filepath.Clean(otherAbs) == cleanTarget {
+					return fmt.Errorf("packet directory %q is already owned by application %q (%s)", packetDir, other.ID, other.State)
+				}
+			}
+		}
+	}
+
+	isSameExportedPacket := app.State == domain.StateExported &&
+		app.Export != nil &&
+		strings.TrimSpace(app.Export.PacketDir) != "" &&
+		filepath.Clean(app.Export.PacketDir) == cleanTarget
+
+	auditPath := filepath.Join(packetDir, "audit.md")
+	if info, err := os.Lstat(auditPath); err == nil {
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 || info.IsDir() {
+			return fmt.Errorf("refusing symlink or directory at %q", auditPath)
+		}
+		data, rerr := os.ReadFile(auditPath)
+		if rerr != nil {
+			return fmt.Errorf("inspect existing audit.md: %w", rerr)
+		}
+		ownerID := extractApplicationIDHeader(string(data))
+		if ownerID != "" && ownerID != app.ID {
+			return fmt.Errorf("packet directory %q belongs to application %q", packetDir, ownerID)
+		}
+		if ownerID == "" && !isSameExportedPacket {
+			return fmt.Errorf("refusing to overwrite unmanaged packet directory %q containing audit.md", packetDir)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect packet directory audit.md: %w", err)
+	}
+
+	briefPath := filepath.Join(packetDir, "interview_brief.md")
+	if info, err := os.Lstat(briefPath); err == nil {
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 || info.IsDir() {
+			return fmt.Errorf("refusing symlink or directory at %q", briefPath)
+		}
+		data, rerr := os.ReadFile(briefPath)
+		if rerr != nil {
+			return fmt.Errorf("inspect existing interview_brief.md: %w", rerr)
+		}
+		ownerID := extractApplicationIDHeader(string(data))
+		if ownerID != "" && ownerID != app.ID {
+			return fmt.Errorf("packet directory %q contains interview_brief.md for application %q", packetDir, ownerID)
+		}
+		if !isSameExportedPacket {
+			return fmt.Errorf("refusing to overwrite packet directory %q containing existing interview_brief.md", packetDir)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect packet directory interview_brief.md: %w", err)
+	}
+
+	return nil
+}
+
+func extractApplicationIDHeader(markdown string) string {
+	const prefix = "- **Application ID**: `"
+	for _, line := range strings.Split(markdown, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(line, prefix)
+		end := strings.IndexByte(rest, '`')
+		if end > 0 {
+			return strings.TrimSpace(rest[:end])
+		}
+	}
+	return ""
+}
+
+func (m *LocalMaterializer) ensureWritableForApp(ctx context.Context, app *domain.JobApplication, path string, perm os.FileMode) error {
+	if app != nil && app.State == domain.StateSubmitted {
+		return domain.ErrAlreadySubmitted
+	}
+	if app != nil && strings.TrimSpace(app.ID) != "" {
+		if cp, ok := m.piiProvider.(applicationContextProvider); ok {
+			if persisted, err := cp.GetApplicationContext(ctx, app.ID); err == nil && persisted != nil && persisted.State == domain.StateSubmitted {
+				return domain.ErrAlreadySubmitted
+			}
+		}
+	}
+	return ensureWritable(path, perm)
+}
+
+func (m *LocalMaterializer) writeFileEnsuringWritable(ctx context.Context, app *domain.JobApplication, path string, data []byte, perm os.FileMode) error {
+	if err := m.ensureWritableForApp(ctx, app, path, perm); err != nil {
+		return err
+	}
+	return writeFileNoFollow(path, data, perm)
+}
+
 func ensureWritable(path string, perm os.FileMode) error {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -685,13 +922,6 @@ func ensureWritable(path string, perm os.FileMode) error {
 	return nil
 }
 
-func writeFileEnsuringWritable(path string, data []byte, perm os.FileMode) error {
-	if err := ensureWritable(path, perm); err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, perm)
-}
-
 func packetFolderName(app *domain.JobApplication, fallbackNow time.Time) string {
 	ts := fallbackNow.UTC()
 	if app != nil && !app.CreatedAt.IsZero() {
@@ -699,25 +929,33 @@ func packetFolderName(app *domain.JobApplication, fallbackNow time.Time) string 
 	}
 	datePrefix := ts.Format("2006-01-02")
 
-	var orgSlug, roleSlug, idSlug string
+	var orgSlug, roleSlug, idSlug, rawID string
 	if app != nil {
 		orgSlug = slugify(app.Company)
 		roleSlug = slugify(app.RoleTitle)
 		idSlug = slugify(app.ID)
+		rawID = strings.TrimSpace(app.ID)
 	}
 
+	var base string
 	switch {
 	case orgSlug != "" && roleSlug != "":
-		return fmt.Sprintf("%s-%s-%s", datePrefix, orgSlug, roleSlug)
+		base = fmt.Sprintf("%s-%s-%s", datePrefix, orgSlug, roleSlug)
 	case orgSlug != "":
-		return fmt.Sprintf("%s-%s", datePrefix, orgSlug)
+		base = fmt.Sprintf("%s-%s", datePrefix, orgSlug)
 	case roleSlug != "":
-		return fmt.Sprintf("%s-%s", datePrefix, roleSlug)
+		base = fmt.Sprintf("%s-%s", datePrefix, roleSlug)
 	case idSlug != "":
-		return fmt.Sprintf("%s-%s", datePrefix, idSlug)
+		base = fmt.Sprintf("%s-%s", datePrefix, idSlug)
 	default:
-		return fmt.Sprintf("%s-application", datePrefix)
+		base = fmt.Sprintf("%s-application", datePrefix)
 	}
+
+	if rawID == "" {
+		return base
+	}
+	sum := sha256.Sum256([]byte(rawID))
+	return fmt.Sprintf("%s-%s", base, hex.EncodeToString(sum[:4]))
 }
 
 func formatDateRange(startDate, endDate string) string {

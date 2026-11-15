@@ -147,9 +147,10 @@ func (s *Server) registerApplicationTools() {
 
 	s.registerTool(Tool{
 		Name:        "resumai_record_audits",
-		Description: "Attach both resume-fact-checker and resume-alignment-checker reports to transition Drafted -> Audited.",
+		Description: "Attach both resume-fact-checker and resume-alignment-checker reports bound to the current draft SHA-256 hash to transition Drafted -> Audited.",
 		InputSchema: schemaObject(map[string]any{
 			"application_id": strProp("JobApplication ID"),
+			"draft_sha256":   strProp("Optional SHA-256 hash of the audited ApplicationDraft from resumai_get_audit_bundle"),
 			"fact_check": map[string]any{
 				"type":        "object",
 				"description": "FactCheckReport from resume-fact-checker",
@@ -478,6 +479,11 @@ func (s *Server) handleGetAuditBundle(ctx context.Context, raw json.RawMessage) 
 		logistics = cl
 	}
 
+	draftSHA256, err := app.Draft.ContentSHA256()
+	if err != nil {
+		return nil, err
+	}
+
 	return map[string]any{
 		"application_id":   app.ID,
 		"role_title":       app.RoleTitle,
@@ -487,6 +493,7 @@ func (s *Server) handleGetAuditBundle(ctx context.Context, raw json.RawMessage) 
 		"dossier":          app.Dossier,
 		"archetype":        archetype,
 		"draft":            app.Draft,
+		"draft_sha256":     draftSHA256,
 		"cited_facts":      citedFacts,
 		"missing_fact_ids": missingFactIDs,
 		"roles":            roles,
@@ -500,6 +507,7 @@ func (s *Server) handleGetAuditBundle(ctx context.Context, raw json.RawMessage) 
 func (s *Server) handleRecordAudits(ctx context.Context, raw json.RawMessage) (any, error) {
 	type input struct {
 		ApplicationID  string                       `json:"application_id"`
+		DraftSHA256    string                       `json:"draft_sha256"`
 		FactCheck      *domain.FactCheckReport      `json:"fact_check"`
 		AlignmentCheck *domain.AlignmentCheckReport `json:"alignment_check"`
 	}
@@ -517,6 +525,7 @@ func (s *Server) handleRecordAudits(ctx context.Context, raw json.RawMessage) (a
 		return nil, err
 	}
 	if err := app.RecordAudits(domain.AuditBundle{
+		DraftSHA256:    strings.TrimSpace(in.DraftSHA256),
 		FactCheck:      in.FactCheck,
 		AlignmentCheck: in.AlignmentCheck,
 	}); err != nil {
@@ -579,6 +588,9 @@ func (s *Server) handleRenderBundle(ctx context.Context, raw json.RawMessage) (a
 		return nil, err
 	}
 	if app.State == domain.StateSubmitted {
+		if v, ok := s.materializer.(SubmittedPacketVerifier); ok {
+			return nil, v.VerifySubmittedPacket(ctx, app)
+		}
 		return nil, domain.ErrAlreadySubmitted
 	}
 	if app.State != domain.StateReadyToRender && app.State != domain.StateExported {
@@ -625,6 +637,9 @@ func (s *Server) handleMarkSubmitted(ctx context.Context, raw json.RawMessage) (
 		return nil, err
 	}
 	if app.State == domain.StateSubmitted {
+		if v, ok := s.materializer.(SubmittedPacketVerifier); ok {
+			return nil, v.VerifySubmittedPacket(ctx, app)
+		}
 		return nil, domain.ErrAlreadySubmitted
 	}
 	if app.State != domain.StateExported {

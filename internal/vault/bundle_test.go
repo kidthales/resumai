@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1219,5 +1220,116 @@ citations: []
 	cits, err := v2.GetCitationsForApp(ctx, app.ID)
 	if err != nil || len(cits) != 1 || cits[0] != "fact-1" {
 		t.Fatalf("Submitted app citations were mutated on reload: %v (err=%v)", cits, err)
+	}
+}
+
+func TestDumpPreservesUnrelatedYAMLAndRejectsUnmanagedDir(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-1", Name: "Alpha"})
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-2", Name: "Beta"})
+
+	// 1. Dumping into a non-empty directory without .resumai-manifest.json must fail without touching existing YAML.
+	unmanagedDir := t.TempDir()
+	unmanagedOrgDir := filepath.Join(unmanagedDir, "organizations")
+	if err := os.MkdirAll(unmanagedOrgDir, 0755); err != nil {
+		t.Fatalf("MkdirAll unmanagedOrgDir: %v", err)
+	}
+	userFile := filepath.Join(unmanagedOrgDir, "unrelated.yaml")
+	if err := os.WriteFile(userFile, []byte("keep: true\n"), 0644); err != nil {
+		t.Fatalf("WriteFile unrelated.yaml: %v", err)
+	}
+	if err := v.Dump(ctx, unmanagedDir, vault.DumpOptions{IncludePII: false}); err == nil {
+		t.Fatalf("expected Dump to refuse non-empty unmanaged directory")
+	}
+	if _, err := os.Stat(userFile); err != nil {
+		t.Fatalf("unrelated.yaml was unexpectedly removed: %v", err)
+	}
+
+	// 2. Managed dump directory preserves unrelated YAML files while still pruning stale dumped entity files.
+	managedDir := filepath.Join(t.TempDir(), "managed")
+	if err := v.Dump(ctx, managedDir, vault.DumpOptions{IncludePII: false}); err != nil {
+		t.Fatalf("initial Dump failed: %v", err)
+	}
+
+	customNote := filepath.Join(managedDir, "organizations", "custom-notes.yaml")
+	if err := os.WriteFile(customNote, []byte("note: do not delete\n"), 0600); err != nil {
+		t.Fatalf("WriteFile custom-notes.yaml: %v", err)
+	}
+
+	if err := v.DeleteOrganization(ctx, "org-2"); err != nil {
+		t.Fatalf("DeleteOrganization(org-2): %v", err)
+	}
+
+	if err := v.Dump(ctx, managedDir, vault.DumpOptions{IncludePII: false}); err != nil {
+		t.Fatalf("second Dump failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(managedDir, "organizations", "org-2.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale org-2.yaml to be pruned, stat err=%v", err)
+	}
+	if _, err := os.Stat(customNote); err != nil {
+		t.Fatalf("expected unrelated custom-notes.yaml to be preserved, stat err=%v", err)
+	}
+}
+
+func TestVaultAndDumpFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file mode bits are not enforced on Windows")
+	}
+
+	root := t.TempDir()
+	vaultDir := filepath.Join(root, "vault-home")
+	dbPath := filepath.Join(vaultDir, "vault.db")
+	v, err := vault.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("OpenPath: %v", err)
+	}
+	defer v.Close()
+
+	ctx := context.Background()
+	if err := v.SetPII(ctx, &domain.PIIHeader{
+		FullName: "Ada Lovelace",
+		Email:    "ada@example.test",
+		Phone:    "555-0100",
+	}); err != nil {
+		t.Fatalf("SetPII: %v", err)
+	}
+
+	vaultDirInfo, err := os.Stat(vaultDir)
+	if err != nil {
+		t.Fatalf("Stat vaultDir: %v", err)
+	}
+	if vaultDirInfo.Mode().Perm() != 0700 {
+		t.Errorf("expected vault dir mode 0700, got %o", vaultDirInfo.Mode().Perm())
+	}
+
+	dbInfo, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatalf("Stat dbPath: %v", err)
+	}
+	if dbInfo.Mode().Perm() != 0600 {
+		t.Errorf("expected vault db mode 0600, got %o", dbInfo.Mode().Perm())
+	}
+
+	dumpDir := filepath.Join(root, "dump-pii")
+	if err := v.Dump(ctx, dumpDir, vault.DumpOptions{IncludePII: true}); err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+
+	dumpDirInfo, err := os.Stat(dumpDir)
+	if err != nil {
+		t.Fatalf("Stat dumpDir: %v", err)
+	}
+	if dumpDirInfo.Mode().Perm() != 0700 {
+		t.Errorf("expected dump dir mode 0700, got %o", dumpDirInfo.Mode().Perm())
+	}
+
+	piiInfo, err := os.Stat(filepath.Join(dumpDir, "pii.yaml"))
+	if err != nil {
+		t.Fatalf("Stat pii.yaml: %v", err)
+	}
+	if piiInfo.Mode().Perm() != 0600 {
+		t.Errorf("expected pii.yaml mode 0600, got %o", piiInfo.Mode().Perm())
 	}
 }

@@ -790,26 +790,43 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
+func isTruthyEnv(key string) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	return v != "" && v != "0" && v != "false" && v != "no"
+}
+
 // shouldDisableChromiumSandbox reports whether Chromium renderer sandboxing should be disabled,
-// such as on Linux runners or in headless container/CI environments where unprivileged namespaces
-// are restricted or require root.
+// such as inside containers, CI runners, when running as root, or when explicitly opted out via
+// RESUMAI_CHROMIUM_NO_SANDBOX=1. Desktop hosts (including desktop Linux) keep the native sandbox enabled.
 func shouldDisableChromiumSandbox() bool {
-	if runtime.GOOS == "linux" {
+	_, err := os.Stat("/.dockerenv")
+	return shouldDisableChromiumSandboxFor(runtime.GOOS, os.Geteuid(), err == nil)
+}
+
+func shouldDisableChromiumSandboxFor(_ string, euid int, hasDockerEnv bool) bool {
+	if isTruthyEnv("RESUMAI_CHROMIUM_NO_SANDBOX") {
 		return true
 	}
-	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+	if isTruthyEnv("CI") || isTruthyEnv("GITHUB_ACTIONS") {
 		return true
 	}
-	if _, err := os.Stat("/.dockerenv"); err == nil {
+	if hasDockerEnv {
+		return true
+	}
+	if euid == 0 {
 		return true
 	}
 	return false
 }
 
 // chromiumLaunchArgs builds the headless Chromium CLI invocation arguments,
-// keeping the native renderer sandbox active on Windows and macOS desktops while
-// passing necessary container/CI sandbox and shared-memory flags on Linux and CI runners.
+// keeping the native renderer sandbox active on desktop hosts (Windows, macOS, and desktop Linux)
+// while passing necessary container/CI sandbox and shared-memory flags when sandboxing is disabled.
 func chromiumLaunchArgs(userDataDir string) []string {
+	return chromiumLaunchArgsFor(userDataDir, runtime.GOOS, shouldDisableChromiumSandbox())
+}
+
+func chromiumLaunchArgsFor(userDataDir, goos string, disableSandbox bool) []string {
 	args := []string{
 		"--headless=new",
 		"--remote-debugging-port=0",
@@ -827,11 +844,11 @@ func chromiumLaunchArgs(userDataDir string) []string {
 		"--use-mock-keychain",
 		"--user-data-dir=" + userDataDir,
 	}
-	if shouldDisableChromiumSandbox() {
+	if disableSandbox {
 		args = append(args, "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage")
-	}
-	if runtime.GOOS == "linux" {
-		args = append(args, "--no-zygote")
+		if goos == "linux" {
+			args = append(args, "--no-zygote")
+		}
 	}
 	args = append(args, "about:blank")
 	return args

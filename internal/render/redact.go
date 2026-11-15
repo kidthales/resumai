@@ -12,6 +12,7 @@ var (
 	githubTokenRedactRe    = regexp.MustCompile(`\b(?:ghp_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{22,255}|gho_[A-Za-z0-9]{36,255}|ghu_[A-Za-z0-9]{36,255}|ghs_[A-Za-z0-9]{36,255}|ghr_[A-Za-z0-9]{36,255})\b`)
 	windowsUserPathRe      = regexp.MustCompile(`(?i)[a-zA-Z]:\\Users\\[^\s\\/:*?"<>|]+`)
 	unixUserPathRe         = regexp.MustCompile(`(^|[\s"'=:(])/(?:home|Users)/[^\s/]+`)
+	unixRootHomeRe         = regexp.MustCompile(`(^|[\s"'=:(])/root($|[\s"'):/])`)
 )
 
 // RedactCredentials scrubs sensitive credentials (Discord webhooks and GitHub tokens)
@@ -29,7 +30,10 @@ func RedactCredentials(s string) string {
 // and local filesystem path segments (user home directories, temp dirs, OS profile paths)
 // from diagnostic strings, logs, and error messages before surfacing via CLI/MCP/Sidecar.
 func RedactSecrets(s string) string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
 	return redactSecretsCustom(s, home, os.TempDir())
 }
 
@@ -64,8 +68,15 @@ func redactSecretsCustom(s, home, tmp string) string {
 	// 5. Scrub Windows user profile paths (e.g. C:\Users\john)
 	s = windowsUserPathRe.ReplaceAllString(s, `[USER_HOME]`)
 
-	// 6. Scrub Unix/macOS user paths (e.g. /home/john or /Users/john)
+	// 6. Scrub Unix/macOS user paths (e.g. /home/john, /Users/john, or /root)
 	s = unixUserPathRe.ReplaceAllString(s, `${1}[USER_HOME]`)
+	for {
+		next := unixRootHomeRe.ReplaceAllString(s, `${1}[USER_HOME]${2}`)
+		if next == s {
+			break
+		}
+		s = next
+	}
 
 	return s
 }

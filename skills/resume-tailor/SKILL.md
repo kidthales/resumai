@@ -18,7 +18,8 @@ Guide a `Triaged` `JobApplication` through grounded AST drafting, clean-room cri
 2. **Fact-over-Keyword Precedence**: When `resume-alignment-checker` keyword/framing recommendations conflict with `resume-fact-checker` truth, timeline, or metric constraints, **factual accuracy always takes precedence**.
 3. **Zero Unresolved Placeholders (`ErrUnverifiedFactOrPlaceholder`)**: `resumai_promote_ready` requires `0` High factual discrepancies, both critic audits `passed: true`, `100%` of cited facts in `epistemic_state: "verified"`, and `0` `[METRIC:` tokens across headline, summary, and bullets.
 4. **PII Air-Gap**: Never include contact PII in `ApplicationDraft` or critic prompts. `resumai_render_bundle` injects `pii_header` locally from SQLite.
-5. **Immutable Submission (`ErrAlreadySubmitted`)**: `resumai_mark_submitted` locks packet artifacts read-only (`0444`) and transitions `Exported -> Submitted` irreversibly.
+5. **Immutable Submission (`ErrAlreadySubmitted`)**: `resumai_mark_submitted` records `bundle_sha256` and transitions `Exported -> Submitted` irreversibly in SQLite. File permissions (`0444`) are best-effort only (on Windows `0444` sets the advisory read-only attribute, which the owner can clear); `bundle_sha256` + SQLite state lock are the authoritative integrity controls.
+6. **Audit Trust Model**: `resumai_record_audits` binds critic reports to `draft_sha256` and `resumai_promote_ready` enforces `draft_sha256` match, `passed: true`, zero `high` discrepancies, and live verified vault facts; report contents themselves rely on clean-room subagent attestation.
 
 ## Workflow
 
@@ -47,7 +48,7 @@ Invoke **both** clean-room subagents independently with `Model: "flash"` (requir
 1. `resume-fact-checker` (`Model: "flash"`) -> produces `FactCheckReport` (`critic_agent: "resume-fact-checker"`, `summary`, `discrepancies`, `passed`).
 2. `resume-alignment-checker` (`Model: "flash"`) -> produces `AlignmentCheckReport` (`critic_agent: "resume-alignment-checker"`, `summary`, `matched_signals`, `missing_signals`, `recommendations`, `passed`).
 
-Persist both reports via `resumai_record_audits` (`application_id`, `fact_check`, `alignment_check`).
+Persist both reports via `resumai_record_audits` (`application_id`, `fact_check`, `alignment_check`, and `draft_sha256` from `resumai_get_audit_bundle`).
 
 ### 4. Reconcile & Promote (`Audited -> ReadyToRender`)
 - If either critic reported `passed: false`, any `severity: "high"` discrepancy exists, or any cited fact is `raw_note` / `metric_pending` / contains `[METRIC:`:

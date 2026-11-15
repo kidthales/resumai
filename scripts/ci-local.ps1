@@ -87,6 +87,7 @@ function Test-Gate0Workflows {
         "test-and-build/Install govulncheck"                         = "go install golang.org/x/vuln/cmd/govulncheck@v1.9.0"
         "notify/Dispatch consolidated status card to #dev-ci-builds" = $null
         "release/Build cross-platform stripped release binaries"     = $null
+        "release/Verify tagged commit is on main"                    = $null
         "release/Generate SHA256SUMS"                                = $null
         "release/Verify resumai version output"                      = $null
         "release/Attach release assets"                              = $null

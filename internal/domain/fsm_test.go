@@ -583,3 +583,44 @@ func TestJobApplicationFSM_RedraftFromReadyToRenderAndExported(t *testing.T) {
 		t.Fatalf("expected StateDrafted with nil Audits/Export after Exported redraft, got state=%q audits=%v export=%v", app.State, app.Audits, app.Export)
 	}
 }
+
+func TestJobApplicationFSM_AuditDraftHashBinding(t *testing.T) {
+	resolver := newTestResolver()
+	app, _ := NewTriagedApplication("app-hash-bind", validTestDossier())
+	if err := app.SaveDraft(validTestDraft("fact-verified"), resolver); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
+	}
+
+	// Passing a wrong draft_sha256 to RecordAudits must be rejected.
+	badAudit := validTestAudits()
+	badAudit.DraftSHA256 = strings.Repeat("0", 64)
+	if err := app.RecordAudits(badAudit); !errors.Is(err, ErrIncompleteAudit) {
+		t.Fatalf("expected ErrIncompleteAudit on mismatched draft_sha256, got %v", err)
+	}
+
+	// Recording without explicit draft_sha256 computes and stores current draft hash.
+	if err := app.RecordAudits(validTestAudits()); err != nil {
+		t.Fatalf("RecordAudits: %v", err)
+	}
+	wantHash, err := app.Draft.ContentSHA256()
+	if err != nil {
+		t.Fatalf("ContentSHA256: %v", err)
+	}
+	if app.Audits.DraftSHA256 != wantHash {
+		t.Fatalf("expected Audits.DraftSHA256=%q, got %q", wantHash, app.Audits.DraftSHA256)
+	}
+
+	// Mutating the draft in-memory after RecordAudits without re-auditing must block PromoteReady.
+	app.Draft.Headline = "Un-audited mutated headline"
+	if err := app.PromoteReady(resolver); !errors.Is(err, ErrIncompleteAudit) {
+		t.Fatalf("expected ErrIncompleteAudit on PromoteReady after draft mutation, got %v", err)
+	}
+
+	// Clearing DraftSHA256 on Audits must also block PromoteReady.
+	_ = app.SaveDraft(validTestDraft("fact-verified"), resolver)
+	_ = app.RecordAudits(validTestAudits())
+	app.Audits.DraftSHA256 = ""
+	if err := app.PromoteReady(resolver); !errors.Is(err, ErrIncompleteAudit) {
+		t.Fatalf("expected ErrIncompleteAudit on PromoteReady with empty DraftSHA256, got %v", err)
+	}
+}

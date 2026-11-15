@@ -3,16 +3,25 @@ package vault
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/kidthales/resumai/internal/domain"
 	"gopkg.in/yaml.v3"
 )
+
+const dumpManifestFile = ".resumai-manifest.json"
+
+type dumpManifest struct {
+	Version int      `json:"version"`
+	Files   []string `json:"files"`
+}
 
 // DumpOptions configures vault export behavior.
 type DumpOptions struct {
@@ -114,9 +123,11 @@ type BundleApplication struct {
 // Contact PII is air-gapped and strictly omitted unless opts.IncludePII is true.
 func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) error {
 	cleanDir := filepath.Clean(dir)
-	if err := os.MkdirAll(cleanDir, 0755); err != nil {
-		return fmt.Errorf("create dump dir: %w", err)
+	prevManifest, err := prepareManagedDumpDir(cleanDir)
+	if err != nil {
+		return err
 	}
+	var writtenFiles []string
 
 	piiPath := filepath.Join(cleanDir, "pii.yaml")
 	if opts.IncludePII {
@@ -137,6 +148,7 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			if err := writeYAML(piiPath, bPII); err != nil {
 				return fmt.Errorf("write pii.yaml: %w", err)
 			}
+			writtenFiles = append(writtenFiles, "pii.yaml")
 		} else {
 			_ = os.Remove(piiPath)
 		}
@@ -163,7 +175,8 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		if err := writeYAML(logisticsPath, bLog); err != nil {
 			return fmt.Errorf("write logistics.yaml: %w", err)
 		}
-	} else {
+		writtenFiles = append(writtenFiles, "logistics.yaml")
+	} else if prevManifest.contains("logistics.yaml") {
 		_ = os.Remove(logisticsPath)
 	}
 
@@ -194,10 +207,12 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 	}
 
 	orgDir := filepath.Join(cleanDir, "organizations")
-	if err := cleanYAMLDir(orgDir); err != nil {
-		return fmt.Errorf("clean organizations dir: %w", err)
+	if err := os.MkdirAll(orgDir, 0700); err != nil {
+		return fmt.Errorf("create organizations dir: %w", err)
 	}
-	_ = os.Remove(filepath.Join(cleanDir, "organizations.yaml"))
+	if prevManifest.contains("organizations.yaml") {
+		_ = os.Remove(filepath.Join(cleanDir, "organizations.yaml"))
+	}
 
 	seenOrgSlugs := make(map[string]int)
 	for _, org := range orgs {
@@ -236,9 +251,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		}
 
 		fileSlug := uniqueFileSlug(org.ID, org.Name, seenOrgSlugs)
-		if err := writeYAML(filepath.Join(orgDir, fileSlug+".yaml"), bOrg); err != nil {
+		relPath := "organizations/" + fileSlug + ".yaml"
+		if err := writeYAML(filepath.Join(cleanDir, filepath.FromSlash(relPath)), bOrg); err != nil {
 			return fmt.Errorf("write org yaml (%s): %w", org.ID, err)
 		}
+		writtenFiles = append(writtenFiles, relPath)
 	}
 
 	// 4. Education
@@ -247,10 +264,12 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		return fmt.Errorf("dump list education: %w", err)
 	}
 	eduDir := filepath.Join(cleanDir, "education")
-	if err := cleanYAMLDir(eduDir); err != nil {
-		return fmt.Errorf("clean education dir: %w", err)
+	if err := os.MkdirAll(eduDir, 0700); err != nil {
+		return fmt.Errorf("create education dir: %w", err)
 	}
-	_ = os.Remove(filepath.Join(cleanDir, "education.yaml"))
+	if prevManifest.contains("education.yaml") {
+		_ = os.Remove(filepath.Join(cleanDir, "education.yaml"))
+	}
 
 	seenEduSlugs := make(map[string]int)
 	for _, edu := range edus {
@@ -264,9 +283,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			Honors:       edu.Honors,
 		}
 		fileSlug := uniqueFileSlug(edu.ID, edu.Institution, seenEduSlugs)
-		if err := writeYAML(filepath.Join(eduDir, fileSlug+".yaml"), bEdu); err != nil {
+		relPath := "education/" + fileSlug + ".yaml"
+		if err := writeYAML(filepath.Join(cleanDir, filepath.FromSlash(relPath)), bEdu); err != nil {
 			return fmt.Errorf("write education yaml (%s): %w", edu.ID, err)
 		}
+		writtenFiles = append(writtenFiles, relPath)
 	}
 
 	// 5. Archetypes
@@ -275,10 +296,12 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		return fmt.Errorf("dump list archetypes: %w", err)
 	}
 	archDir := filepath.Join(cleanDir, "archetypes")
-	if err := cleanYAMLDir(archDir); err != nil {
-		return fmt.Errorf("clean archetypes dir: %w", err)
+	if err := os.MkdirAll(archDir, 0700); err != nil {
+		return fmt.Errorf("create archetypes dir: %w", err)
 	}
-	_ = os.Remove(filepath.Join(cleanDir, "archetypes.yaml"))
+	if prevManifest.contains("archetypes.yaml") {
+		_ = os.Remove(filepath.Join(cleanDir, "archetypes.yaml"))
+	}
 
 	seenArchSlugs := make(map[string]int)
 	for _, a := range archs {
@@ -291,9 +314,11 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			TargetRoles:      a.TargetRoles,
 		}
 		fileSlug := uniqueFileSlug(a.ID, a.Name, seenArchSlugs)
-		if err := writeYAML(filepath.Join(archDir, fileSlug+".yaml"), bArch); err != nil {
+		relPath := "archetypes/" + fileSlug + ".yaml"
+		if err := writeYAML(filepath.Join(cleanDir, filepath.FromSlash(relPath)), bArch); err != nil {
 			return fmt.Errorf("write archetype yaml (%s): %w", a.ID, err)
 		}
+		writtenFiles = append(writtenFiles, relPath)
 	}
 
 	// 6. Applications & Citations:
@@ -307,10 +332,12 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 		return fmt.Errorf("dump list application citations: %w", err)
 	}
 	appDir := filepath.Join(cleanDir, "applications")
-	if err := cleanYAMLDir(appDir); err != nil {
-		return fmt.Errorf("clean applications dir: %w", err)
+	if err := os.MkdirAll(appDir, 0700); err != nil {
+		return fmt.Errorf("create applications dir: %w", err)
 	}
-	_ = os.Remove(filepath.Join(cleanDir, "applications.yaml"))
+	if prevManifest.contains("applications.yaml") {
+		_ = os.Remove(filepath.Join(cleanDir, "applications.yaml"))
+	}
 
 	seenAppSlugs := make(map[string]int)
 	for _, app := range apps {
@@ -338,9 +365,15 @@ func (v *CareerVault) Dump(ctx context.Context, dir string, opts DumpOptions) er
 			Citations:          citations,
 		}
 		fileSlug := uniqueFileSlug(app.ID, app.Company+"-"+app.RoleTitle, seenAppSlugs)
-		if err := writeYAML(filepath.Join(appDir, fileSlug+".yaml"), bApp); err != nil {
+		relPath := "applications/" + fileSlug + ".yaml"
+		if err := writeYAML(filepath.Join(cleanDir, filepath.FromSlash(relPath)), bApp); err != nil {
 			return fmt.Errorf("write application yaml (%s): %w", app.ID, err)
 		}
+		writtenFiles = append(writtenFiles, relPath)
+	}
+
+	if err := pruneAndSaveManifest(cleanDir, prevManifest, writtenFiles); err != nil {
+		return err
 	}
 
 	return nil
@@ -1229,7 +1262,10 @@ func writeYAML(path string, val any) error {
 	if err != nil {
 		return fmt.Errorf("marshal yaml: %w", err)
 	}
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }
 
 func readYAML(path string, target any) error {
@@ -1281,20 +1317,91 @@ func normalizeAndValidateOrg(org *BundleOrganization, defaultID string) error {
 	return nil
 }
 
-func cleanYAMLDir(dir string) error {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+func (m *dumpManifest) contains(rel string) bool {
+	if m == nil {
+		return false
 	}
-	files, err := listYAMLFiles(dir)
-	if err != nil {
-		return err
-	}
-	for _, f := range files {
-		if err := os.Remove(f); err != nil {
-			return err
+	for _, f := range m.Files {
+		if f == rel {
+			return true
 		}
 	}
-	return nil
+	return false
+}
+
+func prepareManagedDumpDir(cleanDir string) (*dumpManifest, error) {
+	info, err := os.Stat(cleanDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if mkErr := os.MkdirAll(cleanDir, 0700); mkErr != nil {
+				return nil, fmt.Errorf("create dump dir: %w", mkErr)
+			}
+			return &dumpManifest{Version: 1}, nil
+		}
+		return nil, fmt.Errorf("stat dump dir: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("dump target %q is not a directory", cleanDir)
+	}
+
+	manifestPath := filepath.Join(cleanDir, dumpManifestFile)
+	rawManifest, readErr := os.ReadFile(manifestPath)
+	if readErr == nil {
+		var m dumpManifest
+		if uerr := json.Unmarshal(rawManifest, &m); uerr != nil {
+			return nil, fmt.Errorf("parse %s: %w", dumpManifestFile, uerr)
+		}
+		return &m, nil
+	}
+	if !errors.Is(readErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("read %s: %w", dumpManifestFile, readErr)
+	}
+
+	entries, err := os.ReadDir(cleanDir)
+	if err != nil {
+		return nil, fmt.Errorf("inspect dump dir: %w", err)
+	}
+	if len(entries) > 0 {
+		return nil, fmt.Errorf("dump directory %q is non-empty and lacks %s; refusing to overwrite unmanaged files", cleanDir, dumpManifestFile)
+	}
+	return &dumpManifest{Version: 1}, nil
+}
+
+func pruneAndSaveManifest(cleanDir string, prev *dumpManifest, written []string) error {
+	sort.Strings(written)
+	writtenSet := make(map[string]struct{}, len(written))
+	for _, rel := range written {
+		writtenSet[rel] = struct{}{}
+	}
+
+	if prev != nil {
+		for _, oldRel := range prev.Files {
+			if _, keep := writtenSet[oldRel]; keep {
+				continue
+			}
+			cleaned := filepath.Clean(filepath.FromSlash(oldRel))
+			if filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+				continue
+			}
+			target := filepath.Join(cleanDir, cleaned)
+			if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("prune stale dump file %s: %w", oldRel, err)
+			}
+		}
+	}
+
+	manifestData, err := json.MarshalIndent(dumpManifest{
+		Version: 1,
+		Files:   written,
+	}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", dumpManifestFile, err)
+	}
+	manifestPath := filepath.Join(cleanDir, dumpManifestFile)
+	if err := os.WriteFile(manifestPath, manifestData, 0600); err != nil {
+		return fmt.Errorf("write %s: %w", dumpManifestFile, err)
+	}
+	return os.Chmod(manifestPath, 0600)
 }
 
 func listYAMLFiles(dir string) ([]string, error) {

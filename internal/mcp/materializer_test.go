@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -257,7 +259,8 @@ func TestLocalMaterializer_EndToEndPacketAndLock(t *testing.T) {
 	}
 	exportMap := renderOut["export"].(map[string]any)
 	packetDir := exportMap["packet_dir"].(string)
-	expectedSuffix := filepath.Join(baseDir, persistedBeforeSubmit.CreatedAt.UTC().Format("2006-01-02")+"-acme-corp-staff-go-engineer")
+	idSum := sha256.Sum256([]byte("app-acme"))
+	expectedSuffix := filepath.Join(baseDir, persistedBeforeSubmit.CreatedAt.UTC().Format("2006-01-02")+"-acme-corp-staff-go-engineer-"+hex.EncodeToString(idSum[:4]))
 	if packetDir != expectedSuffix {
 		t.Errorf("expected packet_dir %q, got %q", expectedSuffix, packetDir)
 	}
@@ -770,4 +773,338 @@ func readZipEntry(t *testing.T, zipData []byte, name string) string {
 	}
 	t.Fatalf("zip entry %q not found", name)
 	return ""
+}
+
+func TestLocalMaterializer_SameDaySameCompanyCollisionIsolation(t *testing.T) {
+	baseDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(baseDir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				_ = os.Chmod(path, 0644)
+			}
+			return nil
+		})
+	})
+
+	v, _ := newTestVaultAndServer(t)
+	ctx := context.Background()
+	if err := v.SetPII(ctx, &domain.PIIHeader{FullName: "Ada Collision", Email: "ada@collision.invalid"}); err != nil {
+		t.Fatalf("SetPII: %v", err)
+	}
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-1", Name: "Prior Co"})
+	_ = v.SaveRole(ctx, &domain.Role{ID: "role-1", OrgID: "org-1", Title: "Staff Engineer"})
+	_ = v.SaveCareerFact(ctx, &domain.CareerFact{
+		ID:             "fact-col-1",
+		RoleID:         "role-1",
+		Headline:       "Built distributed cache",
+		Details:        "Built distributed cache handling 50k QPS.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	})
+	_ = v.SaveArchetype(ctx, &domain.Archetype{ID: "arch-col", Name: "Systems"})
+
+	okPDF := func(_ context.Context, _ *render.ResumeDocument, _ *domain.PIIHeader, _ *render.ThemeManifest, _ int) ([]byte, *render.LayoutTelemetry, error) {
+		return []byte("%PDF-1.4\n"), &render.LayoutTelemetry{PageCount: 1, LastPageFillRatio: 0.8}, nil
+	}
+	mat := mcp.NewLocalMaterializer(v, mcp.WithBaseOutputDir(baseDir), mcp.WithPDFRenderer(okPDF))
+	srv := mcp.NewServer(v, mcp.WithPacketMaterializer(mat))
+
+	createReadyApp := func(t *testing.T, customID string) string {
+		t.Helper()
+		triageArgs := map[string]any{
+			"dossier": map[string]any{
+				"company":     "Acme Corp",
+				"role_title":  "Staff Go Engineer",
+				"raw_jd":      "Design backend Go systems.",
+				"fit_summary": "Strong match.",
+			},
+		}
+		if customID != "" {
+			triageArgs["application_id"] = customID
+		}
+		res, triageOut := callToolJSON(t, srv, "resumai_save_triage", triageArgs)
+		if res.IsError {
+			t.Fatalf("save_triage failed: %s", res.Content[0].Text)
+		}
+		appID := triageOut["application"].(map[string]any)["id"].(string)
+
+		draft := domain.ApplicationDraft{
+			ArchetypeID: "arch-col",
+			Experience: []domain.DraftExperience{{
+				RoleTitle:    "Staff Engineer",
+				Organization: "Prior Co",
+				Highlights:   []domain.BulletNode{{ID: "b1", Text: "Built distributed cache handling 50k QPS.", FactIDs: []string{"fact-col-1"}}},
+			}},
+			PageBudget: 1,
+		}
+		res, _ = callToolJSON(t, srv, "resumai_save_draft", map[string]any{
+			"application_id": appID,
+			"draft":          draft,
+		})
+		if res.IsError {
+			t.Fatalf("save_draft failed: %s", res.Content[0].Text)
+		}
+		res, bundleOut := callToolJSON(t, srv, "resumai_get_audit_bundle", map[string]any{
+			"application_id": appID,
+		})
+		if res.IsError {
+			t.Fatalf("get_audit_bundle failed: %s", res.Content[0].Text)
+		}
+		draftSHA := bundleOut["draft_sha256"].(string)
+		res, _ = callToolJSON(t, srv, "resumai_record_audits", map[string]any{
+			"application_id":  appID,
+			"draft_sha256":    draftSHA,
+			"fact_check":      domain.FactCheckReport{CriticAgent: domain.CriticFactChecker, Summary: "ok", Passed: true},
+			"alignment_check": domain.AlignmentCheckReport{CriticAgent: domain.CriticAlignmentChecker, Summary: "ok", Passed: true},
+		})
+		if res.IsError {
+			t.Fatalf("record_audits failed: %s", res.Content[0].Text)
+		}
+		res, _ = callToolJSON(t, srv, "resumai_promote_ready", map[string]any{
+			"application_id": appID,
+		})
+		if res.IsError {
+			t.Fatalf("promote_ready failed: %s", res.Content[0].Text)
+		}
+		return appID
+	}
+
+	app1ID := createReadyApp(t, "")
+	app2ID := createReadyApp(t, "")
+	if app1ID == app2ID {
+		t.Fatalf("expected distinct auto-generated application IDs, got %q", app1ID)
+	}
+
+	// Render and submit App 1.
+	res, out1 := callToolJSON(t, srv, "resumai_render_bundle", map[string]any{"application_id": app1ID})
+	if res.IsError {
+		t.Fatalf("render app1 failed: %s", res.Content[0].Text)
+	}
+	dir1 := out1["export"].(map[string]any)["packet_dir"].(string)
+
+	res, _ = callToolJSON(t, srv, "resumai_mark_submitted", map[string]any{"application_id": app1ID})
+	if res.IsError {
+		t.Fatalf("mark_submitted app1 failed: %s", res.Content[0].Text)
+	}
+	origHTML1, err := os.ReadFile(filepath.Join(dir1, "resume.html"))
+	if err != nil {
+		t.Fatalf("read app1 resume.html: %v", err)
+	}
+
+	// Render App 2 for same day, company, and role -> distinct packet directory, App 1 remains untouched & read-only.
+	res, out2 := callToolJSON(t, srv, "resumai_render_bundle", map[string]any{"application_id": app2ID})
+	if res.IsError {
+		t.Fatalf("render app2 failed: %s", res.Content[0].Text)
+	}
+	dir2 := out2["export"].(map[string]any)["packet_dir"].(string)
+	if dir1 == dir2 {
+		t.Fatalf("expected distinct packet_dir for same-day collision, both resolved to %q", dir1)
+	}
+
+	afterHTML1, err := os.ReadFile(filepath.Join(dir1, "resume.html"))
+	if err != nil {
+		t.Fatalf("re-read app1 resume.html: %v", err)
+	}
+	if !bytes.Equal(origHTML1, afterHTML1) {
+		t.Fatalf("app1 resume.html modified after rendering app2")
+	}
+	if info, serr := os.Stat(filepath.Join(dir1, "resume.html")); serr != nil || info.Mode().Perm()&0222 != 0 {
+		t.Fatalf("expected app1 resume.html to stay read-only, err=%v mode=%v", serr, info.Mode().Perm())
+	}
+
+	// Explicit ownership collision: if an unsubmitted app points Export.PacketDir at app1's submitted dir, refuse cleanly.
+	app2, err := v.GetApplicationContext(ctx, app2ID)
+	if err != nil {
+		t.Fatalf("GetApplicationContext(app2): %v", err)
+	}
+	app2.Export.PacketDir = dir1
+	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app2}); err == nil {
+		t.Fatalf("expected RenderAndMarkExported to refuse writing into another application's packet directory")
+	}
+	if info, serr := os.Stat(filepath.Join(dir1, "interview_brief.md")); serr != nil || info.Mode().Perm()&0222 != 0 {
+		t.Fatalf("expected app1 interview_brief.md untouched and read-only, err=%v mode=%v", serr, info.Mode().Perm())
+	}
+}
+
+func TestLocalMaterializer_SubmittedTamperReverification(t *testing.T) {
+	baseDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(baseDir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				_ = os.Chmod(path, 0644)
+			}
+			return nil
+		})
+	})
+
+	v, _ := newTestVaultAndServer(t)
+	ctx := context.Background()
+	_ = v.SetPII(ctx, &domain.PIIHeader{FullName: "Tamper Guard", Email: "guard@tamper.invalid"})
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-t", Name: "Prior Co"})
+	_ = v.SaveRole(ctx, &domain.Role{ID: "role-t", OrgID: "org-t", Title: "Engineer"})
+	_ = v.SaveCareerFact(ctx, &domain.CareerFact{
+		ID:             "fact-t",
+		RoleID:         "role-t",
+		Headline:       "Hardened storage",
+		Details:        "Hardened storage checksums.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	})
+	_ = v.SaveArchetype(ctx, &domain.Archetype{ID: "arch-t", Name: "Systems"})
+
+	okPDF := func(_ context.Context, _ *render.ResumeDocument, _ *domain.PIIHeader, _ *render.ThemeManifest, _ int) ([]byte, *render.LayoutTelemetry, error) {
+		return []byte("%PDF-1.4\n"), &render.LayoutTelemetry{PageCount: 1, LastPageFillRatio: 0.7}, nil
+	}
+	mat := mcp.NewLocalMaterializer(v, mcp.WithBaseOutputDir(baseDir), mcp.WithPDFRenderer(okPDF))
+	srv := mcp.NewServer(v, mcp.WithPacketMaterializer(mat))
+
+	res, _ := callToolJSON(t, srv, "resumai_save_triage", map[string]any{
+		"application_id": "app-tamper",
+		"dossier": map[string]any{
+			"company":     "Shield Co",
+			"role_title":  "Security Eng",
+			"raw_jd":      "Build security tooling.",
+			"fit_summary": "Fit.",
+		},
+	})
+	if res.IsError {
+		t.Fatalf("save_triage: %s", res.Content[0].Text)
+	}
+	res, _ = callToolJSON(t, srv, "resumai_save_draft", map[string]any{
+		"application_id": "app-tamper",
+		"draft": domain.ApplicationDraft{
+			ArchetypeID: "arch-t",
+			Experience: []domain.DraftExperience{{
+				RoleTitle:    "Engineer",
+				Organization: "Prior Co",
+				Highlights:   []domain.BulletNode{{ID: "b1", Text: "Hardened storage checksums.", FactIDs: []string{"fact-t"}}},
+			}},
+			PageBudget: 1,
+		},
+	})
+	if res.IsError {
+		t.Fatalf("save_draft: %s", res.Content[0].Text)
+	}
+	_, bundleOut := callToolJSON(t, srv, "resumai_get_audit_bundle", map[string]any{"application_id": "app-tamper"})
+	res, _ = callToolJSON(t, srv, "resumai_record_audits", map[string]any{
+		"application_id":  "app-tamper",
+		"draft_sha256":    bundleOut["draft_sha256"],
+		"fact_check":      domain.FactCheckReport{CriticAgent: domain.CriticFactChecker, Summary: "ok", Passed: true},
+		"alignment_check": domain.AlignmentCheckReport{CriticAgent: domain.CriticAlignmentChecker, Summary: "ok", Passed: true},
+	})
+	if res.IsError {
+		t.Fatalf("record_audits: %s", res.Content[0].Text)
+	}
+	if r, _ := callToolJSON(t, srv, "resumai_promote_ready", map[string]any{"application_id": "app-tamper"}); r.IsError {
+		t.Fatalf("promote_ready: %s", r.Content[0].Text)
+	}
+	res, renderOut := callToolJSON(t, srv, "resumai_render_bundle", map[string]any{"application_id": "app-tamper"})
+	if res.IsError {
+		t.Fatalf("render_bundle: %s", res.Content[0].Text)
+	}
+	packetDir := renderOut["export"].(map[string]any)["packet_dir"].(string)
+	if r, _ := callToolJSON(t, srv, "resumai_mark_submitted", map[string]any{"application_id": "app-tamper"}); r.IsError {
+		t.Fatalf("mark_submitted: %s", r.Content[0].Text)
+	}
+
+	// Tamper with sealed resume.html post-submission.
+	htmlPath := filepath.Join(packetDir, "resume.html")
+	if err := os.Chmod(htmlPath, 0644); err != nil {
+		t.Fatalf("chmod htmlPath: %v", err)
+	}
+	if err := os.WriteFile(htmlPath, []byte("<html>tampered</html>"), 0644); err != nil {
+		t.Fatalf("tamper htmlPath: %v", err)
+	}
+
+	submittedApp, err := v.GetApplicationContext(ctx, "app-tamper")
+	if err != nil {
+		t.Fatalf("GetApplicationContext: %v", err)
+	}
+	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: submittedApp}); !errors.Is(err, domain.ErrAlreadySubmitted) || !strings.Contains(err.Error(), "mismatch") {
+		t.Fatalf("expected ErrAlreadySubmitted + mismatch from RenderAndMarkExported, got %v", err)
+	}
+	if _, err := mat.FinalizeSubmission(ctx, mcp.SubmissionRequest{Application: submittedApp}); !errors.Is(err, domain.ErrAlreadySubmitted) || !strings.Contains(err.Error(), "mismatch") {
+		t.Fatalf("expected ErrAlreadySubmitted + mismatch from FinalizeSubmission, got %v", err)
+	}
+	for _, toolName := range []string{"resumai_render_bundle", "resumai_mark_submitted"} {
+		res, _ = callToolJSON(t, srv, toolName, map[string]any{"application_id": "app-tamper"})
+		if !res.IsError || !strings.Contains(res.Content[0].Text, "already submitted") || !strings.Contains(res.Content[0].Text, "mismatch") {
+			t.Fatalf("%s did not surface tamper mismatch cleanly: isError=%v text=%s", toolName, res.IsError, res.Content[0].Text)
+		}
+	}
+}
+
+func TestLocalMaterializer_RenderTimeFactReverification(t *testing.T) {
+	baseDir := t.TempDir()
+	v, _ := newTestVaultAndServer(t)
+	ctx := context.Background()
+	_ = v.SetPII(ctx, &domain.PIIHeader{FullName: "Fact Reverify", Email: "reverify@example.invalid"})
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-f", Name: "Prior Co"})
+	_ = v.SaveRole(ctx, &domain.Role{ID: "role-f", OrgID: "org-f", Title: "Engineer"})
+	_ = v.SaveCareerFact(ctx, &domain.CareerFact{
+		ID:             "fact-f",
+		RoleID:         "role-f",
+		Headline:       "Cut latency",
+		Details:        "Cut p99 latency by 40ms.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	})
+	_ = v.SaveArchetype(ctx, &domain.Archetype{ID: "arch-f", Name: "Systems"})
+
+	okPDF := func(_ context.Context, _ *render.ResumeDocument, _ *domain.PIIHeader, _ *render.ThemeManifest, _ int) ([]byte, *render.LayoutTelemetry, error) {
+		return []byte("%PDF-1.4\n"), &render.LayoutTelemetry{PageCount: 1, LastPageFillRatio: 0.7}, nil
+	}
+	mat := mcp.NewLocalMaterializer(v, mcp.WithBaseOutputDir(baseDir), mcp.WithPDFRenderer(okPDF))
+
+	app, err := domain.NewTriagedApplication("app-reverify", domain.OpportunityDossier{
+		RoleTitle: "Engineer",
+		Company:   "Verify Co",
+		RawJD:     "Systems work.",
+	})
+	if err != nil {
+		t.Fatalf("NewTriagedApplication: %v", err)
+	}
+	if err := app.SaveDraft(domain.ApplicationDraft{
+		ArchetypeID: "arch-f",
+		Experience: []domain.DraftExperience{{
+			RoleTitle:    "Engineer",
+			Organization: "Prior Co",
+			Highlights:   []domain.BulletNode{{ID: "b1", Text: "Cut p99 latency by 40ms.", FactIDs: []string{"fact-f"}}},
+		}},
+		PageBudget: 1,
+	}, v); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
+	}
+	if err := app.RecordAudits(domain.AuditBundle{
+		FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
+		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
+	}); err != nil {
+		t.Fatalf("RecordAudits: %v", err)
+	}
+	if err := app.PromoteReady(v); err != nil {
+		t.Fatalf("PromoteReady: %v", err)
+	}
+
+	// Archive the cited fact after PromoteReady -> RenderAndMarkExported must reject.
+	if err := v.ArchiveCareerFact(ctx, "fact-f"); err != nil {
+		t.Fatalf("ArchiveCareerFact: %v", err)
+	}
+	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app}); !errors.Is(err, domain.ErrUnverifiedFactOrPlaceholder) {
+		t.Fatalf("expected ErrUnverifiedFactOrPlaceholder after fact archive, got %v", err)
+	}
+
+	// Downgrade to raw_note -> still must reject.
+	if err := v.SaveCareerFact(ctx, &domain.CareerFact{
+		ID:             "fact-f",
+		RoleID:         "role-f",
+		Headline:       "Cut latency",
+		Details:        "Cut p99 latency by 40ms.",
+		EpistemicState: domain.EpistemicRawNote,
+		Verified:       false,
+	}); err != nil {
+		t.Fatalf("SaveCareerFact raw_note: %v", err)
+	}
+	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app}); !errors.Is(err, domain.ErrUnverifiedFactOrPlaceholder) {
+		t.Fatalf("expected ErrUnverifiedFactOrPlaceholder for raw_note fact, got %v", err)
+	}
 }

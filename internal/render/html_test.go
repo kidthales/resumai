@@ -238,6 +238,12 @@ func TestHTMLRenderer_Render_OfflineAndSelfContained(t *testing.T) {
 		t.Errorf("rendered HTML missing offline base64 font data URI signature %q", dataURISig)
 	}
 
+	// Invariant: Strict Content-Security-Policy meta tag for defense-in-depth
+	expectedCSP := `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none';">`
+	if !strings.Contains(out, expectedCSP) {
+		t.Errorf("rendered HTML missing strict CSP meta tag %q", expectedCSP)
+	}
+
 	// Invariant: Zero <table wrapper tags (ATS Linear Invariant)
 	if strings.Contains(out, "<table") {
 		t.Errorf("rendered HTML contains <table> tag, violating zero full-page wrapper table ATS invariant")

@@ -1,6 +1,9 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -184,8 +187,34 @@ type AlignmentCheckReport struct {
 
 // AuditBundle aggregates both required clean-room critic reports for an application draft.
 type AuditBundle struct {
+	DraftSHA256    string                `json:"draft_sha256,omitempty" yaml:"draft_sha256,omitempty"`
 	FactCheck      *FactCheckReport      `json:"fact_check" yaml:"fact_check"`
 	AlignmentCheck *AlignmentCheckReport `json:"alignment_check" yaml:"alignment_check"`
+}
+
+// ContentSHA256 computes a deterministic SHA-256 hex digest of the authored ApplicationDraft,
+// normalizing server-computed bullet.verified flags so promotion does not mutate the draft digest.
+func (d *ApplicationDraft) ContentSHA256() (string, error) {
+	if d == nil {
+		return "", fmt.Errorf("%w: cannot hash nil draft", ErrIncompleteAudit)
+	}
+	raw, err := json.Marshal(d)
+	if err != nil {
+		return "", fmt.Errorf("marshal draft for hash: %w", err)
+	}
+	var canonical ApplicationDraft
+	if err := json.Unmarshal(raw, &canonical); err != nil {
+		return "", fmt.Errorf("canonicalize draft for hash: %w", err)
+	}
+	for _, b := range canonical.AllBullets() {
+		b.Verified = false
+	}
+	canonBytes, err := json.Marshal(canonical)
+	if err != nil {
+		return "", fmt.Errorf("marshal canonical draft for hash: %w", err)
+	}
+	sum := sha256.Sum256(canonBytes)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // ExportRecord stores rendered packet artifact paths and page-budget telemetry.
@@ -319,7 +348,7 @@ func (a *JobApplication) SaveDraft(draft ApplicationDraft, resolver DraftResolve
 }
 
 // RecordAudits transitions Drafted (or re-records from Audited) -> Audited,
-// requiring both resume-fact-checker and resume-alignment-checker reports.
+// requiring both resume-fact-checker and resume-alignment-checker reports bound to the current draft hash.
 func (a *JobApplication) RecordAudits(bundle AuditBundle) error {
 	if err := a.guardNotSubmitted(); err != nil {
 		return err
@@ -327,8 +356,19 @@ func (a *JobApplication) RecordAudits(bundle AuditBundle) error {
 	if a.State != StateDrafted && a.State != StateAudited {
 		return fmt.Errorf("%w: cannot record audits from state %q", ErrInvalidStateTransition, a.State)
 	}
+	if a.Draft == nil {
+		return fmt.Errorf("%w: application has no saved draft to audit", ErrIncompleteAudit)
+	}
 	if err := validateAuditBundle(&bundle); err != nil {
 		return err
+	}
+
+	draftHash, err := a.Draft.ContentSHA256()
+	if err != nil {
+		return err
+	}
+	if provided := strings.ToLower(strings.TrimSpace(bundle.DraftSHA256)); provided != "" && provided != draftHash {
+		return fmt.Errorf("%w: audit draft_sha256 %q does not match current draft %q", ErrIncompleteAudit, bundle.DraftSHA256, draftHash)
 	}
 
 	now := time.Now().UTC()
@@ -348,6 +388,7 @@ func (a *JobApplication) RecordAudits(bundle AuditBundle) error {
 	}
 
 	a.Audits = &AuditBundle{
+		DraftSHA256:    draftHash,
 		FactCheck:      &fc,
 		AlignmentCheck: &ac,
 	}
@@ -357,7 +398,7 @@ func (a *JobApplication) RecordAudits(bundle AuditBundle) error {
 }
 
 // PromoteReady transitions Audited -> ReadyToRender, enforcing:
-// 1. Both audit reports attached and passed (Passed == true), with zero High factual discrepancies.
+// 1. Both audit reports attached, bound to the current draft hash, and passed (Passed == true), with zero High factual discrepancies.
 // 2. Zero unresolved [METRIC: tokens across headline, summary, and bullets.
 // 3. 100% of cited career facts resolve and are verified in the live vault.
 func (a *JobApplication) PromoteReady(lookup FactLookup) error {
@@ -372,6 +413,13 @@ func (a *JobApplication) PromoteReady(lookup FactLookup) error {
 	}
 	if a.Draft == nil {
 		return fmt.Errorf("%w: application has no draft", ErrUnverifiedFactOrPlaceholder)
+	}
+	draftHash, err := a.Draft.ContentSHA256()
+	if err != nil {
+		return err
+	}
+	if strings.ToLower(strings.TrimSpace(a.Audits.DraftSHA256)) != draftHash {
+		return fmt.Errorf("%w: audit draft_sha256 %q does not match current draft %q", ErrIncompleteAudit, a.Audits.DraftSHA256, draftHash)
 	}
 	if lookup == nil {
 		return fmt.Errorf("%w: fact lookup is required", ErrUnverifiedFactOrPlaceholder)
