@@ -1,27 +1,35 @@
-/.agents/skills/
-/.idea/
-/.junie/
-/.vscode/
+# Binaries
+/bin/
+
+# Local CI Receipts & Coverage (NEVER COMMIT)
+/.ci-local/
 /coverage/
-/node_modules/
-/.eslintcache
+*.test
+*.out
+coverage.txt
 
-###> symfony/framework-bundle ###
-/.env.local
-/.env.local.php
-/.env.*.local
-/config/secrets/prod/prod.decrypt.private.php
-/public/bundles/
-/var/
-/vendor/
-###< symfony/framework-bundle ###
+# Environment & Secrets (NEVER COMMIT)
+.env*
+*.env
+*.secret
+*.token
+*.key
+*.pem
+secrets.json
 
-###> friendsofphp/php-cs-fixer ###
-/.php-cs-fixer.php
-/.php-cs-fixer.cache
-###< friendsofphp/php-cs-fixer ###
+# Content PII & Private Archetypes Guards (Belt-and-Suspenders)
+/content/pii/*
+!/content/pii/.gitignore
+!/content/pii/*.sample.md
+/content/archetypes/*
+!/content/archetypes/.gitignore
+!/content/archetypes/*.sample.md
 
-###> phpunit/phpunit ###
-/phpunit.xml
-/.phpunit.cache/
-###< phpunit/phpunit ###
+# OS & Editor Artifacts
+.DS_Store
+Thumbs.db
+/.idea/
+/.vscode/
+/.junie/
+*.swp
+*~

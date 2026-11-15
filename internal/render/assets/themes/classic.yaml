@@ -1,0 +1,51 @@
+name: "classic"
+version: "1.0.0"
+description: "Traditional executive theme with centered header and monochromatic styling"
+
+page:
+  size: "letter"
+  margin_top: "0.6in"
+  margin_bottom: "0.6in"
+  margin_left: "0.6in"
+  margin_right: "0.6in"
+
+typography:
+  font_family_primary: "Inter"
+  font_family_mono: "JetBrains Mono"
+  font_size_base: "10pt"
+  font_size_title: "20pt"
+  font_size_subtitle: "10.5pt"
+  font_size_section: "12pt"
+  font_size_small: "9pt"
+  line_height: 1.35
+
+colors:
+  primary: "#000000"
+  secondary: "#262626"
+  accent: "#000000"
+  muted: "#525252"
+  border: "#a3a3a3"
+  background: "#ffffff"
+
+spacing:
+  section_gap: "12pt"
+  item_gap: "6pt"
+  bullet_gap: "2.5pt"
+  header_gap: "8pt"
+
+header:
+  layout: "centered"
+  show_headline: true
+  show_divider: false
+
+sections:
+  uppercase: true
+  border_bottom: true
+  order:
+    - "summary"
+    - "experience"
+    - "education"
+    - "skills"
+    - "projects"
+    - "certifications"
+    - "custom"

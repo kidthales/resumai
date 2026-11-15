@@ -1,4 +1,0 @@
-ai:
-    platform:
-        ollama:
-            http_client: ollama.client
