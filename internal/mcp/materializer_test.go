@@ -300,6 +300,11 @@ func TestLocalMaterializer_EndToEndPacketAndLock(t *testing.T) {
 	}
 	assertNoSentinelPII(t, string(auditBytes), sentinelPII)
 
+	assertOwnerOnlyUnix(t, packetDir)
+	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md"} {
+		assertOwnerOnlyUnix(t, filepath.Join(packetDir, fname))
+	}
+
 	// Re-rendering while Exported should succeed
 	res, _ = callToolJSON(t, srv, "resumai_render_bundle", map[string]any{"application_id": "app-acme"})
 	if res.IsError {
@@ -336,15 +341,18 @@ func TestLocalMaterializer_EndToEndPacketAndLock(t *testing.T) {
 	}
 	assertNoSentinelPII(t, briefText, sentinelPII)
 
-	// Verify all packet files are locked read-only (no write bits set)
+	// Verify packet directory stays owner-only on Unix and all packet files are locked read-only (no write bits set; owner-only on Unix)
+	assertOwnerOnlyUnix(t, packetDir)
 	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md", "interview_brief.md"} {
-		info, err := os.Stat(filepath.Join(packetDir, fname))
+		fpath := filepath.Join(packetDir, fname)
+		info, err := os.Stat(fpath)
 		if err != nil {
 			t.Fatalf("stat %s: %v", fname, err)
 		}
 		if info.Mode().Perm()&0222 != 0 {
 			t.Errorf("expected %s to be locked read-only, got mode %v", fname, info.Mode().Perm())
 		}
+		assertOwnerOnlyUnix(t, fpath)
 	}
 
 	// Verify subsequent render_bundle fails with ErrAlreadySubmitted
@@ -1106,5 +1114,167 @@ func TestLocalMaterializer_RenderTimeFactReverification(t *testing.T) {
 	}
 	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app}); !errors.Is(err, domain.ErrUnverifiedFactOrPlaceholder) {
 		t.Fatalf("expected ErrUnverifiedFactOrPlaceholder for raw_note fact, got %v", err)
+	}
+}
+
+// assertOwnerOnlyUnix verifies that path has zero group/other permission bits on Unix hosts.
+func assertOwnerOnlyUnix(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", filepath.Base(path), err)
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		t.Errorf("expected %s to have owner-only permissions on Unix, got mode %v", filepath.Base(path), info.Mode().Perm())
+	}
+}
+
+func TestLocalMaterializer_TightensPreExistingLoosePermissions(t *testing.T) {
+	baseDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(baseDir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				_ = os.Chmod(path, 0644)
+			}
+			return nil
+		})
+	})
+
+	v, _ := newTestVaultAndServer(t)
+	ctx := context.Background()
+	_ = v.SetPII(ctx, &domain.PIIHeader{FullName: "Perm Tightener", Email: "perm@example.invalid"})
+	_ = v.SaveOrganization(ctx, &domain.Organization{ID: "org-p", Name: "Prior Co"})
+	_ = v.SaveRole(ctx, &domain.Role{ID: "role-p", OrgID: "org-p", Title: "Engineer"})
+	_ = v.SaveCareerFact(ctx, &domain.CareerFact{
+		ID:             "fact-p",
+		RoleID:         "role-p",
+		Headline:       "Tightened perms",
+		Details:        "Tightened directory permissions.",
+		EpistemicState: domain.EpistemicVerified,
+		Verified:       true,
+	})
+	_ = v.SaveArchetype(ctx, &domain.Archetype{ID: "arch-p", Name: "Systems"})
+
+	okPDF := func(_ context.Context, _ *render.ResumeDocument, _ *domain.PIIHeader, _ *render.ThemeManifest, _ int) ([]byte, *render.LayoutTelemetry, error) {
+		return []byte("%PDF-1.4\n"), &render.LayoutTelemetry{PageCount: 1, LastPageFillRatio: 0.7}, nil
+	}
+	fixedNow := time.Date(2026, 11, 13, 18, 30, 0, 0, time.UTC)
+	mat := mcp.NewLocalMaterializer(
+		v,
+		mcp.WithBaseOutputDir(baseDir),
+		mcp.WithPDFRenderer(okPDF),
+		mcp.WithNowFunc(func() time.Time { return fixedNow }),
+	)
+	srv := mcp.NewServer(v, mcp.WithPacketMaterializer(mat))
+
+	res, _ := callToolJSON(t, srv, "resumai_save_triage", map[string]any{
+		"application_id": "app-perms",
+		"dossier": map[string]any{
+			"company":     "Lock Co",
+			"role_title":  "Security Eng",
+			"raw_jd":      "Harden file permissions.",
+			"fit_summary": "Fit.",
+		},
+	})
+	if res.IsError {
+		t.Fatalf("save_triage: %s", res.Content[0].Text)
+	}
+	res, _ = callToolJSON(t, srv, "resumai_save_draft", map[string]any{
+		"application_id": "app-perms",
+		"draft": domain.ApplicationDraft{
+			ArchetypeID: "arch-p",
+			Experience: []domain.DraftExperience{{
+				RoleTitle:    "Engineer",
+				Organization: "Prior Co",
+				Highlights:   []domain.BulletNode{{ID: "b1", Text: "Tightened directory permissions.", FactIDs: []string{"fact-p"}}},
+			}},
+			PageBudget: 1,
+		},
+	})
+	if res.IsError {
+		t.Fatalf("save_draft: %s", res.Content[0].Text)
+	}
+	_, bundleOut := callToolJSON(t, srv, "resumai_get_audit_bundle", map[string]any{"application_id": "app-perms"})
+	res, _ = callToolJSON(t, srv, "resumai_record_audits", map[string]any{
+		"application_id":  "app-perms",
+		"draft_sha256":    bundleOut["draft_sha256"],
+		"fact_check":      domain.FactCheckReport{CriticAgent: domain.CriticFactChecker, Summary: "ok", Passed: true},
+		"alignment_check": domain.AlignmentCheckReport{CriticAgent: domain.CriticAlignmentChecker, Summary: "ok", Passed: true},
+	})
+	if res.IsError {
+		t.Fatalf("record_audits: %s", res.Content[0].Text)
+	}
+	if r, _ := callToolJSON(t, srv, "resumai_promote_ready", map[string]any{"application_id": "app-perms"}); r.IsError {
+		t.Fatalf("promote_ready: %s", r.Content[0].Text)
+	}
+
+	// Pre-create the deterministic packet directory with loose 0755 permissions before first render.
+	persisted, err := v.GetApplicationContext(ctx, "app-perms")
+	if err != nil {
+		t.Fatalf("GetApplicationContext: %v", err)
+	}
+	idSum := sha256.Sum256([]byte("app-perms"))
+	preCreatedDir := filepath.Join(baseDir, persisted.CreatedAt.UTC().Format("2006-01-02")+"-lock-co-security-eng-"+hex.EncodeToString(idSum[:4]))
+	if err := os.MkdirAll(preCreatedDir, 0755); err != nil {
+		t.Fatalf("MkdirAll preCreatedDir: %v", err)
+	}
+	if err := os.Chmod(preCreatedDir, 0755); err != nil {
+		t.Fatalf("Chmod preCreatedDir 0755: %v", err)
+	}
+
+	res, renderOut := callToolJSON(t, srv, "resumai_render_bundle", map[string]any{"application_id": "app-perms"})
+	if res.IsError {
+		t.Fatalf("render_bundle failed: %s", res.Content[0].Text)
+	}
+	packetDir := renderOut["export"].(map[string]any)["packet_dir"].(string)
+	if packetDir != preCreatedDir {
+		t.Fatalf("expected packetDir %q, got %q", preCreatedDir, packetDir)
+	}
+	assertOwnerOnlyUnix(t, packetDir)
+
+	// Simulate pre-existing loose permissions (0755 dir, 0644 files) before re-render.
+	if err := os.Chmod(packetDir, 0755); err != nil {
+		t.Fatalf("loosen packetDir: %v", err)
+	}
+	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md"} {
+		if err := os.Chmod(filepath.Join(packetDir, fname), 0644); err != nil {
+			t.Fatalf("loosen %s: %v", fname, err)
+		}
+	}
+
+	res, _ = callToolJSON(t, srv, "resumai_render_bundle", map[string]any{"application_id": "app-perms"})
+	if res.IsError {
+		t.Fatalf("re-render failed: %s", res.Content[0].Text)
+	}
+	assertOwnerOnlyUnix(t, packetDir)
+	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md"} {
+		assertOwnerOnlyUnix(t, filepath.Join(packetDir, fname))
+	}
+
+	// Simulate pre-existing loose permissions (0755 dir, 0644 audit.md) before FinalizeSubmission.
+	if err := os.Chmod(packetDir, 0755); err != nil {
+		t.Fatalf("loosen packetDir before submit: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(packetDir, "audit.md"), 0644); err != nil {
+		t.Fatalf("loosen audit.md before submit: %v", err)
+	}
+
+	if r, _ := callToolJSON(t, srv, "resumai_mark_submitted", map[string]any{"application_id": "app-perms"}); r.IsError {
+		t.Fatalf("mark_submitted: %s", r.Content[0].Text)
+	}
+	assertOwnerOnlyUnix(t, packetDir)
+	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md", "interview_brief.md"} {
+		fpath := filepath.Join(packetDir, fname)
+		info, err := os.Stat(fpath)
+		if err != nil {
+			t.Fatalf("stat %s: %v", fname, err)
+		}
+		if info.Mode().Perm()&0222 != 0 {
+			t.Errorf("expected %s to be locked read-only, got mode %v", fname, info.Mode().Perm())
+		}
+		assertOwnerOnlyUnix(t, fpath)
 	}
 }
