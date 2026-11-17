@@ -376,7 +376,7 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 		)
 	}
 
-	if err := os.MkdirAll(packetDir, 0755); err != nil {
+	if err := os.MkdirAll(packetDir, 0700); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("create packet directory: %w", err), pii)
 	}
 
@@ -397,7 +397,7 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	}
 
 	auditMD := buildAuditMarkdown(app, theme.Name, telemetry, maxPages, now)
-	if err := m.writeFileEnsuringWritable(ctx, app, auditPath, []byte(auditMD), 0644); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, auditPath, []byte(auditMD), 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write audit.md: %w", err), pii)
 	}
 	if app.State == domain.StateExported && app.Export != nil && filepath.Clean(app.Export.PacketDir) == filepath.Clean(packetDir) {
@@ -407,7 +407,7 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 				return nil, scrubPIIError(fmt.Errorf("refusing symlink or irregular path %s", filepath.Base(briefPath)), pii)
 			}
 			if !info.IsDir() {
-				if cerr := m.ensureWritableForApp(ctx, app, briefPath, 0644); cerr != nil {
+				if cerr := m.ensureWritableForApp(ctx, app, briefPath, 0600); cerr != nil {
 					return nil, scrubPIIError(fmt.Errorf("prepare %s: %w", filepath.Base(briefPath), cerr), pii)
 				}
 				if rerr := os.Remove(briefPath); rerr != nil {
@@ -509,7 +509,7 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 	now := m.now().UTC()
 	briefPath := filepath.Join(packetDir, "interview_brief.md")
 	briefMD := buildInterviewBriefMarkdown(app, bundleSHA256, fileDigests, req.Notes, now)
-	if err := m.writeFileEnsuringWritable(ctx, app, briefPath, []byte(briefMD), 0644); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, briefPath, []byte(briefMD), 0600); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write interview_brief.md: %w", err), pii)
 	}
 
