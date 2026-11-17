@@ -8,12 +8,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/kidthales/resumai/internal/domain"
 	"github.com/kidthales/resumai/internal/render"
+)
+
+const (
+	packetDirMode    os.FileMode = 0700
+	packetFileMode   os.FileMode = 0600
+	packetLockedMode os.FileMode = 0400
 )
 
 // PIIProvider retrieves the candidate's air-gapped contact PII locally for render-time injection.
@@ -376,8 +383,11 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 		)
 	}
 
-	if err := os.MkdirAll(packetDir, 0700); err != nil {
+	if err := os.MkdirAll(packetDir, packetDirMode); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("create packet directory: %w", err), pii)
+	}
+	if err := ensureOwnerOnlyDir(packetDir); err != nil {
+		return nil, scrubPIIError(fmt.Errorf("tighten packet directory permissions: %w", err), pii)
 	}
 
 	now := m.now().UTC()
@@ -386,18 +396,18 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 	pdfPath := filepath.Join(packetDir, "resume.pdf")
 	auditPath := filepath.Join(packetDir, "audit.md")
 
-	if err := m.writeFileEnsuringWritable(ctx, app, htmlPath, htmlBytes, 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, htmlPath, htmlBytes, packetFileMode); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.html: %w", err), pii)
 	}
-	if err := m.writeFileEnsuringWritable(ctx, app, docxPath, docxBytes, 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, docxPath, docxBytes, packetFileMode); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.docx: %w", err), pii)
 	}
-	if err := m.writeFileEnsuringWritable(ctx, app, pdfPath, pdfBytes, 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, pdfPath, pdfBytes, packetFileMode); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write resume.pdf: %w", err), pii)
 	}
 
 	auditMD := buildAuditMarkdown(app, theme.Name, telemetry, maxPages, now)
-	if err := m.writeFileEnsuringWritable(ctx, app, auditPath, []byte(auditMD), 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, auditPath, []byte(auditMD), packetFileMode); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write audit.md: %w", err), pii)
 	}
 	if app.State == domain.StateExported && app.Export != nil && filepath.Clean(app.Export.PacketDir) == filepath.Clean(packetDir) {
@@ -407,7 +417,7 @@ func (m *LocalMaterializer) RenderAndMarkExported(ctx context.Context, req Rende
 				return nil, scrubPIIError(fmt.Errorf("refusing symlink or irregular path %s", filepath.Base(briefPath)), pii)
 			}
 			if !info.IsDir() {
-				if cerr := m.ensureWritableForApp(ctx, app, briefPath, 0600); cerr != nil {
+				if cerr := m.ensureWritableForApp(ctx, app, briefPath, packetFileMode); cerr != nil {
 					return nil, scrubPIIError(fmt.Errorf("prepare %s: %w", filepath.Base(briefPath), cerr), pii)
 				}
 				if rerr := os.Remove(briefPath); rerr != nil {
@@ -509,8 +519,11 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 	now := m.now().UTC()
 	briefPath := filepath.Join(packetDir, "interview_brief.md")
 	briefMD := buildInterviewBriefMarkdown(app, bundleSHA256, fileDigests, req.Notes, now)
-	if err := m.writeFileEnsuringWritable(ctx, app, briefPath, []byte(briefMD), 0600); err != nil {
+	if err := m.writeFileEnsuringWritable(ctx, app, briefPath, []byte(briefMD), packetFileMode); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write interview_brief.md: %w", err), pii)
+	}
+	if err := ensureOwnerOnlyDir(packetDir); err != nil {
+		return nil, scrubPIIError(fmt.Errorf("tighten packet directory permissions: %w", err), pii)
 	}
 
 	// Lock all packet artifacts read-only so submitted deliverables remain immutable on disk.
@@ -544,7 +557,7 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 			return nil, scrubPIIError(fmt.Errorf("refusing to lock symlink packet artifact %s", filepath.Base(target)), pii)
 		}
 		locked = append(locked, priorPerm{path: target, mode: info.Mode().Perm()})
-		if err := os.Chmod(target, 0400); err != nil {
+		if err := os.Chmod(target, packetLockedMode); err != nil {
 			restoreLocked()
 			return nil, scrubPIIError(fmt.Errorf("lock submitted packet artifact %s: %w", filepath.Base(target), err), pii)
 		}
@@ -916,8 +929,25 @@ func ensureWritable(path string, perm os.FileMode) error {
 	if info.IsDir() {
 		return nil
 	}
-	if info.Mode().Perm()&0200 == 0 {
+	if info.Mode().Perm()&0200 == 0 || (runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0) {
 		return os.Chmod(path, perm)
+	}
+	return nil
+}
+
+func ensureOwnerOnlyDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 || !info.IsDir() {
+		return fmt.Errorf("refusing symlink or non-directory path %q", dir)
+	}
+	if info.Mode().Perm() != packetDirMode {
+		return os.Chmod(dir, packetDirMode)
 	}
 	return nil
 }
