@@ -300,6 +300,11 @@ func TestLocalMaterializer_EndToEndPacketAndLock(t *testing.T) {
 	}
 	assertNoSentinelPII(t, string(auditBytes), sentinelPII)
 
+	assertOwnerOnlyUnix(t, packetDir)
+	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md"} {
+		assertOwnerOnlyUnix(t, filepath.Join(packetDir, fname))
+	}
+
 	// Re-rendering while Exported should succeed
 	res, _ = callToolJSON(t, srv, "resumai_render_bundle", map[string]any{"application_id": "app-acme"})
 	if res.IsError {
@@ -336,15 +341,18 @@ func TestLocalMaterializer_EndToEndPacketAndLock(t *testing.T) {
 	}
 	assertNoSentinelPII(t, briefText, sentinelPII)
 
-	// Verify all packet files are locked read-only (no write bits set)
+	// Verify packet directory stays owner-only on Unix and all packet files are locked read-only (no write bits set; owner-only on Unix)
+	assertOwnerOnlyUnix(t, packetDir)
 	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md", "interview_brief.md"} {
-		info, err := os.Stat(filepath.Join(packetDir, fname))
+		fpath := filepath.Join(packetDir, fname)
+		info, err := os.Stat(fpath)
 		if err != nil {
 			t.Fatalf("stat %s: %v", fname, err)
 		}
 		if info.Mode().Perm()&0222 != 0 {
 			t.Errorf("expected %s to be locked read-only, got mode %v", fname, info.Mode().Perm())
 		}
+		assertOwnerOnlyUnix(t, fpath)
 	}
 
 	// Verify subsequent render_bundle fails with ErrAlreadySubmitted
@@ -1106,5 +1114,20 @@ func TestLocalMaterializer_RenderTimeFactReverification(t *testing.T) {
 	}
 	if _, err := mat.RenderAndMarkExported(ctx, mcp.RenderBundleRequest{Application: app}); !errors.Is(err, domain.ErrUnverifiedFactOrPlaceholder) {
 		t.Fatalf("expected ErrUnverifiedFactOrPlaceholder for raw_note fact, got %v", err)
+	}
+}
+
+// assertOwnerOnlyUnix verifies that path has zero group/other permission bits on Unix hosts.
+func assertOwnerOnlyUnix(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", filepath.Base(path), err)
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		t.Errorf("expected %s to have owner-only permissions on Unix, got mode %v", filepath.Base(path), info.Mode().Perm())
 	}
 }
