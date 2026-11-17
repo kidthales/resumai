@@ -17,6 +17,10 @@ coverage.txt
 *.pem
 secrets.json
 
+# Legacy v0.1.0 Import PII Guards (Belt-and-Suspenders)
+/content/pii/*
+/content/archetypes/*
+
 # OS & Editor Artifacts
 .DS_Store
 Thumbs.db

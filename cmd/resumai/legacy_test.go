@@ -8,14 +8,20 @@ import (
 	"testing"
 )
 
-func TestImportLegacyCLI(t *testing.T) {
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "legacy_imported.db")
-
+func legacyFixtureDir(t *testing.T) string {
+	t.Helper()
 	fixtureDir := filepath.Join("..", "..", "testdata", "legacy")
 	if _, err := os.Stat(fixtureDir); err != nil {
 		t.Fatalf("could not locate legacy fixture directory: %v", err)
 	}
+	return fixtureDir
+}
+
+func TestImportLegacyCLI(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "legacy_imported.db")
+
+	fixtureDir := legacyFixtureDir(t)
 
 	var out, errOut bytes.Buffer
 	code := run([]string{
@@ -69,7 +75,7 @@ func TestImportLegacyCLI(t *testing.T) {
 func TestImportLegacyCLISkipPII(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "legacy_no_pii.db")
-	fixtureDir := filepath.Join("..", "..", "testdata", "legacy")
+	fixtureDir := legacyFixtureDir(t)
 
 	var out, errOut bytes.Buffer
 	code := run([]string{
