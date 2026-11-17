@@ -17,13 +17,9 @@ coverage.txt
 *.pem
 secrets.json
 
-# Content PII & Private Archetypes Guards (Belt-and-Suspenders)
+# Legacy v0.1.0 Import PII Guards (Belt-and-Suspenders)
 /content/pii/*
-!/content/pii/.gitignore
-!/content/pii/*.sample.md
 /content/archetypes/*
-!/content/archetypes/.gitignore
-!/content/archetypes/*.sample.md
 
 # OS & Editor Artifacts
 .DS_Store

@@ -16,13 +16,13 @@ func TestImportLegacyActualSamples(t *testing.T) {
 	v := newTestVault(t)
 	ctx := context.Background()
 
-	// Locate content directory in the repo
-	contentDir := filepath.Join("..", "..", "content")
-	if _, err := os.Stat(contentDir); err != nil {
-		t.Fatalf("could not locate content directory: %v", err)
+	// Locate legacy fixture directory in the repo
+	fixtureDir := filepath.Join("..", "..", "testdata", "legacy")
+	if _, err := os.Stat(fixtureDir); err != nil {
+		t.Fatalf("could not locate legacy fixture directory: %v", err)
 	}
 
-	report, err := v.ImportLegacy(ctx, contentDir, vault.LegacyImportOptions{
+	report, err := v.ImportLegacy(ctx, fixtureDir, vault.LegacyImportOptions{
 		DefaultEpistemicState: domain.EpistemicVerified,
 	})
 	if err != nil {
