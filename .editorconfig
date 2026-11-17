@@ -12,18 +12,8 @@ indent_style = space
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[**/{Dockerfile,Caddyfile,*.sh}]
-indent_style = tab
-
-[{docker/compose.*yaml,.github/**/*.yaml}]
+[.github/**/*.yaml]
 indent_size = 2
 
 [**.md]
 trim_trailing_whitespace = false
-
-[Makefile]
-indent_size = 8
-indent_style = tab
-
-[{package.json,package-lock.json}]
-indent_size = 2
