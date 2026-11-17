@@ -544,7 +544,7 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 			return nil, scrubPIIError(fmt.Errorf("refusing to lock symlink packet artifact %s", filepath.Base(target)), pii)
 		}
 		locked = append(locked, priorPerm{path: target, mode: info.Mode().Perm()})
-		if err := os.Chmod(target, 0444); err != nil {
+		if err := os.Chmod(target, 0400); err != nil {
 			restoreLocked()
 			return nil, scrubPIIError(fmt.Errorf("lock submitted packet artifact %s: %w", filepath.Base(target), err), pii)
 		}
