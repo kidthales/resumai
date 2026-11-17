@@ -50,7 +50,7 @@ Interview the user role-by-role to break broad responsibilities into atomic fact
 
 ### 5. Curate Education & Persona Archetypes
 1. Save credentials via `resumai_save_education` (`id`, `institution`, `degree`, `field_of_study`, `location`, `duration`, `honors`).
-2. Define target personas via `resumai_save_archetype` (`id`, `name`, `profile_overview`, `core_competencies`, `strategic_impact`, `target_roles`). Reference `content/archetypes/*.sample.md` if the user wants structural examples.
+2. Define target personas via `resumai_save_archetype` (`id`, `name`, `profile_overview`, `core_competencies`, `strategic_impact`, `target_roles`).
 
 ## Verification
 Re-run `resumai_vault_status` and `resumai_list_facts` (`epistemic_state: "metric_pending"` / `"raw_note"`) to confirm remaining gaps and report what is ready for triage and tailoring.
