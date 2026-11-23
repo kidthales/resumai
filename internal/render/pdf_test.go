@@ -2,7 +2,10 @@ package render_test
 
 import (
 	"bytes"
+	"fmt"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -360,5 +363,329 @@ func TestPDFPrinter_ErrorHandling(t *testing.T) {
 	_, _, err = p.Print(doc, nil)
 	if err == nil {
 		t.Errorf("expected execution error with invalid binary path, got nil")
+	}
+}
+
+var (
+	pdfPagesDictRe = regexp.MustCompile(`(?s)<<[^>]*?/Type\s*/Pages\b[^>]*?/Count\s+(\d+)[^>]*?>>|<<[^>]*?/Count\s+(\d+)[^>]*?/Type\s*/Pages\b[^>]*?>>`)
+	pdfPageLeafRe  = regexp.MustCompile(`/Type\s*/Page\b[^sS]`)
+)
+
+func countPDFPages(pdfBytes []byte) (int, error) {
+	if len(pdfBytes) == 0 {
+		return 0, fmt.Errorf("empty PDF bytes")
+	}
+	if matches := pdfPagesDictRe.FindAllSubmatch(pdfBytes, -1); len(matches) > 0 {
+		maxCount := 0
+		for _, m := range matches {
+			for i := 1; i < len(m); i++ {
+				if len(m[i]) == 0 {
+					continue
+				}
+				n, err := strconv.Atoi(string(m[i]))
+				if err == nil && n > maxCount {
+					maxCount = n
+				}
+			}
+		}
+		if maxCount > 0 {
+			return maxCount, nil
+		}
+	}
+	if leaves := pdfPageLeafRe.FindAll(pdfBytes, -1); len(leaves) > 0 {
+		return len(leaves), nil
+	}
+	return 0, fmt.Errorf("unable to determine page count from generated PDF (%d bytes)", len(pdfBytes))
+}
+
+func buildWrapParityDocument(bulletCount int) *render.ResumeDocument {
+	doc := render.NewResumeDocument()
+	doc.Header = render.Header{
+		FullName: "Jordan Rivera",
+		Headline: "Principal Systems Architect",
+	}
+
+	bullets := make([]render.Bullet, 0, bulletCount)
+	for i := 1; i <= bulletCount; i++ {
+		bullets = append(bullets, render.NewBullet(
+			fmt.Sprintf("b-wrap-%d", i),
+			fmt.Sprintf("Designed fault-tolerant distributed storage engine #%d sustaining 120,000 writes/sec with deterministic consensus recovery across multi-region clusters.", i),
+			nil,
+			true,
+		))
+	}
+
+	doc.Experience = []render.ExperienceItem{
+		{
+			ID:           "exp-wrap-1",
+			RoleTitle:    "Principal Infrastructure Engineer",
+			Organization: "CloudScale Systems",
+			Location:     "Seattle, WA",
+			Duration:     "2021 - Present",
+			Highlights:   bullets,
+		},
+	}
+	return doc
+}
+
+func TestPDFPrinter_PrintWrapParity_LetterAndA4(t *testing.T) {
+	_, err := render.FindChromiumBinary()
+	if err != nil {
+		t.Skip("skipping live chromium print-wrap parity test: chromium binary not found on host")
+	}
+
+	tests := []struct {
+		name        string
+		page        render.PageConfig
+		bulletCount int
+		wantPages   int
+	}{
+		{
+			name: "US Letter 1-page default margins",
+			page: render.PageConfig{
+				Size:         "letter",
+				MarginTop:    "0.5in",
+				MarginBottom: "0.5in",
+				MarginLeft:   "0.5in",
+				MarginRight:  "0.5in",
+			},
+			bulletCount: 10,
+			wantPages:   1,
+		},
+		{
+			name: "US Letter 2-page narrow printable width",
+			page: render.PageConfig{
+				Size:         "letter",
+				MarginTop:    "0.5in",
+				MarginBottom: "0.5in",
+				MarginLeft:   "1.25in",
+				MarginRight:  "1.25in",
+			},
+			bulletCount: 22,
+			wantPages:   2,
+		},
+		{
+			name: "A4 1-page 20mm margins",
+			page: render.PageConfig{
+				Size:         "a4",
+				MarginTop:    "20mm",
+				MarginBottom: "20mm",
+				MarginLeft:   "20mm",
+				MarginRight:  "20mm",
+			},
+			bulletCount: 10,
+			wantPages:   1,
+		},
+		{
+			name: "A4 2-page 20mm margins",
+			page: render.PageConfig{
+				Size:         "a4",
+				MarginTop:    "20mm",
+				MarginBottom: "20mm",
+				MarginLeft:   "20mm",
+				MarginRight:  "20mm",
+			},
+			bulletCount: 24,
+			wantPages:   2,
+		},
+	}
+
+	pii := samplePIIHeader()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			theme := render.DefaultThemeManifest()
+			theme.Page = tt.page
+
+			printer, err := render.NewPDFPrinter(
+				render.WithTheme(theme),
+				render.WithTargetPages(tt.wantPages),
+				render.WithTimeout(30*time.Second),
+			)
+			if err != nil {
+				t.Fatalf("failed to initialize PDFPrinter: %v", err)
+			}
+
+			doc := buildWrapParityDocument(tt.bulletCount)
+			pdfBytes, telemetry, err := printer.Print(doc, pii)
+			if err != nil {
+				t.Fatalf("printer.Print failed: %v", err)
+			}
+
+			pdfPages, err := countPDFPages(pdfBytes)
+			if err != nil {
+				t.Fatalf("countPDFPages failed: %v", err)
+			}
+
+			if telemetry.PageCount != tt.wantPages {
+				t.Errorf("telemetry.PageCount = %d, want %d (contentHeight=%.2f, usablePageHeight=%.2f)",
+					telemetry.PageCount, tt.wantPages, telemetry.ContentHeightPX, telemetry.UsablePageHeightPX)
+			}
+			if pdfPages != tt.wantPages {
+				t.Errorf("generated PDF page count = %d, want %d", pdfPages, tt.wantPages)
+			}
+			if telemetry.PageCount != pdfPages {
+				t.Errorf("print-wrap parity mismatch: telemetry.PageCount=%d vs generated PDF pages=%d", telemetry.PageCount, pdfPages)
+			}
+		})
+	}
+}
+
+func TestPDFPrinter_Telemetry_InlineRunLineGrouping(t *testing.T) {
+	_, err := render.FindChromiumBinary()
+	if err != nil {
+		t.Skip("skipping live chromium inline-run telemetry test: chromium binary not found on host")
+	}
+
+	printer, err := render.NewPDFPrinter(render.WithTimeout(30 * time.Second))
+	if err != nil {
+		t.Fatalf("failed to initialize PDFPrinter: %v", err)
+	}
+
+	doc := render.NewResumeDocument()
+	doc.Header = render.Header{
+		FullName: "Jordan Rivera",
+		Headline: "Systems Architect",
+	}
+	doc.Experience = []render.ExperienceItem{
+		{
+			ID:           "exp-inline",
+			RoleTitle:    "Staff Engineer",
+			Organization: "Acme Systems",
+			Duration:     "2023 - Present",
+			Highlights: []render.Bullet{
+				{
+					ID:   "b-plain-single",
+					Text: "Engineered telemetry pipeline in Go and Rust for production clusters.",
+					Runs: []render.InlineRun{
+						{Text: "Engineered telemetry pipeline in Go and Rust for production clusters."},
+					},
+				},
+				{
+					ID:   "b-link-single",
+					Text: "Engineered telemetry pipeline in Go and Rust for production clusters.",
+					Runs: []render.InlineRun{
+						{Text: "Engineered "},
+						{Text: "telemetry pipeline", Link: "https://example.com/telemetry"},
+						{Text: " in "},
+						{Text: "Go", Link: "https://go.dev"},
+						{Text: " and Rust for production clusters."},
+					},
+				},
+				{
+					ID:   "b-strong-link-single",
+					Text: "Built distributed telemetry engine in Go and Rust.",
+					Runs: []render.InlineRun{
+						{Text: "Built "},
+						{Text: "distributed", Bold: true},
+						{Text: " telemetry engine in "},
+						{Text: "Go", Link: "https://go.dev"},
+						{Text: " and "},
+						{Text: "Rust", Bold: true},
+						{Text: "."},
+					},
+				},
+				{
+					ID:   "b-inline-multiline-ok",
+					Text: "Architected high-throughput distributed consensus engine across multi-region clusters using Raft, gRPC streaming, and deterministic replay.",
+					Runs: []render.InlineRun{
+						{Text: "Architected high-throughput distributed consensus engine across multi-region clusters using "},
+						{Text: "Raft", Bold: true},
+						{Text: ", "},
+						{Text: "gRPC streaming", Link: "https://example.com/grpc"},
+						{Text: ", and "},
+						{Text: "deterministic replay", Bold: true},
+						{Text: "."},
+					},
+				},
+				{
+					ID:   "b-inline-multiline-runt",
+					Text: "Architected high-throughput distributed consensus engine across multi-region production clusters with zero loss.",
+					Runs: []render.InlineRun{
+						{Text: "Architected high-throughput distributed consensus engine across multi-region "},
+						{Text: "production", Link: "https://example.com/prod"},
+						{Text: " clusters with zero "},
+						{Text: "loss", Bold: true},
+						{Text: "."},
+					},
+				},
+			},
+		},
+	}
+
+	telemetry, err := printer.ExtractDocumentTelemetry(doc, samplePIIHeader())
+	if err != nil {
+		t.Fatalf("ExtractDocumentTelemetry failed: %v", err)
+	}
+
+	byID := make(map[string]render.BulletTelemetry, len(telemetry.Bullets))
+	for _, b := range telemetry.Bullets {
+		byID[b.ID] = b
+	}
+
+	plain, ok := byID["b-plain-single"]
+	if !ok {
+		t.Fatalf("missing b-plain-single in telemetry")
+	}
+	if plain.LineCount != 1 {
+		t.Fatalf("b-plain-single LineCount = %d, want 1", plain.LineCount)
+	}
+
+	linkSingle, ok := byID["b-link-single"]
+	if !ok {
+		t.Fatalf("missing b-link-single in telemetry")
+	}
+	if linkSingle.LineCount != 1 {
+		t.Errorf("b-link-single LineCount = %d, want 1 (inline <a> spans must group onto same visual line)", linkSingle.LineCount)
+	}
+	if linkSingle.IsOrphan {
+		t.Errorf("b-link-single IsOrphan = true (%s), want false", linkSingle.OrphanReason)
+	}
+	if math.Abs(linkSingle.LastLineWidth-linkSingle.LineWidth) > 0.5 {
+		t.Errorf("b-link-single LastLineWidth=%.2f != LineWidth=%.2f", linkSingle.LastLineWidth, linkSingle.LineWidth)
+	}
+	if math.Abs(linkSingle.LastLineWidth-plain.LastLineWidth) > 1.5 {
+		t.Errorf("b-link-single LastLineWidth=%.2f diverges from plain baseline %.2f", linkSingle.LastLineWidth, plain.LastLineWidth)
+	}
+
+	strongLinkSingle, ok := byID["b-strong-link-single"]
+	if !ok {
+		t.Fatalf("missing b-strong-link-single in telemetry")
+	}
+	if strongLinkSingle.LineCount != 1 {
+		t.Errorf("b-strong-link-single LineCount = %d, want 1", strongLinkSingle.LineCount)
+	}
+	if strongLinkSingle.IsOrphan {
+		t.Errorf("b-strong-link-single IsOrphan = true (%s), want false", strongLinkSingle.OrphanReason)
+	}
+	if strongLinkSingle.LastLineWidth < 200.0 {
+		t.Errorf("b-strong-link-single LastLineWidth = %.2f, expected full single-line width >= 200px", strongLinkSingle.LastLineWidth)
+	}
+
+	multiOK, ok := byID["b-inline-multiline-ok"]
+	if !ok {
+		t.Fatalf("missing b-inline-multiline-ok in telemetry")
+	}
+	if multiOK.LineCount != 2 {
+		t.Errorf("b-inline-multiline-ok LineCount = %d, want 2", multiOK.LineCount)
+	}
+	if multiOK.LastLineWidth < 150.0 {
+		t.Errorf("b-inline-multiline-ok LastLineWidth = %.2f, want >= 150px across grouped 2nd line", multiOK.LastLineWidth)
+	}
+	if multiOK.IsOrphan {
+		t.Errorf("b-inline-multiline-ok IsOrphan = true (%s), want false", multiOK.OrphanReason)
+	}
+
+	multiRunt, ok := byID["b-inline-multiline-runt"]
+	if !ok {
+		t.Fatalf("missing b-inline-multiline-runt in telemetry")
+	}
+	if multiRunt.LineCount != 2 {
+		t.Errorf("b-inline-multiline-runt LineCount = %d, want 2", multiRunt.LineCount)
+	}
+	if multiRunt.LastLineWidth >= 75.0 {
+		t.Errorf("b-inline-multiline-runt LastLineWidth = %.2f, want < 75px for true typographic runt", multiRunt.LastLineWidth)
+	}
+	if !multiRunt.IsOrphan || multiRunt.OrphanReason != "typographic_runt" {
+		t.Errorf("b-inline-multiline-runt IsOrphan=%v reason=%q, want true / typographic_runt", multiRunt.IsOrphan, multiRunt.OrphanReason)
 	}
 }

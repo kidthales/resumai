@@ -161,6 +161,105 @@ func TestPageGeometryPX(t *testing.T) {
 	})
 }
 
+func TestPageContentWidthPX(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      PageConfig
+		expected float64
+	}{
+		{
+			name:     "empty defaults to US letter with 0.5in margins",
+			cfg:      PageConfig{},
+			expected: 720.0,
+		},
+		{
+			name: "US letter custom margins",
+			cfg: PageConfig{
+				Size:        "letter",
+				MarginLeft:  "0.75in",
+				MarginRight: "1in",
+			},
+			expected: 648.0,
+		},
+		{
+			name: "A4 with 20mm margins",
+			cfg: PageConfig{
+				Size:        "A4",
+				MarginLeft:  "20mm",
+				MarginRight: "20mm",
+			},
+			expected: (210.0 - 40.0) * DefaultDPI / 25.4,
+		},
+		{
+			name: "excessive margins clamp to 1px minimum",
+			cfg: PageConfig{
+				Size:        "letter",
+				MarginLeft:  "5in",
+				MarginRight: "5in",
+			},
+			expected: 1.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pageContentWidthPX(tt.cfg)
+			if math.Abs(got-tt.expected) > 0.01 {
+				t.Errorf("pageContentWidthPX(%+v) = %v; want %v", tt.cfg, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPageViewportPX(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        PageConfig
+		wantWidth  int
+		wantHeight int
+	}{
+		{
+			name:       "US letter default",
+			cfg:        PageConfig{},
+			wantWidth:  720,
+			wantHeight: 960,
+		},
+		{
+			name: "A4 with 20mm margins rounds up to integer viewport",
+			cfg: PageConfig{
+				Size:         "a4",
+				MarginTop:    "20mm",
+				MarginBottom: "20mm",
+				MarginLeft:   "20mm",
+				MarginRight:  "20mm",
+			},
+			wantWidth:  int(math.Ceil((210.0 - 40.0) * DefaultDPI / 25.4)),
+			wantHeight: int(math.Ceil((297.0 - 40.0) * DefaultDPI / 25.4)),
+		},
+		{
+			name: "excessive vertical margins fallback to full page height",
+			cfg: PageConfig{
+				Size:         "letter",
+				MarginTop:    "6in",
+				MarginBottom: "6in",
+				MarginLeft:   "5in",
+				MarginRight:  "5in",
+			},
+			wantWidth:  1,
+			wantHeight: 1056,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotW, gotH := pageViewportPX(tt.cfg)
+			if gotW != tt.wantWidth || gotH != tt.wantHeight {
+				t.Errorf("pageViewportPX(%+v) = (%d, %d); want (%d, %d)", tt.cfg, gotW, gotH, tt.wantWidth, tt.wantHeight)
+			}
+		})
+	}
+}
+
 func TestChromiumLaunchArgs(t *testing.T) {
 	t.Run("headless base flags", func(t *testing.T) {
 		args := chromiumLaunchArgs("/tmp/resumai-test-profile")

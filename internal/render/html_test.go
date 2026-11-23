@@ -376,3 +376,74 @@ func TestHTMLRenderer_Render_UnsafeURLSanitization(t *testing.T) {
 		t.Errorf("rendered HTML contains unsafe URL schemes: %s", out)
 	}
 }
+
+func TestHTMLRenderer_Render_PrintLayoutContentWidth(t *testing.T) {
+	tests := []struct {
+		name             string
+		page             render.PageConfig
+		expectedMaxWidth string
+	}{
+		{
+			name: "US Letter default 0.5in margins",
+			page: render.PageConfig{
+				Size:         "letter",
+				MarginTop:    "0.5in",
+				MarginBottom: "0.5in",
+				MarginLeft:   "0.5in",
+				MarginRight:  "0.5in",
+			},
+			expectedMaxWidth: "max-width: 720.00px;",
+		},
+		{
+			name: "US Letter custom asymmetric margins",
+			page: render.PageConfig{
+				Size:         "letter",
+				MarginTop:    "0.5in",
+				MarginBottom: "0.5in",
+				MarginLeft:   "0.75in",
+				MarginRight:  "1in",
+			},
+			expectedMaxWidth: "max-width: 648.00px;",
+		},
+		{
+			name: "A4 with 20mm margins",
+			page: render.PageConfig{
+				Size:         "a4",
+				MarginTop:    "20mm",
+				MarginBottom: "20mm",
+				MarginLeft:   "20mm",
+				MarginRight:  "20mm",
+			},
+			expectedMaxWidth: "max-width: 642.52px;",
+		},
+	}
+
+	doc := sampleResumeDocument()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			theme := render.DefaultThemeManifest()
+			theme.Page = tt.page
+
+			renderer, err := render.NewHTMLRenderer(theme)
+			if err != nil {
+				t.Fatalf("failed to create renderer: %v", err)
+			}
+
+			outBytes, err := renderer.Render(doc, nil)
+			if err != nil {
+				t.Fatalf("failed to render HTML: %v", err)
+			}
+
+			out := string(outBytes)
+			if strings.Contains(out, "max-width: 8.5in;") {
+				t.Errorf("rendered CSS still contains hardcoded 8.5in .resume-page max-width")
+			}
+			if !strings.Contains(out, tt.expectedMaxWidth) {
+				t.Errorf("expected rendered CSS to contain %q", tt.expectedMaxWidth)
+			}
+			if !strings.Contains(out, "@media print") || !strings.Contains(out, "max-width: none;") {
+				t.Errorf("expected rendered CSS to reset .resume-page max-width to none inside @media print")
+			}
+		})
+	}
+}
