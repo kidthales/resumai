@@ -145,21 +145,48 @@ func (s *Server) registerApplicationTools() {
 		}, "application_id"),
 	}, s.handleGetAuditBundle)
 
+	discrepancySchema := schemaObject(map[string]any{
+		"bullet_id": strProp("Optional bullet ID associated with the discrepancy"),
+		"fact_id":   strProp("Optional career fact ID associated with the discrepancy"),
+		"severity": map[string]any{
+			"type":        "string",
+			"description": "Discrepancy severity (low, medium, or high)",
+			"enum":        []string{string(domain.SeverityLow), string(domain.SeverityMedium), string(domain.SeverityHigh)},
+		},
+		"finding": strProp("Description of the factual discrepancy"),
+	}, "severity", "finding")
+
+	factCheckSchema := schemaObject(map[string]any{
+		"critic_agent": strProp("Critic agent identifier (resume-fact-checker)"),
+		"summary":      strProp("Concise summary of factual accuracy, timeline integrity, and blocking findings"),
+		"discrepancies": map[string]any{
+			"type":        "array",
+			"description": "Factual discrepancies identified by resume-fact-checker",
+			"items":       discrepancySchema,
+		},
+		"passed": boolProp("Whether the draft passed clean-room factual verification"),
+	}, "critic_agent", "summary", "passed")
+	factCheckSchema["description"] = "FactCheckReport from resume-fact-checker"
+
+	alignmentCheckSchema := schemaObject(map[string]any{
+		"critic_agent":    strProp("Critic agent identifier (resume-alignment-checker)"),
+		"summary":         strProp("Concise assessment of role fit, strongest overlap, and primary alignment gaps"),
+		"matched_signals": strArrayProp("JD skills, domain signals, and qualifications demonstrated in the draft"),
+		"missing_signals": strArrayProp("Required or preferred JD signals absent or under-emphasized in the draft"),
+		"recommendations": strArrayProp("Fact-preserving tailoring recommendations"),
+		"passed":          boolProp("Whether the draft credibly addresses core required JD alignment"),
+	}, "critic_agent", "summary", "passed")
+	alignmentCheckSchema["description"] = "AlignmentCheckReport from resume-alignment-checker"
+
 	s.registerTool(Tool{
 		Name:        "resumai_record_audits",
 		Description: "Attach both resume-fact-checker and resume-alignment-checker reports bound to the current draft SHA-256 hash to transition Drafted -> Audited.",
 		InputSchema: schemaObject(map[string]any{
-			"application_id": strProp("JobApplication ID"),
-			"draft_sha256":   strProp("Optional SHA-256 hash of the audited ApplicationDraft from resumai_get_audit_bundle"),
-			"fact_check": map[string]any{
-				"type":        "object",
-				"description": "FactCheckReport from resume-fact-checker",
-			},
-			"alignment_check": map[string]any{
-				"type":        "object",
-				"description": "AlignmentCheckReport from resume-alignment-checker",
-			},
-		}, "application_id", "fact_check", "alignment_check"),
+			"application_id":  strProp("JobApplication ID"),
+			"draft_sha256":    strProp("Required SHA-256 hash of the audited ApplicationDraft from resumai_get_audit_bundle"),
+			"fact_check":      factCheckSchema,
+			"alignment_check": alignmentCheckSchema,
+		}, "application_id", "draft_sha256", "fact_check", "alignment_check"),
 	}, s.handleRecordAudits)
 
 	s.registerTool(Tool{
@@ -511,7 +538,7 @@ func (s *Server) handleRecordAudits(ctx context.Context, raw json.RawMessage) (a
 		FactCheck      *domain.FactCheckReport      `json:"fact_check"`
 		AlignmentCheck *domain.AlignmentCheckReport `json:"alignment_check"`
 	}
-	in, err := decodeArgs[input](raw)
+	in, err := decodeArgsStrict[input](raw)
 	if err != nil {
 		return nil, err
 	}

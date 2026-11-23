@@ -527,7 +527,12 @@ func TestApplicationFSMFieldsPersistence(t *testing.T) {
 	if err := app.SaveDraft(draft, v); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
 	}
+	draftSHA, err := app.Draft.ContentSHA256()
+	if err != nil {
+		t.Fatalf("Draft.ContentSHA256: %v", err)
+	}
 	if err := app.RecordAudits(domain.AuditBundle{
+		DraftSHA256:    draftSHA,
 		FactCheck:      &domain.FactCheckReport{Summary: "All verified", Passed: true},
 		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "Aligned", Passed: true},
 	}); err != nil {
