@@ -46,7 +46,10 @@ func runGate0Workflows(t *testing.T, pwshPath, repoRoot, workflowsDir string) (s
 func TestGate0Workflows_CanonicalStepAndDefaultsGuards(t *testing.T) {
 	pwshPath, err := exec.LookPath("pwsh")
 	if err != nil {
-		t.Skip("skipping Gate 0 PowerShell tests: pwsh not found on PATH")
+		if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+			t.Fatalf("pwsh is required in CI environments for Gate 0 integration tests: %v", err)
+		}
+		t.Skip("skipping Gate 0 PowerShell integration tests: pwsh not found on PATH (unit tests in internal/gate0 still enforce all Gate 0 rules)")
 	}
 
 	repoRoot := findRepoRoot(t)
@@ -113,6 +116,35 @@ jobs:
     steps:
       - name: Generate SHA256SUMS
         run: sha256sum * > SHA256SUMS
+`,
+			},
+			wantFail:       false,
+			wantSubstrs:    []string{"All workflow run steps conform to ci-local.ps1 -CI"},
+			notWantSubstrs: []string{"Gate 0 violation:"},
+		},
+		{
+			name: "positive_non_canonical_with_working_dir_inline_comment_and_sibling_job",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: { working-directory: ./nested, env: ignored }
+      - name: Run CI Pipeline
+        shell: pwsh
+        run: ./scripts/ci-local.ps1 -CI # trailing inline comment
+  notify:
+    needs: [test-and-build]
+    runs-on: ubuntu-latest
+    env:
+      SLACK_URL: ok
+    steps:
+      - name: "Dispatch consolidated status card to #dev-ci-builds"
+        run: echo "ok"
 `,
 			},
 			wantFail:       false,
@@ -201,6 +233,63 @@ jobs:
 			wantSubstrs: []string{
 				"Gate 0 violation:",
 				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'env:' override to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_job_level_and_workflow_level_env_overrides",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+env:
+  WF_OVERRIDE: "1"
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    env:
+      JOB_OVERRIDE: "1"
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: verify job 'test-and-build' must not define job-level 'env:' override to preserve single-source contract.",
+				"ci.yaml: workflow must not define 'env:' override on verify job(s) (test-and-build) to preserve single-source contract.",
+				"Gate 0 workflow single-source verification failed (2 violation(s)).",
+			},
+		},
+		{
+			name: "negative_flow_step_quoted_keys_and_yaml_anchor_merge",
+			files: map[string]string{
+				"flow.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - { name: "Run CI", "run": "./scripts/ci-local.ps1 -CI", "working-directory": "./flow-quoted" }
+`,
+				"anchor.yaml": `---
+name: Anchor
+x-bad: &bad
+  env: { FOO: bar }
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI
+        <<: *bad
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"flow.yaml: canonical CI step 'Run CI' in job 'test-and-build' must not define 'working-directory:' ('./flow-quoted') to preserve single-source contract.",
+				"YAML anchors and aliases are prohibited",
+				"YAML merge keys ('<<') are prohibited",
 			},
 		},
 		{
@@ -332,10 +421,38 @@ jobs:
 				"Gate 0 workflow single-source verification failed (2 violation(s)).",
 			},
 		},
+		{
+			name: "negative_step_and_job_if_continue_on_error_regressions",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    continue-on-error: true
+    steps:
+      - name: Run CI Pipeline
+        if: success()
+        continue-on-error: true
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'if:' conditional ('success()')",
+				"canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'continue-on-error: true'",
+				"verify job 'test-and-build' must not define job-level 'if:' conditional",
+				"verify job 'test-and-build' must not define job-level 'continue-on-error: true'",
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			wfDir := t.TempDir()
 			for filename, content := range tc.files {
 				dst := filepath.Join(wfDir, filename)
