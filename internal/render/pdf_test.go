@@ -711,3 +711,39 @@ func TestPDFPrinter_Telemetry_InlineRunLineGrouping(t *testing.T) {
 		t.Errorf("b-inline-multiline-runt IsOrphan=%v reason=%q, want true / typographic_runt", multiRunt.IsOrphan, multiRunt.OrphanReason)
 	}
 }
+
+func TestPDFPrinter_PrintHTML_WithRenderedCSP(t *testing.T) {
+	_, err := render.FindChromiumBinary()
+	if err != nil {
+		t.Skip("skipping live chromium CSP print test: chromium binary not found on host")
+	}
+
+	hr, err := render.NewHTMLRenderer(nil)
+	if err != nil {
+		t.Fatalf("failed to create HTMLRenderer: %v", err)
+	}
+
+	htmlBytes, err := hr.Render(sampleResumeDocument(), samplePIIHeader())
+	if err != nil {
+		t.Fatalf("failed to render HTML: %v", err)
+	}
+	if !strings.Contains(string(htmlBytes), "img-src data:;") {
+		t.Fatalf("rendered HTML missing img-src data:; CSP directive")
+	}
+
+	printer, err := render.NewPDFPrinter(render.WithTimeout(30 * time.Second))
+	if err != nil {
+		t.Fatalf("failed to initialize PDFPrinter: %v", err)
+	}
+
+	pdfBytes, telemetry, err := printer.PrintHTML(htmlBytes)
+	if err != nil {
+		t.Fatalf("PrintHTML with img-src data:; CSP failed: %v", err)
+	}
+	if !bytes.HasPrefix(pdfBytes, []byte("%PDF-")) {
+		t.Fatalf("expected %%PDF- output from PrintHTML, got %d bytes", len(pdfBytes))
+	}
+	if telemetry == nil || telemetry.PageCount < 1 {
+		t.Fatalf("expected valid layout telemetry under updated CSP, got %+v", telemetry)
+	}
+}

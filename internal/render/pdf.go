@@ -1208,7 +1208,7 @@ func filePathToURI(path string) string {
 
 func isTransientCDPContextErr(err error) bool {
 	var cdpErr *cdpError
-	if !errors.As(err, &cdpErr) {
+	if !errors.As(err, &cdpErr) || cdpErr == nil {
 		return false
 	}
 	if cdpErr.Code != -32000 {
@@ -1318,7 +1318,19 @@ func parseCDPLoopbackWebSocketURL(wsURL string) (*url.URL, string, error) {
 
 	u, err := url.Parse(wsURL)
 	if err != nil {
-		return nil, "", fmt.Errorf("invalid websocket URL %q: %w", RedactSecrets(wsURL), err)
+		var uerr *url.Error
+		if errors.As(err, &uerr) && uerr != nil {
+			innerMsg := ""
+			if uerr.Err != nil {
+				innerMsg = RedactSecrets(uerr.Err.Error())
+			}
+			return nil, "", fmt.Errorf("invalid websocket URL %q: %w", RedactSecrets(wsURL), &url.Error{
+				Op:  uerr.Op,
+				URL: RedactSecrets(uerr.URL),
+				Err: errors.New(innerMsg),
+			})
+		}
+		return nil, "", fmt.Errorf("invalid websocket URL %q: %s", RedactSecrets(wsURL), RedactSecrets(err.Error()))
 	}
 
 	if u.Scheme != "ws" {
