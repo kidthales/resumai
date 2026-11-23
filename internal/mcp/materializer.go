@@ -516,14 +516,14 @@ func (m *LocalMaterializer) FinalizeSubmission(ctx context.Context, req Submissi
 		return nil, scrubPIIError(err, pii)
 	}
 
+	if err := ensureOwnerOnlyDir(packetDir); err != nil {
+		return nil, scrubPIIError(fmt.Errorf("tighten packet directory permissions: %w", err), pii)
+	}
 	now := m.now().UTC()
 	briefPath := filepath.Join(packetDir, "interview_brief.md")
 	briefMD := buildInterviewBriefMarkdown(app, bundleSHA256, fileDigests, req.Notes, now)
 	if err := m.writeFileEnsuringWritable(ctx, app, briefPath, []byte(briefMD), packetFileMode); err != nil {
 		return nil, scrubPIIError(fmt.Errorf("write interview_brief.md: %w", err), pii)
-	}
-	if err := ensureOwnerOnlyDir(packetDir); err != nil {
-		return nil, scrubPIIError(fmt.Errorf("tighten packet directory permissions: %w", err), pii)
 	}
 
 	// Lock all packet artifacts read-only so submitted deliverables remain immutable on disk.
