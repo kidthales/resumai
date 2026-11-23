@@ -1154,7 +1154,10 @@ type cdpError struct {
 }
 
 func (e *cdpError) Error() string {
-	return fmt.Sprintf("CDP error %d: %s", e.Code, e.Message)
+	if e == nil {
+		return "CDP error: <nil>"
+	}
+	return fmt.Sprintf("CDP error %d: %s", e.Code, RedactSecrets(e.Message))
 }
 
 func filePathToURI(path string) string {
