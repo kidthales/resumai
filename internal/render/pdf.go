@@ -907,19 +907,11 @@ func hasDockerEnvFile() bool {
 	return err == nil
 }
 
-// shouldDisableChromiumSandbox reports whether Chromium renderer sandboxing should be disabled,
-// such as inside containers, CI runners, when running as root, or when explicitly opted out via
-// RESUMAI_CHROMIUM_NO_SANDBOX=1. Desktop hosts (including desktop Linux) keep the native sandbox enabled.
-// When environment overrides disable the sandbox on non-Linux hosts, a diagnostic warning is written
-// to stderr.
-func shouldDisableChromiumSandbox() bool {
-	return shouldDisableChromiumSandboxWithWriter(runtime.GOOS, os.Geteuid(), hasDockerEnvFile(), os.Stderr)
-}
-
-func shouldDisableChromiumSandboxFor(goos string, euid int, hasDockerEnv bool) bool {
-	return shouldDisableChromiumSandboxWithWriter(goos, euid, hasDockerEnv, os.Stderr)
-}
-
+// shouldDisableChromiumSandboxWithWriter reports whether Chromium renderer sandboxing should be
+// disabled, such as inside containers, CI runners, when running as root, or when explicitly opted
+// out via RESUMAI_CHROMIUM_NO_SANDBOX=1. Desktop hosts (including desktop Linux) keep the native
+// sandbox enabled. When environment overrides disable the sandbox on non-Linux hosts, a diagnostic
+// warning is written to warn if non-nil.
 func shouldDisableChromiumSandboxWithWriter(goos string, euid int, hasDockerEnv bool, warn io.Writer) bool {
 	var envReasons []string
 	for _, key := range chromiumSandboxDisableEnvVars {
@@ -1057,26 +1049,35 @@ type cdpTargetInfo struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
-func fetchPageWebSocketURLOnce(ctx context.Context, client *http.Client, port int) (string, error) {
-	endpoint := fmt.Sprintf("http://127.0.0.1:%d/json/list", port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+const maxCDPDiscoveryBodyBytes = 1 << 20
+
+func fetchCDPDiscoveryJSON(ctx context.Context, client *http.Client, method string, port int, reqPath, label string, dst any) error {
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d%s", port, reqPath)
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("failed to create %s request: %w", label, err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("/json/list returned HTTP %d", resp.StatusCode)
+		return fmt.Errorf("%s returned HTTP %d", label, resp.StatusCode)
 	}
 
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxCDPDiscoveryBodyBytes)).Decode(dst); err != nil {
+		return fmt.Errorf("failed to decode %s response: %w", label, err)
+	}
+	return nil
+}
+
+func fetchPageWebSocketURLOnce(ctx context.Context, client *http.Client, port int) (string, error) {
 	var targets []cdpTargetInfo
-	if err := json.NewDecoder(resp.Body).Decode(&targets); err != nil {
-		return "", fmt.Errorf("failed to decode /json/list response: %w", err)
+	if err := fetchCDPDiscoveryJSON(ctx, client, http.MethodGet, port, "/json/list", "/json/list", &targets); err != nil {
+		return "", err
 	}
 
 	for _, t := range targets {
@@ -1085,56 +1086,64 @@ func fetchPageWebSocketURLOnce(ctx context.Context, client *http.Client, port in
 		}
 	}
 
-	// If targets exists but no page, try to create one via /json/new
-	newEndpoint := fmt.Sprintf("http://127.0.0.1:%d/json/new?about:blank", port)
-	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, newEndpoint, nil)
-	if err != nil {
-		return "", nil
-	}
-	newResp, err := client.Do(putReq)
-	if err != nil {
-		return "", nil
-	}
-	defer newResp.Body.Close()
-
-	if newResp.StatusCode != http.StatusOK {
-		return "", nil
-	}
-
+	// If targets exist without a page target, try to create one via PUT /json/new.
 	var newTarget cdpTargetInfo
-	if err := json.NewDecoder(newResp.Body).Decode(&newTarget); err == nil && newTarget.WebSocketDebuggerURL != "" {
-		return newTarget.WebSocketDebuggerURL, nil
+	if err := fetchCDPDiscoveryJSON(ctx, client, http.MethodPut, port, "/json/new?about:blank", "/json/new", &newTarget); err != nil {
+		return "", err
 	}
-	return "", nil
+	if newTarget.WebSocketDebuggerURL == "" {
+		return "", errors.New("/json/new response missing webSocketDebuggerUrl")
+	}
+	return newTarget.WebSocketDebuggerURL, nil
 }
 
 // getPageWebSocketURL queries Chromium's HTTP discovery API to find an active page target,
 // retrying briefly with backoff to accommodate process startup on loaded hosts.
 func getPageWebSocketURL(ctx context.Context, port int) (string, error) {
+	return getPageWebSocketURLWithRetry(ctx, port, 10*time.Second, 100*time.Millisecond)
+}
+
+func getPageWebSocketURLWithRetry(ctx context.Context, port int, maxWait, backoff time.Duration) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if backoff <= 0 {
+		backoff = 100 * time.Millisecond
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
 
 	var lastErr error
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(maxWait)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
 
-	for time.Now().Before(deadline) {
+	for {
 		wsURL, err := fetchPageWebSocketURLOnce(ctx, client, port)
 		if err == nil && wsURL != "" {
 			return wsURL, nil
 		}
-		lastErr = err
+		if err != nil {
+			lastErr = err
+		}
 
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+		if !time.Now().Before(deadline) {
+			break
+		}
 
-		timer := time.NewTimer(100 * time.Millisecond)
+		wait := backoff
+		if remaining := time.Until(deadline); remaining < wait {
+			wait = remaining
+		}
+		if wait <= 0 {
+			break
+		}
+
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -1186,9 +1195,6 @@ type cdpError struct {
 }
 
 func (e *cdpError) Error() string {
-	if e == nil {
-		return "CDP error: <nil>"
-	}
 	return fmt.Sprintf("CDP error %d: %s", e.Code, RedactSecrets(e.Message))
 }
 
@@ -1208,7 +1214,7 @@ func filePathToURI(path string) string {
 
 func isTransientCDPContextErr(err error) bool {
 	var cdpErr *cdpError
-	if !errors.As(err, &cdpErr) || cdpErr == nil {
+	if !errors.As(err, &cdpErr) {
 		return false
 	}
 	if cdpErr.Code != -32000 {
@@ -1310,7 +1316,7 @@ func awaitDocumentAndFonts(ctx context.Context, ws *cdpWebSocket, loadCh <-chan 
 
 // parseCDPLoopbackWebSocketURL validates that wsURL uses the ws:// scheme and targets
 // an explicit loopback host (127.0.0.1, ::1, or localhost only), returning the parsed URL
-// and normalized host:port dial address.
+// and normalized literal loopback host:port dial address (normalizing localhost to 127.0.0.1).
 func parseCDPLoopbackWebSocketURL(wsURL string) (*url.URL, string, error) {
 	if strings.TrimSpace(wsURL) == "" {
 		return nil, "", errors.New("empty CDP websocket URL")
@@ -1341,8 +1347,11 @@ func parseCDPLoopbackWebSocketURL(wsURL string) (*url.URL, string, error) {
 	}
 
 	hostname := strings.ToLower(u.Hostname())
+	dialHost := hostname
 	switch hostname {
-	case "127.0.0.1", "::1", "localhost":
+	case "127.0.0.1", "::1":
+	case "localhost":
+		dialHost = "127.0.0.1"
 	default:
 		return nil, "", fmt.Errorf("refusing non-loopback CDP websocket host %q", u.Hostname())
 	}
@@ -1357,17 +1366,21 @@ func parseCDPLoopbackWebSocketURL(wsURL string) (*url.URL, string, error) {
 		}
 	}
 
-	return u, net.JoinHostPort(hostname, port), nil
+	return u, net.JoinHostPort(dialHost, port), nil
 }
 
 func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) {
+	var d net.Dialer
+	return dialCDPWebSocketWithDialer(ctx, wsURL, d.DialContext)
+}
+
+func dialCDPWebSocketWithDialer(ctx context.Context, wsURL string, dialContext func(context.Context, string, string) (net.Conn, error)) (*cdpWebSocket, error) {
 	u, dialAddr, err := parseCDPLoopbackWebSocketURL(wsURL)
 	if err != nil {
 		return nil, err
 	}
 
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", dialAddr)
+	conn, err := dialContext(ctx, "tcp", dialAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial CDP host %q: %w", dialAddr, err)
 	}

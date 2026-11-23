@@ -356,7 +356,7 @@ func TestChromiumLaunchArgs(t *testing.T) {
 		t.Setenv("GITHUB_ACTIONS", "")
 		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "")
 
-		if shouldDisableChromiumSandboxFor("linux", 1000, false) {
+		if shouldDisableChromiumSandboxWithWriter("linux", 1000, false, io.Discard) {
 			t.Fatal("expected desktop Linux non-root non-container non-CI host to keep Chromium sandbox enabled")
 		}
 
@@ -374,7 +374,7 @@ func TestChromiumLaunchArgs(t *testing.T) {
 		t.Setenv("GITHUB_ACTIONS", "0")
 		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "")
 
-		if shouldDisableChromiumSandboxFor("linux", 1000, false) {
+		if shouldDisableChromiumSandboxWithWriter("linux", 1000, false, io.Discard) {
 			t.Fatal("expected CI=false and GITHUB_ACTIONS=0 not to disable Chromium sandbox")
 		}
 	})
@@ -384,15 +384,15 @@ func TestChromiumLaunchArgs(t *testing.T) {
 		t.Setenv("GITHUB_ACTIONS", "")
 		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "")
 
-		if !shouldDisableChromiumSandboxFor("linux", 0, false) {
+		if !shouldDisableChromiumSandboxWithWriter("linux", 0, false, io.Discard) {
 			t.Error("expected euid=0 to disable sandbox")
 		}
-		if !shouldDisableChromiumSandboxFor("linux", 1000, true) {
+		if !shouldDisableChromiumSandboxWithWriter("linux", 1000, true, io.Discard) {
 			t.Error("expected /.dockerenv to disable sandbox")
 		}
 
 		t.Setenv("RESUMAI_CHROMIUM_NO_SANDBOX", "1")
-		if !shouldDisableChromiumSandboxFor("linux", 1000, false) {
+		if !shouldDisableChromiumSandboxWithWriter("linux", 1000, false, io.Discard) {
 			t.Error("expected RESUMAI_CHROMIUM_NO_SANDBOX=1 to disable sandbox")
 		}
 
@@ -678,6 +678,12 @@ func testServerPort(t *testing.T, srv *httptest.Server) int {
 	return port
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
 func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 	t.Run("positive single /json/list fetch returns page target without /json/new", func(t *testing.T) {
 		var listCalls atomic.Int32
@@ -697,7 +703,7 @@ func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		wsURL, err := getPageWebSocketURL(ctx, testServerPort(t, srv))
@@ -732,12 +738,12 @@ func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		wsURL, err := getPageWebSocketURL(ctx, testServerPort(t, srv))
+		wsURL, err := getPageWebSocketURLWithRetry(ctx, testServerPort(t, srv), 5*time.Second, time.Millisecond)
 		if err != nil {
-			t.Fatalf("getPageWebSocketURL failed after transient 503: %v", err)
+			t.Fatalf("getPageWebSocketURLWithRetry failed after transient 503: %v", err)
 		}
 		if wsURL != "ws://127.0.0.1:9222/devtools/page/p2" {
 			t.Errorf("got wsURL = %q, want %q", wsURL, "ws://127.0.0.1:9222/devtools/page/p2")
@@ -766,7 +772,7 @@ func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		wsURL, err := fetchPageWebSocketURLOnce(ctx, srv.Client(), testServerPort(t, srv))
@@ -804,7 +810,7 @@ func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 		}
 	})
 
-	t.Run("negative invalid JSON and missing target return descriptive errors", func(t *testing.T) {
+	t.Run("negative invalid JSON, /json/new failures, oversized payloads, and retry exhaustion propagate errors", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/json/list":
@@ -816,7 +822,7 @@ func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		_, err := fetchPageWebSocketURLOnce(ctx, srv.Client(), testServerPort(t, srv))
@@ -824,9 +830,121 @@ func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 			t.Fatalf("expected JSON decode error, got %v", err)
 		}
 
-		emptySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// /json/new non-200, invalid JSON, empty webSocketDebuggerUrl, and transport errors must propagate.
+		newErrorCases := []struct {
+			name        string
+			newStatus   int
+			newBody     string
+			wantErrPart string
+		}{
+			{
+				name:        "HTTP 500",
+				newStatus:   http.StatusInternalServerError,
+				newBody:     "boom",
+				wantErrPart: "/json/new returned HTTP 500",
+			},
+			{
+				name:        "invalid JSON",
+				newStatus:   http.StatusOK,
+				newBody:     `{bad`,
+				wantErrPart: "failed to decode /json/new response",
+			},
+			{
+				name:        "missing webSocketDebuggerUrl",
+				newStatus:   http.StatusOK,
+				newBody:     `{"id":"p1","type":"page"}`,
+				wantErrPart: "/json/new response missing webSocketDebuggerUrl",
+			},
+		}
+		for _, tc := range newErrorCases {
+			t.Run("/json/new "+tc.name, func(t *testing.T) {
+				newErrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch r.URL.Path {
+					case "/json/list":
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = io.WriteString(w, `[]`)
+					case "/json/new":
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(tc.newStatus)
+						_, _ = io.WriteString(w, tc.newBody)
+					default:
+						http.NotFound(w, r)
+					}
+				}))
+				defer newErrSrv.Close()
+
+				_, err := fetchPageWebSocketURLOnce(ctx, newErrSrv.Client(), testServerPort(t, newErrSrv))
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrPart) {
+					t.Fatalf("expected error containing %q, got %v", tc.wantErrPart, err)
+				}
+			})
+		}
+
+		transportErr := errors.New("simulated /json/new transport failure")
+		transportClient := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == "/json/list" {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`[]`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+				return nil, transportErr
+			}),
+		}
+		_, err = fetchPageWebSocketURLOnce(ctx, transportClient, 9222)
+		if !errors.Is(err, transportErr) {
+			t.Fatalf("expected /json/new transport error %v, got %v", transportErr, err)
+		}
+
+		// Oversized discovery responses are bounded by io.LimitReader and fail decode cleanly.
+		oversizedListClient := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				payload := `[{"id":"x","type":"page","webSocketDebuggerUrl":"ws://127.0.0.1:9222/p","pad":"` + strings.Repeat("a", maxCDPDiscoveryBodyBytes) + `"}]`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(payload)),
+					Header:     make(http.Header),
+				}, nil
+			}),
+		}
+		_, err = fetchPageWebSocketURLOnce(ctx, oversizedListClient, 9222)
+		if err == nil || !strings.Contains(err.Error(), "failed to decode /json/list response") {
+			t.Fatalf("expected bounded decode error on oversized /json/list response, got %v", err)
+		}
+
+		oversizedNewClient := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == "/json/list" {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`[]`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+				payload := `{"id":"x","type":"page","pad":"` + strings.Repeat("b", maxCDPDiscoveryBodyBytes) + `","webSocketDebuggerUrl":"ws://127.0.0.1:9222/p"}`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(payload)),
+					Header:     make(http.Header),
+				}, nil
+			}),
+		}
+		_, err = fetchPageWebSocketURLOnce(ctx, oversizedNewClient, 9222)
+		if err == nil || !strings.Contains(err.Error(), "failed to decode /json/new response") {
+			t.Fatalf("expected bounded decode error on oversized /json/new response, got %v", err)
+		}
+
+		// Retry exhaustion preserves errors across /json/list and /json/new failures.
+		var exhaustCalls atomic.Int32
+		exhaustSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/json/list":
+				if exhaustCalls.Add(1) == 1 {
+					http.Error(w, "starting up", http.StatusServiceUnavailable)
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, `[]`)
 			case "/json/new":
@@ -835,12 +953,17 @@ func TestFetchPageWebSocketURL_SingleFetchAndRetries(t *testing.T) {
 				http.NotFound(w, r)
 			}
 		}))
-		defer emptySrv.Close()
+		defer exhaustSrv.Close()
 
-		emptyCtx, emptyCancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, err = getPageWebSocketURLWithRetry(ctx, testServerPort(t, exhaustSrv), 25*time.Millisecond, time.Millisecond)
+		if err == nil || !strings.Contains(err.Error(), "retries exhausted connecting to /json/list") || !strings.Contains(err.Error(), "/json/new returned HTTP 404") {
+			t.Fatalf("expected retry exhaustion preserving /json/new HTTP 404 error, got %v", err)
+		}
+
+		emptyCtx, emptyCancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 		defer emptyCancel()
 
-		_, err = getPageWebSocketURL(emptyCtx, testServerPort(t, emptySrv))
+		_, err = getPageWebSocketURLWithRetry(emptyCtx, testServerPort(t, exhaustSrv), 10*time.Second, time.Millisecond)
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("expected context.DeadlineExceeded when /json/list stays empty until deadline, got %v", err)
 		}
@@ -860,9 +983,14 @@ func TestParseAndDialCDPLoopbackWebSocketURL(t *testing.T) {
 				wantAddr: "127.0.0.1:9222",
 			},
 			{
-				name:     "localhost mixed case",
+				name:     "localhost mixed case normalizes to 127.0.0.1",
 				rawURL:   "ws://LocalHost:9333/devtools/page/abc",
-				wantAddr: "localhost:9333",
+				wantAddr: "127.0.0.1:9333",
+			},
+			{
+				name:     "localhost default ws port 80 normalizes to 127.0.0.1",
+				rawURL:   "ws://localhost/devtools/page/abc",
+				wantAddr: "127.0.0.1:80",
 			},
 			{
 				name:     "IPv6 loopback",
@@ -889,6 +1017,115 @@ func TestParseAndDialCDPLoopbackWebSocketURL(t *testing.T) {
 					t.Errorf("dialAddr = %q, want %q", dialAddr, tc.wantAddr)
 				}
 			})
+		}
+	})
+
+	t.Run("positive dialCDPWebSocket sends normalized Host header on handshake", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to listen on loopback: %v", err)
+		}
+		defer ln.Close()
+
+		port := ln.Addr().(*net.TCPAddr).Port
+		wantHost := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+
+		type handshakeResult struct {
+			host    string
+			uri     string
+			upgrade string
+			err     error
+		}
+		resCh := make(chan handshakeResult, 1)
+		doneCh := make(chan struct{})
+		defer close(doneCh)
+
+		go func() {
+			conn, err := ln.Accept()
+			if err != nil {
+				resCh <- handshakeResult{err: err}
+				return
+			}
+			defer conn.Close()
+
+			req, err := http.ReadRequest(bufio.NewReader(conn))
+			if err != nil {
+				resCh <- handshakeResult{err: err}
+				return
+			}
+			resCh <- handshakeResult{
+				host:    req.Host,
+				uri:     req.RequestURI,
+				upgrade: req.Header.Get("Upgrade"),
+			}
+			_, _ = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+			<-doneCh
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		ws, err := dialCDPWebSocket(ctx, "ws://localhost:"+strconv.Itoa(port)+"/devtools/page/abc")
+		if err != nil {
+			t.Fatalf("dialCDPWebSocket failed: %v", err)
+		}
+		defer ws.Close()
+
+		got := <-resCh
+		if got.err != nil {
+			t.Fatalf("mock WS server failed: %v", got.err)
+		}
+		if got.host != wantHost {
+			t.Errorf("handshake Host = %q, want %q", got.host, wantHost)
+		}
+		if got.uri != "/devtools/page/abc" {
+			t.Errorf("handshake RequestURI = %q, want %q", got.uri, "/devtools/page/abc")
+		}
+		if !strings.EqualFold(got.upgrade, "websocket") {
+			t.Errorf("handshake Upgrade = %q, want websocket", got.upgrade)
+		}
+
+		// Verify explicit :80 default port Host header via in-memory pipe without binding port 80.
+		for _, defaultURL := range []string{"ws://127.0.0.1/devtools/page/default", "ws://localhost/devtools/page/default"} {
+			clientConn, serverConn := net.Pipe()
+			var dialedNetwork, dialedAddr string
+			pipeResCh := make(chan handshakeResult, 1)
+			pipeDone := make(chan struct{})
+
+			go func() {
+				defer serverConn.Close()
+				req, err := http.ReadRequest(bufio.NewReader(serverConn))
+				if err != nil {
+					pipeResCh <- handshakeResult{err: err}
+					return
+				}
+				pipeResCh <- handshakeResult{host: req.Host, uri: req.RequestURI}
+				_, _ = io.WriteString(serverConn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+				<-pipeDone
+			}()
+
+			wsPipe, err := dialCDPWebSocketWithDialer(ctx, defaultURL, func(_ context.Context, network, addr string) (net.Conn, error) {
+				dialedNetwork = network
+				dialedAddr = addr
+				return clientConn, nil
+			})
+			if err != nil {
+				close(pipeDone)
+				t.Fatalf("dialCDPWebSocketWithDialer(%q) failed: %v", defaultURL, err)
+			}
+
+			pipeGot := <-pipeResCh
+			_ = wsPipe.Close()
+			close(pipeDone)
+			if pipeGot.err != nil {
+				t.Fatalf("pipe WS server failed for %q: %v", defaultURL, pipeGot.err)
+			}
+			if dialedNetwork != "tcp" || dialedAddr != "127.0.0.1:80" {
+				t.Errorf("dialed (%q, %q), want (\"tcp\", \"127.0.0.1:80\")", dialedNetwork, dialedAddr)
+			}
+			if pipeGot.host != "127.0.0.1:80" {
+				t.Errorf("default port handshake Host for %q = %q, want %q", defaultURL, pipeGot.host, "127.0.0.1:80")
+			}
 		}
 	})
 
@@ -1028,13 +1265,9 @@ func TestCDPError_RedactionAndTransientCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("negative nil receiver and non-transient errors", func(t *testing.T) {
-		var nilErr *cdpError
-		if got := nilErr.Error(); got != "CDP error: <nil>" {
-			t.Errorf("nil cdpError.Error() = %q, want %q", got, "CDP error: <nil>")
-		}
-		if isTransientCDPContextErr(nilErr) {
-			t.Error("expected nil cdpError not to match isTransientCDPContextErr")
+	t.Run("negative nil and non-transient errors", func(t *testing.T) {
+		if isTransientCDPContextErr(nil) {
+			t.Error("expected nil error not to match isTransientCDPContextErr")
 		}
 
 		wrongCode := &cdpError{Code: -32602, Message: "Execution context was destroyed."}
