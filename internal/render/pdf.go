@@ -896,19 +896,47 @@ func isTruthyEnv(key string) bool {
 	return v != "" && v != "0" && v != "false" && v != "no"
 }
 
+var chromiumSandboxDisableEnvVars = []string{
+	"RESUMAI_CHROMIUM_NO_SANDBOX",
+	"CI",
+	"GITHUB_ACTIONS",
+}
+
+func hasDockerEnvFile() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
+}
+
 // shouldDisableChromiumSandbox reports whether Chromium renderer sandboxing should be disabled,
 // such as inside containers, CI runners, when running as root, or when explicitly opted out via
 // RESUMAI_CHROMIUM_NO_SANDBOX=1. Desktop hosts (including desktop Linux) keep the native sandbox enabled.
+// When environment overrides disable the sandbox on non-Linux hosts, a diagnostic warning is written
+// to stderr.
 func shouldDisableChromiumSandbox() bool {
-	_, err := os.Stat("/.dockerenv")
-	return shouldDisableChromiumSandboxFor(runtime.GOOS, os.Geteuid(), err == nil)
+	return shouldDisableChromiumSandboxWithWriter(runtime.GOOS, os.Geteuid(), hasDockerEnvFile(), os.Stderr)
 }
 
-func shouldDisableChromiumSandboxFor(_ string, euid int, hasDockerEnv bool) bool {
-	if isTruthyEnv("RESUMAI_CHROMIUM_NO_SANDBOX") {
-		return true
+func shouldDisableChromiumSandboxFor(goos string, euid int, hasDockerEnv bool) bool {
+	return shouldDisableChromiumSandboxWithWriter(goos, euid, hasDockerEnv, os.Stderr)
+}
+
+func shouldDisableChromiumSandboxWithWriter(goos string, euid int, hasDockerEnv bool, warn io.Writer) bool {
+	var envReasons []string
+	for _, key := range chromiumSandboxDisableEnvVars {
+		if isTruthyEnv(key) {
+			envReasons = append(envReasons, key)
+		}
 	}
-	if isTruthyEnv("CI") || isTruthyEnv("GITHUB_ACTIONS") {
+	if len(envReasons) > 0 {
+		normalizedGOOS := strings.ToLower(strings.TrimSpace(goos))
+		if normalizedGOOS != "" && normalizedGOOS != "linux" && warn != nil {
+			_, _ = fmt.Fprintf(
+				warn,
+				"resumai warning: disabling Chromium renderer sandbox on non-Linux host (%s) due to %s\n",
+				normalizedGOOS,
+				strings.Join(envReasons, ", "),
+			)
+		}
 		return true
 	}
 	if hasDockerEnv {
@@ -924,7 +952,11 @@ func shouldDisableChromiumSandboxFor(_ string, euid int, hasDockerEnv bool) bool
 // keeping the native renderer sandbox active on desktop hosts (Windows, macOS, and desktop Linux)
 // while passing necessary container/CI sandbox and shared-memory flags when sandboxing is disabled.
 func chromiumLaunchArgs(userDataDir string) []string {
-	return chromiumLaunchArgsFor(userDataDir, runtime.GOOS, shouldDisableChromiumSandbox())
+	return chromiumLaunchArgsWithWriter(userDataDir, runtime.GOOS, os.Geteuid(), hasDockerEnvFile(), os.Stderr)
+}
+
+func chromiumLaunchArgsWithWriter(userDataDir, goos string, euid int, hasDockerEnv bool, warn io.Writer) []string {
+	return chromiumLaunchArgsFor(userDataDir, goos, shouldDisableChromiumSandboxWithWriter(goos, euid, hasDockerEnv, warn))
 }
 
 func chromiumLaunchArgsFor(userDataDir, goos string, disableSandbox bool) []string {
