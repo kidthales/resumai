@@ -621,21 +621,58 @@ func buildTelemetryScript(targetPages int, page PageConfig) string {
 			let startTop = 0.0;
 			let endBottom = 0.0;
 
-			// Range.getClientRects() accurately measures individual rendered text lines
+			// Range.getClientRects() emits one DOMRect per inline box (e.g., <strong>, <a>, <em>).
+			// Group non-empty fragments into visual lines by top coordinate (<= 1px tolerance)
+			// so multi-span lines report true visual line count and horizontal span (maxRight - minLeft).
 			const range = document.createRange();
 			range.selectNodeContents(el);
-			const rects = range.getClientRects();
+			const rawRects = range.getClientRects();
 
-			if (rects && rects.length > 0) {
-				lineCount = rects.length;
-				startTop = rects[0].top;
-				endBottom = rects[rects.length - 1].bottom;
-				for (let i = 0; i < rects.length; i++) {
-					if (rects[i].width > maxLineWidth) {
-						maxLineWidth = rects[i].width;
+			const lines = [];
+			if (rawRects && rawRects.length > 0) {
+				for (let i = 0; i < rawRects.length; i++) {
+					const r = rawRects[i];
+					if (!r || r.width <= 0 || r.height <= 0) {
+						continue;
+					}
+					let matched = null;
+					for (let j = 0; j < lines.length; j++) {
+						if (Math.abs(r.top - lines[j].anchorTop) <= 1.0) {
+							matched = lines[j];
+							break;
+						}
+					}
+					if (matched) {
+						if (r.top < matched.minTop) matched.minTop = r.top;
+						if (r.bottom > matched.maxBottom) matched.maxBottom = r.bottom;
+						if (r.left < matched.minLeft) matched.minLeft = r.left;
+						if (r.right > matched.maxRight) matched.maxRight = r.right;
+					} else {
+						lines.push({
+							anchorTop: r.top,
+							minTop: r.top,
+							maxBottom: r.bottom,
+							minLeft: r.left,
+							maxRight: r.right
+						});
 					}
 				}
-				lastLineWidth = rects[rects.length - 1].width;
+			}
+
+			if (lines.length > 0) {
+				lines.sort((a, b) => a.minTop - b.minTop);
+				lineCount = lines.length;
+				startTop = lines[0].minTop;
+				endBottom = lines[lines.length - 1].maxBottom;
+				for (let i = 0; i < lines.length; i++) {
+					const w = Math.max(0, lines[i].maxRight - lines[i].minLeft);
+					if (w > maxLineWidth) {
+						maxLineWidth = w;
+					}
+					if (i === lines.length - 1) {
+						lastLineWidth = w;
+					}
+				}
 			} else {
 				const bRect = el.getBoundingClientRect();
 				startTop = bRect.top;
