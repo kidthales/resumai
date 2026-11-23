@@ -367,7 +367,7 @@ func (a *JobApplication) RecordAudits(bundle AuditBundle) error {
 	if err != nil {
 		return err
 	}
-	if provided := strings.ToLower(strings.TrimSpace(bundle.DraftSHA256)); provided != "" && provided != draftHash {
+	if provided := strings.ToLower(strings.TrimSpace(bundle.DraftSHA256)); provided != draftHash {
 		return fmt.Errorf("%w: audit draft_sha256 %q does not match current draft %q", ErrIncompleteAudit, bundle.DraftSHA256, draftHash)
 	}
 
@@ -565,6 +565,9 @@ func validateAuditBundle(bundle *AuditBundle) error {
 	}
 	if strings.TrimSpace(bundle.AlignmentCheck.Summary) == "" {
 		return fmt.Errorf("%w: alignment-check summary cannot be empty", ErrIncompleteAudit)
+	}
+	if strings.TrimSpace(bundle.DraftSHA256) == "" {
+		return fmt.Errorf("%w: draft_sha256 is required", ErrIncompleteAudit)
 	}
 	return nil
 }
