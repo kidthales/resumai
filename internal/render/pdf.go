@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -300,13 +301,32 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	}
 	defer ws.Close()
 
-	// 7. Initialize CDP domains
+	// 7. Initialize CDP domains and lock screen viewport to printable content width
 	if _, err := ws.Call(ctx, "Page.enable", nil); err != nil {
 		return nil, nil, fmt.Errorf("CDP Page.enable failed: %w", err)
 	}
 	if _, err := ws.Call(ctx, "Runtime.enable", nil); err != nil {
 		return nil, nil, fmt.Errorf("CDP Runtime.enable failed: %w", err)
 	}
+
+	var pageCfg PageConfig
+	if p.htmlRenderer != nil && p.htmlRenderer.Theme() != nil {
+		pageCfg = p.htmlRenderer.Theme().Page
+	} else if p.theme != nil {
+		pageCfg = p.theme.Page
+	}
+
+	viewportWidth, viewportHeight := pageViewportPX(pageCfg)
+	emulationParams := map[string]interface{}{
+		"width":             viewportWidth,
+		"height":            viewportHeight,
+		"deviceScaleFactor": 1,
+		"mobile":            false,
+	}
+	if _, err := ws.Call(ctx, "Emulation.setDeviceMetricsOverride", emulationParams); err != nil {
+		return nil, nil, fmt.Errorf("CDP Emulation.setDeviceMetricsOverride failed: %w", err)
+	}
+	_, _ = ws.Call(ctx, "Emulation.setScrollbarsHidden", map[string]interface{}{"hidden": true})
 
 	// 8. Subscribe to Page.loadEventFired before navigating so the load signal cannot be missed.
 	loadCh, unsubLoad := ws.Subscribe("Page.loadEventFired")
@@ -342,12 +362,6 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	}
 
 	// 10. Extract DOM Layout Telemetry using Range.getClientRects()
-	var pageCfg PageConfig
-	if p.htmlRenderer != nil && p.htmlRenderer.Theme() != nil {
-		pageCfg = p.htmlRenderer.Theme().Page
-	} else if p.theme != nil {
-		pageCfg = p.theme.Page
-	}
 	telemetryScript := buildTelemetryScript(targetPages, pageCfg)
 	evalParams := map[string]interface{}{
 		"expression":    telemetryScript,
@@ -373,6 +387,9 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	// 11. Optionally generate PDF via Page.printToPDF
 	var pdfBytes []byte
 	if generatePDF {
+		_, _ = ws.Call(ctx, "Emulation.clearDeviceMetricsOverride", nil)
+		_, _ = ws.Call(ctx, "Emulation.setScrollbarsHidden", map[string]interface{}{"hidden": false})
+
 		paperWidth, paperHeight, marginTop, marginBottom, marginLeft, marginRight := pageGeometryInches(pageCfg)
 		printParams := map[string]interface{}{
 			"printBackground":   true,
@@ -504,6 +521,44 @@ func pageGeometryPX(page PageConfig) (pageHeight, marginY float64) {
 	botPX := parseDimensionToPX(page.MarginBottom, DefaultMarginPX) // default 0.5in = 48px
 	marginY = topPX + botPX
 	return pageHeight, marginY
+}
+
+// pageContentWidthPX computes the printable content width (pageWidth - marginLeft - marginRight)
+// in CSS pixels at 96 DPI across US Letter and A4 page configurations.
+func pageContentWidthPX(page PageConfig) float64 {
+	pageWidth := 8.5 * DefaultDPI // US Letter default at 96 DPI: 8.5in = 816px
+	if strings.EqualFold(strings.TrimSpace(page.Size), "a4") {
+		pageWidth = 210.0 * DefaultDPI / 25.4 // A4 width: 210mm ≈ 793.70px
+	}
+
+	leftPX := parseDimensionToPX(page.MarginLeft, DefaultMarginPX)
+	rightPX := parseDimensionToPX(page.MarginRight, DefaultMarginPX)
+	contentWidth := pageWidth - leftPX - rightPX
+	if contentWidth < 1.0 {
+		return 1.0
+	}
+	return contentWidth
+}
+
+// pageViewportPX computes integer CSS viewport dimensions (width, height) in pixels at 96 DPI
+// matching the printable content box (pageWidth - marginLeft - marginRight by usableHeight).
+func pageViewportPX(page PageConfig) (width, height int) {
+	contentWidth := pageContentWidthPX(page)
+	pageHeight, marginY := pageGeometryPX(page)
+	usableHeight := pageHeight - marginY
+	if usableHeight < 1.0 {
+		usableHeight = pageHeight
+	}
+
+	width = int(math.Ceil(contentWidth))
+	height = int(math.Ceil(usableHeight))
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	return width, height
 }
 
 // pageGeometryInches computes physical paper dimensions and margins in inches for CDP printToPDF.
