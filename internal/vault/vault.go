@@ -1424,3 +1424,16 @@ func marshalStringSlice(s []string) (string, error) {
 	}
 	return string(b), nil
 }
+
+// unmarshalStringSlice deserializes a JSON array string from SQLite TEXT storage.
+// Empty strings and "[]" return nil without error; malformed JSON errors are wrapped.
+func unmarshalStringSlice(raw string) ([]string, error) {
+	if raw == "" || raw == "[]" {
+		return nil, nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, fmt.Errorf("unmarshal string slice: %w", err)
+	}
+	return out, nil
+}
