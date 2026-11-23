@@ -99,6 +99,16 @@ jobs:
           if [[ "$TAG" == *-* ]]; then
             PRERELEASE_FLAG=(--prerelease)
           fi
+          # Idempotent retry contract for --clobber:
+          # `seldon release` pre-creates tag releases before workflow asset attachment, and
+          # mid-flight/partial-upload job retries re-enter against an existing release.
+          # Retaining `--clobber` allows safe idempotent re-uploads while preserving provenance:
+          # - `needs: [verify]` requires Verify Release via CI Pipeline to pass on the tag commit.
+          # - `Verify tagged commit is on main` enforces `$GITHUB_SHA` ancestry on `origin/main`.
+          # - `Build cross-platform stripped release binaries` enforces strict semver parity
+          #   between `$TAG` and `plugin.json` `.version`, rebuilding binaries and `SHA256SUMS`
+          #   from that verified commit (`Verify resumai version output` checks the binary).
+          # - Workflow concurrency (`cancel-in-progress: false`) prevents racing ref uploads.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               resumai-windows-amd64.exe \
