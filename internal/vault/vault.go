@@ -513,7 +513,11 @@ func (v *CareerVault) GetRole(ctx context.Context, id string) (*domain.Role, err
 	if err != nil {
 		return nil, fmt.Errorf("get role: %w", err)
 	}
-	_ = json.Unmarshal([]byte(techJSON), &r.TechStack)
+	techStack, err := unmarshalStringSlice(techJSON)
+	if err != nil {
+		return nil, fmt.Errorf("get role tech_stack: %w", err)
+	}
+	r.TechStack = techStack
 	r.CreatedAt = parseDBTime(createdAtStr)
 	r.UpdatedAt = parseDBTime(updatedAtStr)
 	return &r, nil
@@ -535,7 +539,11 @@ func (v *CareerVault) ListRoles(ctx context.Context) ([]*domain.Role, error) {
 		if err := rows.Scan(&r.ID, &r.OrgID, &r.Title, &r.Category, &r.Location, &r.Duration, &techJSON, &createdAtStr, &updatedAtStr); err != nil {
 			return nil, fmt.Errorf("scan role: %w", err)
 		}
-		_ = json.Unmarshal([]byte(techJSON), &r.TechStack)
+		techStack, err := unmarshalStringSlice(techJSON)
+		if err != nil {
+			return nil, fmt.Errorf("list roles tech_stack: %w", err)
+		}
+		r.TechStack = techStack
 		r.CreatedAt = parseDBTime(createdAtStr)
 		r.UpdatedAt = parseDBTime(updatedAtStr)
 		list = append(list, &r)
@@ -559,7 +567,11 @@ func (v *CareerVault) ListRolesByOrg(ctx context.Context, orgID string) ([]*doma
 		if err := rows.Scan(&r.ID, &r.OrgID, &r.Title, &r.Category, &r.Location, &r.Duration, &techJSON, &createdAtStr, &updatedAtStr); err != nil {
 			return nil, fmt.Errorf("scan role: %w", err)
 		}
-		_ = json.Unmarshal([]byte(techJSON), &r.TechStack)
+		techStack, err := unmarshalStringSlice(techJSON)
+		if err != nil {
+			return nil, fmt.Errorf("list roles by org tech_stack: %w", err)
+		}
+		r.TechStack = techStack
 		r.CreatedAt = parseDBTime(createdAtStr)
 		r.UpdatedAt = parseDBTime(updatedAtStr)
 		list = append(list, &r)
@@ -704,7 +716,11 @@ func (v *CareerVault) GetCareerFactContext(ctx context.Context, id string) (*dom
 
 	f.EpistemicState = domain.EpistemicState(epistemicStr)
 	f.Verified = verifiedInt == 1
-	_ = json.Unmarshal([]byte(techJSON), &f.TechTags)
+	techTags, err := unmarshalStringSlice(techJSON)
+	if err != nil {
+		return nil, fmt.Errorf("get career fact tech_tags: %w", err)
+	}
+	f.TechTags = techTags
 	f.CreatedAt = parseDBTime(createdAtStr)
 	f.UpdatedAt = parseDBTime(updatedAtStr)
 	return &f, nil
@@ -755,7 +771,11 @@ func (v *CareerVault) queryFacts(ctx context.Context, query string, args ...any)
 
 		f.EpistemicState = domain.EpistemicState(epistemicStr)
 		f.Verified = verifiedInt == 1
-		_ = json.Unmarshal([]byte(techJSON), &f.TechTags)
+		techTags, err := unmarshalStringSlice(techJSON)
+		if err != nil {
+			return nil, fmt.Errorf("query facts tech_tags: %w", err)
+		}
+		f.TechTags = techTags
 		f.CreatedAt = parseDBTime(createdAtStr)
 		f.UpdatedAt = parseDBTime(updatedAtStr)
 		list = append(list, &f)
@@ -1003,9 +1023,21 @@ func (v *CareerVault) GetArchetype(ctx context.Context, id string) (*domain.Arch
 		return nil, fmt.Errorf("get archetype: %w", err)
 	}
 
-	_ = json.Unmarshal([]byte(compJSON), &a.CoreCompetencies)
-	_ = json.Unmarshal([]byte(stratJSON), &a.StrategicImpact)
-	_ = json.Unmarshal([]byte(rolesJSON), &a.TargetRoles)
+	coreCompetencies, err := unmarshalStringSlice(compJSON)
+	if err != nil {
+		return nil, fmt.Errorf("get archetype core_competencies: %w", err)
+	}
+	a.CoreCompetencies = coreCompetencies
+	strategicImpact, err := unmarshalStringSlice(stratJSON)
+	if err != nil {
+		return nil, fmt.Errorf("get archetype strategic_impact: %w", err)
+	}
+	a.StrategicImpact = strategicImpact
+	targetRoles, err := unmarshalStringSlice(rolesJSON)
+	if err != nil {
+		return nil, fmt.Errorf("get archetype target_roles: %w", err)
+	}
+	a.TargetRoles = targetRoles
 	a.CreatedAt = parseDBTime(createdAtStr)
 	a.UpdatedAt = parseDBTime(updatedAtStr)
 	return &a, nil
@@ -1039,9 +1071,21 @@ func (v *CareerVault) ListArchetypes(ctx context.Context) ([]*domain.Archetype, 
 		); err != nil {
 			return nil, fmt.Errorf("scan archetype: %w", err)
 		}
-		_ = json.Unmarshal([]byte(compJSON), &a.CoreCompetencies)
-		_ = json.Unmarshal([]byte(stratJSON), &a.StrategicImpact)
-		_ = json.Unmarshal([]byte(rolesJSON), &a.TargetRoles)
+		coreCompetencies, err := unmarshalStringSlice(compJSON)
+		if err != nil {
+			return nil, fmt.Errorf("list archetypes core_competencies: %w", err)
+		}
+		a.CoreCompetencies = coreCompetencies
+		strategicImpact, err := unmarshalStringSlice(stratJSON)
+		if err != nil {
+			return nil, fmt.Errorf("list archetypes strategic_impact: %w", err)
+		}
+		a.StrategicImpact = strategicImpact
+		targetRoles, err := unmarshalStringSlice(rolesJSON)
+		if err != nil {
+			return nil, fmt.Errorf("list archetypes target_roles: %w", err)
+		}
+		a.TargetRoles = targetRoles
 		a.CreatedAt = parseDBTime(createdAtStr)
 		a.UpdatedAt = parseDBTime(updatedAtStr)
 		list = append(list, &a)
