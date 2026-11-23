@@ -387,7 +387,9 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	// 11. Optionally generate PDF via Page.printToPDF
 	var pdfBytes []byte
 	if generatePDF {
-		_, _ = ws.Call(ctx, "Emulation.clearDeviceMetricsOverride", nil)
+		if _, err := ws.Call(ctx, "Emulation.clearDeviceMetricsOverride", nil); err != nil {
+			return nil, nil, fmt.Errorf("CDP Emulation.clearDeviceMetricsOverride failed: %w", err)
+		}
 		_, _ = ws.Call(ctx, "Emulation.setScrollbarsHidden", map[string]interface{}{"hidden": false})
 
 		paperWidth, paperHeight, marginTop, marginBottom, marginLeft, marginRight := pageGeometryInches(pageCfg)
@@ -425,78 +427,64 @@ func (p *PDFPrinter) executeCDP(htmlBytes []byte, targetPages int, generatePDF b
 	return pdfBytes, &telemetry, nil
 }
 
-// parseDimensionToPX converts CSS dimension strings to pixels at 96 DPI.
-func parseDimensionToPX(dim string, defaultPX float64) float64 {
+// parseDimensionToInchesBase converts CSS dimension strings to inches, rejecting non-finite,
+// negative, or overflowed values and returning (0, false) when parsing fails.
+func parseDimensionToInchesBase(dim string) (float64, bool) {
 	dim = strings.TrimSpace(strings.ToLower(dim))
 	if dim == "" {
-		return defaultPX
+		return 0, false
 	}
 	if dim == "0" {
-		return 0.0
+		return 0.0, true
 	}
-	if strings.HasSuffix(dim, "in") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "in"), 64); err == nil {
-			return v * 96.0
+
+	unitScales := []struct {
+		suffix string
+		scale  float64
+	}{
+		{"in", 1.0},
+		{"pt", 1.0 / 72.0},
+		{"mm", 1.0 / mmPerInch},
+		{"cm", 1.0 / cmPerInch},
+		{"px", 1.0 / DefaultDPI},
+	}
+
+	for _, u := range unitScales {
+		if strings.HasSuffix(dim, u.suffix) {
+			v, err := strconv.ParseFloat(strings.TrimSuffix(dim, u.suffix), 64)
+			if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+				return 0, false
+			}
+			inches := v * u.scale
+			if math.IsNaN(inches) || math.IsInf(inches, 0) || math.IsInf(inches*DefaultDPI, 0) {
+				return 0, false
+			}
+			return inches, true
 		}
 	}
-	if strings.HasSuffix(dim, "pt") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "pt"), 64); err == nil {
-			return v * 96.0 / 72.0
-		}
+	return 0, false
+}
+
+// parseDimensionToPX converts CSS dimension strings to pixels at 96 DPI.
+func parseDimensionToPX(dim string, defaultPX float64) float64 {
+	inches, ok := parseDimensionToInchesBase(dim)
+	if !ok {
+		return defaultPX
 	}
-	if strings.HasSuffix(dim, "mm") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "mm"), 64); err == nil {
-			return v * 96.0 / 25.4
-		}
+	px := inches * DefaultDPI
+	if math.IsNaN(px) || math.IsInf(px, 0) {
+		return defaultPX
 	}
-	if strings.HasSuffix(dim, "cm") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "cm"), 64); err == nil {
-			return v * 96.0 / 2.54
-		}
-	}
-	if strings.HasSuffix(dim, "px") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "px"), 64); err == nil {
-			return v
-		}
-	}
-	return defaultPX
+	return px
 }
 
 // parseDimensionToInches converts CSS dimension strings to inches.
 func parseDimensionToInches(dim string, defaultInches float64) float64 {
-	dim = strings.TrimSpace(strings.ToLower(dim))
-	if dim == "" {
+	inches, ok := parseDimensionToInchesBase(dim)
+	if !ok {
 		return defaultInches
 	}
-	if dim == "0" {
-		return 0.0
-	}
-	if strings.HasSuffix(dim, "in") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "in"), 64); err == nil {
-			return v
-		}
-	}
-	if strings.HasSuffix(dim, "pt") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "pt"), 64); err == nil {
-			return v / 72.0
-		}
-	}
-	if strings.HasSuffix(dim, "mm") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "mm"), 64); err == nil {
-			return v / 25.4
-		}
-	}
-	if strings.HasSuffix(dim, "cm") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "cm"), 64); err == nil {
-			return v / 2.54
-		}
-	}
-	if strings.HasSuffix(dim, "px") {
-		if v, err := strconv.ParseFloat(strings.TrimSuffix(dim, "px"), 64); err == nil {
-			return v / 96.0
-		}
-	}
-	return defaultInches
+	return inches
 }
 
 const (
@@ -508,33 +496,43 @@ const (
 	DefaultMarginPX = DefaultMarginInches * DefaultDPI
 	// DefaultMarginYPX is the combined top and bottom vertical margin offset at 96 DPI (96.0px).
 	DefaultMarginYPX = DefaultMarginPX * 2.0
+
+	letterWidthInches  = 8.5
+	letterHeightInches = 11.0
+	a4WidthMM          = 210.0
+	a4HeightMM         = 297.0
+	mmPerInch          = 25.4
+	cmPerInch          = 2.54
 )
 
 // pageGeometryPX computes physical page height and vertical margins in pixels at 96 DPI.
 func pageGeometryPX(page PageConfig) (pageHeight, marginY float64) {
-	pageHeight = 1056.0 // US Letter default at 96 DPI: 11in = 1056px
+	pageHeight = letterHeightInches * DefaultDPI // US Letter default at 96 DPI: 11in = 1056px
 	if strings.EqualFold(strings.TrimSpace(page.Size), "a4") {
-		pageHeight = 297.0 * DefaultDPI / 25.4 // A4 height: 297mm ≈ 1122.52px
+		pageHeight = a4HeightMM * DefaultDPI / mmPerInch // A4 height: 297mm ≈ 1122.52px
 	}
 
 	topPX := parseDimensionToPX(page.MarginTop, DefaultMarginPX)    // default 0.5in = 48px
 	botPX := parseDimensionToPX(page.MarginBottom, DefaultMarginPX) // default 0.5in = 48px
 	marginY = topPX + botPX
+	if math.IsNaN(marginY) || math.IsInf(marginY, 0) || marginY < 0 {
+		marginY = DefaultMarginYPX
+	}
 	return pageHeight, marginY
 }
 
 // pageContentWidthPX computes the printable content width (pageWidth - marginLeft - marginRight)
 // in CSS pixels at 96 DPI across US Letter and A4 page configurations.
 func pageContentWidthPX(page PageConfig) float64 {
-	pageWidth := 8.5 * DefaultDPI // US Letter default at 96 DPI: 8.5in = 816px
+	pageWidth := letterWidthInches * DefaultDPI // US Letter default at 96 DPI: 8.5in = 816px
 	if strings.EqualFold(strings.TrimSpace(page.Size), "a4") {
-		pageWidth = 210.0 * DefaultDPI / 25.4 // A4 width: 210mm ≈ 793.70px
+		pageWidth = a4WidthMM * DefaultDPI / mmPerInch // A4 width: 210mm ≈ 793.70px
 	}
 
 	leftPX := parseDimensionToPX(page.MarginLeft, DefaultMarginPX)
 	rightPX := parseDimensionToPX(page.MarginRight, DefaultMarginPX)
 	contentWidth := pageWidth - leftPX - rightPX
-	if contentWidth < 1.0 {
+	if math.IsNaN(contentWidth) || math.IsInf(contentWidth, 0) || contentWidth < 1.0 {
 		return 1.0
 	}
 	return contentWidth
@@ -546,7 +544,7 @@ func pageViewportPX(page PageConfig) (width, height int) {
 	contentWidth := pageContentWidthPX(page)
 	pageHeight, marginY := pageGeometryPX(page)
 	usableHeight := pageHeight - marginY
-	if usableHeight < 1.0 {
+	if math.IsNaN(usableHeight) || math.IsInf(usableHeight, 0) || usableHeight < 1.0 {
 		usableHeight = pageHeight
 	}
 
@@ -563,17 +561,17 @@ func pageViewportPX(page PageConfig) (width, height int) {
 
 // pageGeometryInches computes physical paper dimensions and margins in inches for CDP printToPDF.
 func pageGeometryInches(page PageConfig) (width, height, top, bottom, left, right float64) {
-	width = 8.5   // default US Letter width in inches
-	height = 11.0 // default US Letter height in inches
+	width = letterWidthInches   // default US Letter width in inches
+	height = letterHeightInches // default US Letter height in inches
 	if strings.EqualFold(strings.TrimSpace(page.Size), "a4") {
-		width = 210.0 / 25.4  // A4 width: 210mm ≈ 8.27in
-		height = 297.0 / 25.4 // A4 height: 297mm ≈ 11.69in
+		width = a4WidthMM / mmPerInch   // A4 width: 210mm ≈ 8.27in
+		height = a4HeightMM / mmPerInch // A4 height: 297mm ≈ 11.69in
 	}
 
-	top = parseDimensionToInches(page.MarginTop, 0.5)
-	bottom = parseDimensionToInches(page.MarginBottom, 0.5)
-	left = parseDimensionToInches(page.MarginLeft, 0.5)
-	right = parseDimensionToInches(page.MarginRight, 0.5)
+	top = parseDimensionToInches(page.MarginTop, DefaultMarginInches)
+	bottom = parseDimensionToInches(page.MarginBottom, DefaultMarginInches)
+	left = parseDimensionToInches(page.MarginLeft, DefaultMarginInches)
+	right = parseDimensionToInches(page.MarginRight, DefaultMarginInches)
 	return width, height, top, bottom, left, right
 }
 
@@ -592,7 +590,8 @@ func buildTelemetryScript(targetPages int, page PageConfig) string {
 
 		const pageHeight = %.2f;
 		const marginY = %.2f;
-		const usableHeight = pageHeight - marginY;
+		const rawUsableHeight = pageHeight - marginY;
+		const usableHeight = (Number.isFinite(rawUsableHeight) && rawUsableHeight >= 1.0) ? rawUsableHeight : pageHeight;
 
 		const targetPages = %d;
 		const allowedHeight = targetPages * usableHeight;
@@ -635,9 +634,12 @@ func buildTelemetryScript(targetPages int, page PageConfig) string {
 					if (!r || r.width <= 0 || r.height <= 0) {
 						continue;
 					}
+					const rMid = (r.top + r.bottom) * 0.5;
 					let matched = null;
 					for (let j = 0; j < lines.length; j++) {
-						if (Math.abs(r.top - lines[j].anchorTop) <= 1.0) {
+						const lineMid = (lines[j].minTop + lines[j].maxBottom) * 0.5;
+						const lineH = Math.max(1.0, lines[j].maxBottom - lines[j].minTop);
+						if (Math.abs(r.top - lines[j].anchorTop) <= 1.0 || Math.abs(rMid - lineMid) <= Math.min(r.height, lineH) * 0.5) {
 							matched = lines[j];
 							break;
 						}
@@ -752,6 +754,9 @@ func CalculateLayoutTelemetry(contentHeight, usableHeight float64, targetPages i
 	if usableHeight <= 0 {
 		usableHeight = pageHeight - marginY
 	}
+	if math.IsNaN(usableHeight) || math.IsInf(usableHeight, 0) || usableHeight < 1.0 {
+		usableHeight = pageHeight
+	}
 	if targetPages <= 0 {
 		targetPages = 1
 	}
@@ -772,7 +777,11 @@ func CalculateLayoutTelemetry(contentHeight, usableHeight float64, targetPages i
 
 	lastPageFill := 0.0
 	if contentHeight > 0 {
-		rem := float64(int(contentHeight*100)%int(usableHeight*100)) / 100.0
+		usableCents := int(usableHeight * 100)
+		rem := 0.0
+		if usableCents > 0 {
+			rem = float64(int(contentHeight*100)%usableCents) / 100.0
+		}
 		if rem == 0 && contentHeight >= usableHeight {
 			lastPageFill = 1.0
 		} else {

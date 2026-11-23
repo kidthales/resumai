@@ -585,6 +585,17 @@ func TestPDFPrinter_Telemetry_InlineRunLineGrouping(t *testing.T) {
 					},
 				},
 				{
+					ID:   "b-code-single",
+					Text: "Configured Range.getClientRects telemetry grouping in pdf.go cleanly.",
+					Runs: []render.InlineRun{
+						{Text: "Configured "},
+						{Text: "Range.getClientRects", Code: true},
+						{Text: " telemetry grouping in "},
+						{Text: "pdf.go", Code: true},
+						{Text: " cleanly."},
+					},
+				},
+				{
 					ID:   "b-inline-multiline-ok",
 					Text: "Architected high-throughput distributed consensus engine across multi-region clusters using Raft, gRPC streaming, and deterministic replay.",
 					Runs: []render.InlineRun{
@@ -659,6 +670,17 @@ func TestPDFPrinter_Telemetry_InlineRunLineGrouping(t *testing.T) {
 	}
 	if strongLinkSingle.LastLineWidth < 200.0 {
 		t.Errorf("b-strong-link-single LastLineWidth = %.2f, expected full single-line width >= 200px", strongLinkSingle.LastLineWidth)
+	}
+
+	codeSingle, ok := byID["b-code-single"]
+	if !ok {
+		t.Fatalf("missing b-code-single in telemetry")
+	}
+	if codeSingle.LineCount != 1 {
+		t.Errorf("b-code-single LineCount = %d, want 1 (inline <code> spans must group onto same visual line)", codeSingle.LineCount)
+	}
+	if codeSingle.IsOrphan {
+		t.Errorf("b-code-single IsOrphan = true (%s), want false", codeSingle.OrphanReason)
 	}
 
 	multiOK, ok := byID["b-inline-multiline-ok"]
