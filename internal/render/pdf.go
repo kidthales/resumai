@@ -1019,10 +1019,70 @@ func extractDevToolsPort(r io.Reader, timeout time.Duration) (int, error) {
 	}
 }
 
+type cdpTargetInfo struct {
+	ID                   string `json:"id"`
+	Type                 string `json:"type"`
+	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+}
+
+func fetchPageWebSocketURLOnce(ctx context.Context, client *http.Client, port int) (string, error) {
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d/json/list", port)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("/json/list returned HTTP %d", resp.StatusCode)
+	}
+
+	var targets []cdpTargetInfo
+	if err := json.NewDecoder(resp.Body).Decode(&targets); err != nil {
+		return "", fmt.Errorf("failed to decode /json/list response: %w", err)
+	}
+
+	for _, t := range targets {
+		if t.Type == "page" && t.WebSocketDebuggerURL != "" {
+			return t.WebSocketDebuggerURL, nil
+		}
+	}
+
+	// If targets exists but no page, try to create one via /json/new
+	newEndpoint := fmt.Sprintf("http://127.0.0.1:%d/json/new?about:blank", port)
+	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, newEndpoint, nil)
+	if err != nil {
+		return "", nil
+	}
+	newResp, err := client.Do(putReq)
+	if err != nil {
+		return "", nil
+	}
+	defer newResp.Body.Close()
+
+	if newResp.StatusCode != http.StatusOK {
+		return "", nil
+	}
+
+	var newTarget cdpTargetInfo
+	if err := json.NewDecoder(newResp.Body).Decode(&newTarget); err == nil && newTarget.WebSocketDebuggerURL != "" {
+		return newTarget.WebSocketDebuggerURL, nil
+	}
+	return "", nil
+}
+
 // getPageWebSocketURL queries Chromium's HTTP discovery API to find an active page target,
 // retrying briefly with backoff to accommodate process startup on loaded hosts.
 func getPageWebSocketURL(ctx context.Context, port int) (string, error) {
-	endpoint := fmt.Sprintf("http://127.0.0.1:%d/json/list", port)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	client := &http.Client{Timeout: 3 * time.Second}
 
 	var lastErr error
@@ -1032,81 +1092,28 @@ func getPageWebSocketURL(ctx context.Context, port int) (string, error) {
 	}
 
 	for time.Now().Before(deadline) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err == nil {
-			resp, err := client.Do(req)
-			if err == nil {
-				func() {
-					defer resp.Body.Close()
-					if resp.StatusCode == http.StatusOK {
-						var targets []struct {
-							ID                   string `json:"id"`
-							Type                 string `json:"type"`
-							WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-						}
-						if err := json.NewDecoder(resp.Body).Decode(&targets); err == nil {
-							for _, t := range targets {
-								if t.Type == "page" && t.WebSocketDebuggerURL != "" {
-									lastErr = nil
-									return
-								}
-							}
-						}
-					}
-				}()
-				// If we found a valid target, re-fetch or decode directly
-			} else {
-				lastErr = err
-			}
+		wsURL, err := fetchPageWebSocketURLOnce(ctx, client, port)
+		if err == nil && wsURL != "" {
+			return wsURL, nil
+		}
+		lastErr = err
+
+		if err := ctx.Err(); err != nil {
+			return "", err
 		}
 
-		// Direct attempt to read and return target
-		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err == nil {
-			resp2, err := client.Do(req2)
-			if err == nil {
-				defer resp2.Body.Close()
-				if resp2.StatusCode == http.StatusOK {
-					var targets []struct {
-						ID                   string `json:"id"`
-						Type                 string `json:"type"`
-						WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-					}
-					if err := json.NewDecoder(resp2.Body).Decode(&targets); err == nil {
-						for _, t := range targets {
-							if t.Type == "page" && t.WebSocketDebuggerURL != "" {
-								return t.WebSocketDebuggerURL, nil
-							}
-						}
-						// If targets exists but no page, try to create one via /json/new
-						newEndpoint := fmt.Sprintf("http://127.0.0.1:%d/json/new?about:blank", port)
-						putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, newEndpoint, nil)
-						if err == nil {
-							newResp, err := client.Do(putReq)
-							if err == nil {
-								defer newResp.Body.Close()
-								var newTarget struct {
-									WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-								}
-								if err := json.NewDecoder(newResp.Body).Decode(&newTarget); err == nil && newTarget.WebSocketDebuggerURL != "" {
-									return newTarget.WebSocketDebuggerURL, nil
-								}
-							}
-						}
-					}
-				}
-			} else {
-				lastErr = err
-			}
-		}
-
+		timer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return "", ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if lastErr != nil {
 		return "", fmt.Errorf("retries exhausted connecting to /json/list: %w", lastErr)
 	}
@@ -1266,21 +1273,56 @@ func awaitDocumentAndFonts(ctx context.Context, ws *cdpWebSocket, loadCh <-chan 
 	return errors.New("document did not reach ready file:// state before font wait timeout")
 }
 
-func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) {
-	u, err := url.Parse(wsURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid websocket URL %q: %w", wsURL, err)
+// parseCDPLoopbackWebSocketURL validates that wsURL uses the ws:// scheme and targets
+// an explicit loopback host (127.0.0.1, ::1, or localhost only), returning the parsed URL
+// and normalized host:port dial address.
+func parseCDPLoopbackWebSocketURL(wsURL string) (*url.URL, string, error) {
+	if strings.TrimSpace(wsURL) == "" {
+		return nil, "", errors.New("empty CDP websocket URL")
 	}
 
-	host := u.Host
-	if !strings.Contains(host, ":") {
-		host = net.JoinHostPort(host, "80")
+	u, err := url.Parse(wsURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid websocket URL %q: %w", RedactSecrets(wsURL), err)
+	}
+
+	if u.Scheme != "ws" {
+		return nil, "", fmt.Errorf("refusing non-ws CDP websocket scheme %q", u.Scheme)
+	}
+	if u.User != nil {
+		return nil, "", errors.New("refusing CDP websocket URL with userinfo")
+	}
+
+	hostname := strings.ToLower(u.Hostname())
+	switch hostname {
+	case "127.0.0.1", "::1", "localhost":
+	default:
+		return nil, "", fmt.Errorf("refusing non-loopback CDP websocket host %q", u.Hostname())
+	}
+
+	port := u.Port()
+	if port == "" {
+		port = "80"
+	} else {
+		p, err := strconv.Atoi(port)
+		if err != nil || p < 1 || p > 65535 {
+			return nil, "", fmt.Errorf("invalid CDP websocket port %q", port)
+		}
+	}
+
+	return u, net.JoinHostPort(hostname, port), nil
+}
+
+func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) {
+	u, dialAddr, err := parseCDPLoopbackWebSocketURL(wsURL)
+	if err != nil {
+		return nil, err
 	}
 
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", host)
+	conn, err := d.DialContext(ctx, "tcp", dialAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial CDP host %q: %w", host, err)
+		return nil, fmt.Errorf("failed to dial CDP host %q: %w", dialAddr, err)
 	}
 
 	// Generate 16 random bytes for Sec-WebSocket-Key
@@ -1301,7 +1343,7 @@ func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) 
 		"Upgrade: websocket\r\n"+
 		"Connection: Upgrade\r\n"+
 		"Sec-WebSocket-Key: %s\r\n"+
-		"Sec-WebSocket-Version: 13\r\n\r\n", path, u.Host, secKey)
+		"Sec-WebSocket-Version: 13\r\n\r\n", path, dialAddr, secKey)
 
 	if _, err := conn.Write([]byte(req)); err != nil {
 		conn.Close()
