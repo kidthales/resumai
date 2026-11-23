@@ -538,7 +538,7 @@ func (s *Server) handleRecordAudits(ctx context.Context, raw json.RawMessage) (a
 		FactCheck      *domain.FactCheckReport      `json:"fact_check"`
 		AlignmentCheck *domain.AlignmentCheckReport `json:"alignment_check"`
 	}
-	in, err := decodeArgs[input](raw)
+	in, err := decodeArgsStrict[input](raw)
 	if err != nil {
 		return nil, err
 	}
