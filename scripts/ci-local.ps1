@@ -82,6 +82,150 @@ function Test-Gate0Workflows {
         throw "Workflows directory not found: $TargetWorkflowsDir"
     }
 
+    function Remove-YamlInlineComment {
+        param([string]$Text)
+        $inSingle = $false
+        $inDouble = $false
+        for ($idx = 0; $idx -lt $Text.Length; $idx++) {
+            $ch = $Text[$idx]
+            if ($ch -eq "'" -and -not $inDouble) {
+                if ($inSingle -and ($idx + 1 -lt $Text.Length) -and $Text[$idx + 1] -eq "'") {
+                    $idx++
+                    continue
+                }
+                $inSingle = -not $inSingle
+            } elseif ($ch -eq '"' -and -not $inSingle) {
+                if ($inDouble) {
+                    $bsCount = 0
+                    $k = $idx - 1
+                    while ($k -ge 0 -and $Text[$k] -eq '\') {
+                        $bsCount++
+                        $k--
+                    }
+                    if (($bsCount % 2) -eq 1) {
+                        continue
+                    }
+                }
+                $inDouble = -not $inDouble
+            } elseif ($ch -eq '#' -and -not $inSingle -and -not $inDouble) {
+                if ($idx -eq 0 -or [char]::IsWhiteSpace($Text[$idx - 1])) {
+                    return $Text.Substring(0, $idx).TrimEnd()
+                }
+            }
+        }
+        return $Text
+    }
+
+    function Unquote-YamlScalar {
+        param([string]$Val)
+        $v = $Val.Trim()
+        if ($v.Length -ge 2 -and (($v.StartsWith("'") -and $v.EndsWith("'")) -or ($v.StartsWith('"') -and $v.EndsWith('"')))) {
+            return $v.Substring(1, $v.Length - 2)
+        }
+        return $v
+    }
+
+    function Get-InlineFlowWorkingDir {
+        param(
+            [string]$FlowText,
+            [bool]$RequireRunKey
+        )
+        $pattern = if ($RequireRunKey) {
+            '(?:^|[{,\s])run\s*:\s*\{.*(?:^|[{,\s])working-directory\s*:\s*([^,}\s]+|"[^"]*"|''[^'']*'')'
+        } else {
+            '(?:^|[{,\s])working-directory\s*:\s*([^,}\s]+|"[^"]*"|''[^'']*'')'
+        }
+        if ($FlowText -match $pattern) {
+            return @{
+                Found = $true
+                Value = (Unquote-YamlScalar -Val $matches[1])
+            }
+        }
+        return @{
+            Found = $false
+            Value = ""
+        }
+    }
+
+    function New-DefaultsState {
+        return @{
+            InDefaults     = $false
+            DefaultsIndent = -1
+            ChildIndent    = -1
+            InRun          = $false
+            RunIndent      = -1
+            RunChildIndent = -1
+            HasWorkingDir  = $false
+            WorkingDirVal  = ""
+        }
+    }
+
+    function Enter-DefaultsBlock {
+        param(
+            [hashtable]$State,
+            [int]$Indent,
+            [string]$PropVal
+        )
+        $State.InDefaults = $true
+        $State.DefaultsIndent = $Indent
+        $State.ChildIndent = -1
+        $State.InRun = $false
+        $State.RunIndent = -1
+        $State.RunChildIndent = -1
+        if ($PropVal -ne "") {
+            $flowMatch = Get-InlineFlowWorkingDir -FlowText $PropVal -RequireRunKey $true
+            if ($flowMatch.Found) {
+                $State.HasWorkingDir = $true
+                $State.WorkingDirVal = $flowMatch.Value
+            }
+        }
+    }
+
+    function Step-DefaultsWorkingDir {
+        param(
+            [hashtable]$State,
+            [int]$Indent,
+            [string]$CleanTrimmed
+        )
+        if ($Indent -le $State.DefaultsIndent) {
+            return $false
+        }
+        if ($State.ChildIndent -eq -1) {
+            $State.ChildIndent = $Indent
+        }
+        if ($State.InRun -and $Indent -le $State.RunIndent) {
+            $State.InRun = $false
+            $State.RunIndent = -1
+            $State.RunChildIndent = -1
+        }
+        $colonIdx = $CleanTrimmed.IndexOf(":")
+        if ($colonIdx -gt 0) {
+            $propKey = $CleanTrimmed.Substring(0, $colonIdx).Trim()
+            $propVal = Unquote-YamlScalar -Val $CleanTrimmed.Substring($colonIdx + 1)
+            if (-not $State.InRun -and $Indent -eq $State.ChildIndent -and $propKey -eq "run") {
+                $State.InRun = $true
+                $State.RunIndent = $Indent
+                $State.RunChildIndent = -1
+                if ($propVal -ne "") {
+                    $flowMatch = Get-InlineFlowWorkingDir -FlowText $propVal -RequireRunKey $false
+                    if ($flowMatch.Found) {
+                        $State.HasWorkingDir = $true
+                        $State.WorkingDirVal = $flowMatch.Value
+                    }
+                }
+            } elseif ($State.InRun -and $Indent -gt $State.RunIndent) {
+                if ($State.RunChildIndent -eq -1) {
+                    $State.RunChildIndent = $Indent
+                }
+                if ($Indent -eq $State.RunChildIndent -and $propKey -eq "working-directory") {
+                    $State.HasWorkingDir = $true
+                    $State.WorkingDirVal = $propVal
+                }
+            }
+        }
+        return $true
+    }
+
     # Exact job-id/step-name allowlist with exact required run text (or $null if command is unconstrained)
     $ExactStepAllowlist = @{
         "test-and-build/Install govulncheck"                         = "go install golang.org/x/vuln/cmd/govulncheck@v1.9.0"
@@ -111,11 +255,19 @@ function Test-Gate0Workflows {
         $lines = @(Get-Content -Path $wf.FullName)
         $inJobs = $false
         $jobsIndent = -1
+        $workflowDefaults = New-DefaultsState
+        $workflowHasVerifyJob = $false
+        $workflowVerifyJobNames = @()
+
         $currentJob = ""
         $jobIndent = -1
+        $jobPropIndent = -1
+        $jobDefaults = New-DefaultsState
+
         $inSteps = $false
         $stepsIndent = -1
         $inStepItem = $false
+        $stepItemIndent = -1
         $stepPropIndent = -1
         $currentStepName = ""
         $currentStepHasRun = $false
@@ -123,6 +275,9 @@ function Test-Gate0Workflows {
         $currentStepHasIf = $false
         $currentStepIfVal = ""
         $currentStepContinueOnError = $false
+        $currentStepHasWorkingDir = $false
+        $currentStepWorkingDirVal = ""
+        $currentStepHasEnv = $false
         $inRunBlock = $false
         $runBlockIndent = -1
 
@@ -133,6 +288,8 @@ function Test-Gate0Workflows {
         $jobIfVal = ""
         $jobContinueOnError = $false
         $jobHasStrategy = $false
+        $inJobStrategy = $false
+        $jobStrategyIndent = -1
         $jobStrategyFailFast = ""
 
         for ($i = 0; $i -le $lines.Count; $i++) {
@@ -161,6 +318,12 @@ function Test-Gate0Workflows {
                 }
             }
 
+            $cleanRawLine = if ($i -lt $lines.Count) { Remove-YamlInlineComment -Text $rawLine } else { "" }
+            $cleanTrimmed = $cleanRawLine.Trim()
+            if ($i -lt $lines.Count -and ($cleanTrimmed -eq "" -or ($indent -eq 0 -and $cleanTrimmed -eq "---"))) {
+                continue
+            }
+
             $shouldFlushStep = $false
             if ($inStepItem) {
                 if ($i -eq $lines.Count) {
@@ -169,10 +332,8 @@ function Test-Gate0Workflows {
                     $shouldFlushStep = $true
                 } elseif ($indent -le $stepsIndent -and -not $trimmed.StartsWith("-")) {
                     $shouldFlushStep = $true
-                } elseif ($trimmed.StartsWith("- ") -or $trimmed -eq "-") {
-                    if ($indent -le $stepPropIndent) {
-                        $shouldFlushStep = $true
-                    }
+                } elseif (($trimmed.StartsWith("- ") -or $trimmed -eq "-") -and ($stepItemIndent -eq -1 -or $indent -le $stepItemIndent)) {
+                    $shouldFlushStep = $true
                 }
             }
 
@@ -191,6 +352,12 @@ function Test-Gate0Workflows {
                         if ($currentStepContinueOnError) {
                             $violations += "$($wf.Name): canonical CI step '$currentStepName' in job '$currentJob' must not define 'continue-on-error: true' to preserve single-source contract."
                         }
+                        if ($currentStepHasWorkingDir) {
+                            $violations += "$($wf.Name): canonical CI step '$currentStepName' in job '$currentJob' must not define 'working-directory:' ('$currentStepWorkingDirVal') to preserve single-source contract."
+                        }
+                        if ($currentStepHasEnv) {
+                            $violations += "$($wf.Name): canonical CI step '$currentStepName' in job '$currentJob' must not define 'env:' override to preserve single-source contract."
+                        }
                     }
 
                     if ($isAllowlisted) {
@@ -203,26 +370,39 @@ function Test-Gate0Workflows {
                     }
                 }
                 $inStepItem = $false
+                $stepItemIndent = -1
+                $stepPropIndent = -1
                 $currentStepName = ""
                 $currentStepHasRun = $false
                 $currentStepRunLines = @()
                 $currentStepHasIf = $false
                 $currentStepIfVal = ""
                 $currentStepContinueOnError = $false
+                $currentStepHasWorkingDir = $false
+                $currentStepWorkingDirVal = ""
+                $currentStepHasEnv = $false
             }
 
             $isEndingJob = $false
             if ($currentJob -ne "") {
                 if ($i -eq $lines.Count) {
                     $isEndingJob = $true
-                } elseif ($indent -eq 0 -and $trimmed.EndsWith(":")) {
+                } elseif ($indent -eq 0 -and $cleanTrimmed -match '^[A-Za-z0-9_-]+\s*:') {
                     $isEndingJob = $true
-                } elseif ($jobIndent -ne -1 -and $indent -eq $jobIndent -and -not $trimmed.StartsWith("-") -and $trimmed.EndsWith(":")) {
+                } elseif ($jobIndent -ne -1 -and $indent -eq $jobIndent -and -not $trimmed.StartsWith("-") -and $cleanTrimmed.EndsWith(":")) {
                     $isEndingJob = $true
                 }
             }
 
             if ($isEndingJob) {
+                $isVerifyJob = ($currentJob -in @("test-and-build", "verify")) -or $jobRunsCanonicalCi
+                if ($isVerifyJob) {
+                    $workflowHasVerifyJob = $true
+                    $workflowVerifyJobNames += $currentJob
+                    if ($jobDefaults.HasWorkingDir) {
+                        $violations += "$($wf.Name): verify job '$currentJob' must not define 'defaults.run.working-directory' ('$($jobDefaults.WorkingDirVal)') to preserve single-source contract."
+                    }
+                }
                 if ($currentJob -in @("test-and-build", "verify")) {
                     if ($jobHasSteps -and -not $jobRunsCanonicalCi) {
                         $violations += "$($wf.Name): verify job '$currentJob' defines steps but does not invoke './scripts/ci-local.ps1 -CI'."
@@ -239,19 +419,31 @@ function Test-Gate0Workflows {
                         $violations += "$($wf.Name): verify job '$currentJob' must not set 'strategy.fail-fast: true' to prevent matrix cancellation."
                     }
                 }
+                $currentJob = ""
+                $jobPropIndent = -1
+                $jobDefaults = New-DefaultsState
+                $inJobStrategy = $false
+                $jobStrategyIndent = -1
             }
 
             if ($i -eq $lines.Count) {
                 break
             }
 
-            if ($indent -eq 0 -and $trimmed.EndsWith(":")) {
-                $sectionName = $trimmed.Substring(0, $trimmed.Length - 1).Trim()
+            if ($indent -eq 0 -and $cleanTrimmed -match '^([A-Za-z0-9_-]+)\s*:(.*)$') {
+                $sectionName = $matches[1].Trim()
+                $sectionVal = $matches[2].Trim()
+                $workflowDefaults.InDefaults = $false
                 if ($sectionName -eq "jobs") {
                     $inJobs = $true
                     $jobsIndent = 0
                     $currentJob = ""
                     $inSteps = $false
+                } elseif ($sectionName -eq "defaults") {
+                    $inJobs = $false
+                    $currentJob = ""
+                    $inSteps = $false
+                    Enter-DefaultsBlock -State $workflowDefaults -Indent 0 -PropVal $sectionVal
                 } else {
                     $inJobs = $false
                     $currentJob = ""
@@ -260,19 +452,26 @@ function Test-Gate0Workflows {
                 continue
             }
 
+            if ($workflowDefaults.InDefaults) {
+                [void](Step-DefaultsWorkingDir -State $workflowDefaults -Indent $indent -CleanTrimmed $cleanTrimmed)
+                continue
+            }
+
             if (-not $inJobs) {
                 continue
             }
 
-            if (($jobIndent -eq -1 -or $indent -eq $jobIndent) -and $indent -gt $jobsIndent -and -not $trimmed.StartsWith("-") -and $trimmed.EndsWith(":")) {
-                $jobCandidate = $trimmed.Substring(0, $trimmed.Length - 1).Trim()
+            if (($jobIndent -eq -1 -or $indent -eq $jobIndent) -and $indent -gt $jobsIndent -and -not $trimmed.StartsWith("-") -and $cleanTrimmed.EndsWith(":")) {
+                $jobCandidate = $cleanTrimmed.Substring(0, $cleanTrimmed.Length - 1).Trim()
                 if ($jobIndent -eq -1) {
                     $jobIndent = $indent
                 }
                 if ($indent -eq $jobIndent) {
                     $currentJob = $jobCandidate
+                    $jobPropIndent = -1
                     $inSteps = $false
                     $stepsIndent = -1
+                    $jobDefaults = New-DefaultsState
                     $jobHasSteps = $false
                     $jobUsesReusableWorkflow = ""
                     $jobRunsCanonicalCi = $false
@@ -280,6 +479,8 @@ function Test-Gate0Workflows {
                     $jobIfVal = ""
                     $jobContinueOnError = $false
                     $jobHasStrategy = $false
+                    $inJobStrategy = $false
+                    $jobStrategyIndent = -1
                     $jobStrategyFailFast = ""
                     continue
                 }
@@ -289,96 +490,142 @@ function Test-Gate0Workflows {
                 continue
             }
 
+            if ($inSteps -and $indent -le $stepsIndent -and -not $trimmed.StartsWith("-")) {
+                $inSteps = $false
+            }
+
             if (-not $inSteps -and $indent -gt $jobIndent) {
-                if ($trimmed.StartsWith("uses:")) {
-                    $uVal = $trimmed.Substring(5).Trim()
-                    if (($uVal.StartsWith("'") -and $uVal.EndsWith("'")) -or ($uVal.StartsWith('"') -and $uVal.EndsWith('"'))) {
-                        $uVal = $uVal.Substring(1, $uVal.Length - 2)
+                if ($jobPropIndent -eq -1) {
+                    $jobPropIndent = $indent
+                }
+
+                if ($jobDefaults.InDefaults) {
+                    if (Step-DefaultsWorkingDir -State $jobDefaults -Indent $indent -CleanTrimmed $cleanTrimmed) {
+                        continue
                     }
-                    $jobUsesReusableWorkflow = $uVal
+                    $jobDefaults.InDefaults = $false
+                }
+
+                if ($inJobStrategy -and $indent -le $jobStrategyIndent) {
+                    $inJobStrategy = $false
+                    $jobStrategyIndent = -1
+                }
+
+                if ($indent -eq $jobPropIndent -and $cleanTrimmed -eq "steps:") {
+                    $inSteps = $true
+                    $stepsIndent = $indent
+                    $jobHasSteps = $true
                     continue
                 }
 
-                $colonIdx = $trimmed.IndexOf(":")
-                if ($colonIdx -gt 0) {
-                    $propKey = $trimmed.Substring(0, $colonIdx).Trim()
-                    $propVal = $trimmed.Substring($colonIdx + 1).Trim()
-                    if (($propVal.StartsWith("'") -and $propVal.EndsWith("'")) -or ($propVal.StartsWith('"') -and $propVal.EndsWith('"'))) {
-                        $propVal = $propVal.Substring(1, $propVal.Length - 2)
-                    }
+                if ($indent -eq $jobPropIndent -and $cleanTrimmed.StartsWith("uses:")) {
+                    $jobUsesReusableWorkflow = Unquote-YamlScalar -Val $cleanTrimmed.Substring(5)
+                    continue
+                }
 
-                    if ($propKey -eq "if") {
-                        $jobHasIf = $true
-                        $jobIfVal = $propVal
-                    } elseif ($propKey -eq "continue-on-error") {
-                        if ($propVal -ne "false") {
-                            $jobContinueOnError = $true
+                $colonIdx = $cleanTrimmed.IndexOf(":")
+                if ($colonIdx -gt 0) {
+                    $propKey = $cleanTrimmed.Substring(0, $colonIdx).Trim()
+                    $propVal = Unquote-YamlScalar -Val $cleanTrimmed.Substring($colonIdx + 1)
+
+                    if ($indent -eq $jobPropIndent) {
+                        if ($propKey -eq "defaults") {
+                            Enter-DefaultsBlock -State $jobDefaults -Indent $indent -PropVal $propVal
+                        } elseif ($propKey -eq "if") {
+                            $jobHasIf = $true
+                            $jobIfVal = $propVal
+                        } elseif ($propKey -eq "continue-on-error") {
+                            if ($propVal -ne "false") {
+                                $jobContinueOnError = $true
+                            }
+                        } elseif ($propKey -eq "strategy") {
+                            $jobHasStrategy = $true
+                            $inJobStrategy = $true
+                            $jobStrategyIndent = $indent
                         }
-                    } elseif ($propKey -eq "strategy") {
-                        $jobHasStrategy = $true
-                    } elseif ($propKey -eq "fail-fast") {
+                    } elseif ($inJobStrategy -and $propKey -eq "fail-fast") {
                         $jobStrategyFailFast = $propVal
                     }
                 }
-            }
-
-            if ($indent -gt $jobIndent -and $trimmed -eq "steps:") {
-                $inSteps = $true
-                $stepsIndent = $indent
-                $jobHasSteps = $true
-                continue
-            }
-
-            if ($inSteps -and $indent -le $stepsIndent -and -not $trimmed.StartsWith("-")) {
-                $inSteps = $false
                 continue
             }
 
             if ($inSteps) {
-                $propText = $trimmed
-                if ($trimmed.StartsWith("- ") -or $trimmed -eq "-") {
+                $propText = $cleanTrimmed
+                $isStepStart = $false
+                if (($trimmed.StartsWith("- ") -or $trimmed -eq "-") -and (-not $inStepItem -or $indent -le $stepItemIndent)) {
+                    $isStepStart = $true
                     $inStepItem = $true
+                    $stepItemIndent = $indent
                     $currentStepName = ""
                     $currentStepHasRun = $false
                     $currentStepRunLines = @()
                     $currentStepHasIf = $false
                     $currentStepIfVal = ""
                     $currentStepContinueOnError = $false
-                    $dashIdx = $rawLine.IndexOf("-")
-                    $propText = $trimmed.Substring(1).Trim()
-                    $stepPropIndent = $dashIdx + 2
+                    $currentStepHasWorkingDir = $false
+                    $currentStepWorkingDirVal = ""
+                    $currentStepHasEnv = $false
+                    $dashIdx = $cleanRawLine.IndexOf("-")
+                    $afterDash = $cleanRawLine.Substring($dashIdx + 1)
+                    $propText = $afterDash.Trim()
+                    if ($propText -ne "") {
+                        $leadingAfterDash = $afterDash.Length - $afterDash.TrimStart().Length
+                        $stepPropIndent = $dashIdx + 1 + $leadingAfterDash
+                    } else {
+                        $stepPropIndent = -1
+                    }
                 }
 
                 if ($inStepItem -and $propText -ne "") {
-                    $colonIdx = $propText.IndexOf(":")
-                    if ($colonIdx -gt 0) {
-                        $propKey = $propText.Substring(0, $colonIdx).Trim()
-                        $propVal = $propText.Substring($colonIdx + 1).Trim()
-                        if (($propVal.StartsWith("'") -and $propVal.EndsWith("'")) -or ($propVal.StartsWith('"') -and $propVal.EndsWith('"'))) {
-                            $propVal = $propVal.Substring(1, $propVal.Length - 2)
-                        }
+                    $isDirectStepProp = $false
+                    if ($isStepStart) {
+                        $isDirectStepProp = $true
+                    } elseif ($stepPropIndent -eq -1 -and $indent -gt $stepItemIndent) {
+                        $stepPropIndent = $indent
+                        $isDirectStepProp = $true
+                    } elseif ($indent -eq $stepPropIndent) {
+                        $isDirectStepProp = $true
+                    }
 
-                        if ($propKey -eq "name") {
-                            $currentStepName = $propVal
-                        } elseif ($propKey -eq "run") {
-                            $currentStepHasRun = $true
-                            if ($propVal -eq "|" -or $propVal -eq ">" -or $propVal -eq "|-" -or $propVal -eq ">-" -or $propVal -eq "") {
-                                $inRunBlock = $true
-                                $runBlockIndent = $indent
-                            } else {
-                                $currentStepRunLines += $propVal
-                            }
-                        } elseif ($propKey -eq "if") {
-                            $currentStepHasIf = $true
-                            $currentStepIfVal = $propVal
-                        } elseif ($propKey -eq "continue-on-error") {
-                            if ($propVal -ne "false") {
-                                $currentStepContinueOnError = $true
+                    if ($isDirectStepProp) {
+                        $colonIdx = $propText.IndexOf(":")
+                        if ($colonIdx -gt 0) {
+                            $propKey = $propText.Substring(0, $colonIdx).Trim()
+                            $propVal = Unquote-YamlScalar -Val $propText.Substring($colonIdx + 1)
+
+                            if ($propKey -eq "name") {
+                                $currentStepName = $propVal
+                            } elseif ($propKey -eq "run") {
+                                $currentStepHasRun = $true
+                                if ($propVal -eq "|" -or $propVal -eq ">" -or $propVal -eq "|-" -or $propVal -eq ">-" -or $propVal -eq "") {
+                                    $inRunBlock = $true
+                                    $runBlockIndent = $indent
+                                } else {
+                                    $currentStepRunLines += $propVal
+                                }
+                            } elseif ($propKey -eq "if") {
+                                $currentStepHasIf = $true
+                                $currentStepIfVal = $propVal
+                            } elseif ($propKey -eq "continue-on-error") {
+                                if ($propVal -ne "false") {
+                                    $currentStepContinueOnError = $true
+                                }
+                            } elseif ($propKey -eq "working-directory") {
+                                $currentStepHasWorkingDir = $true
+                                $currentStepWorkingDirVal = $propVal
+                            } elseif ($propKey -eq "env") {
+                                $currentStepHasEnv = $true
                             }
                         }
                     }
                 }
             }
+        }
+
+        if ($workflowDefaults.HasWorkingDir -and $workflowHasVerifyJob) {
+            $verifyList = $workflowVerifyJobNames -join ", "
+            $violations += "$($wf.Name): workflow must not define 'defaults.run.working-directory' ('$($workflowDefaults.WorkingDirVal)') on verify job(s) ($verifyList) to preserve single-source contract."
         }
     }
 
