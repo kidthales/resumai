@@ -239,7 +239,7 @@ func TestHTMLRenderer_Render_OfflineAndSelfContained(t *testing.T) {
 	}
 
 	// Invariant: Strict Content-Security-Policy meta tag for defense-in-depth
-	expectedCSP := `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none';">`
+	expectedCSP := `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; base-uri 'none'; form-action 'none';">`
 	if !strings.Contains(out, expectedCSP) {
 		t.Errorf("rendered HTML missing strict CSP meta tag %q", expectedCSP)
 	}
@@ -443,6 +443,73 @@ func TestHTMLRenderer_Render_PrintLayoutContentWidth(t *testing.T) {
 			}
 			if !strings.Contains(out, "@media print") || !strings.Contains(out, "max-width: none;") {
 				t.Errorf("expected rendered CSS to reset .resume-page max-width to none inside @media print")
+			}
+		})
+	}
+}
+
+func TestHTMLRenderer_Render_ContentSecurityPolicy(t *testing.T) {
+	doc := sampleResumeDocument()
+	pii := samplePIIHeader()
+
+	const cspPrefix = `<meta http-equiv="Content-Security-Policy" content="`
+	requiredDirectives := []string{
+		"default-src 'none';",
+		"style-src 'unsafe-inline';",
+		"font-src data:;",
+		"img-src data:;",
+		"base-uri 'none';",
+		"form-action 'none';",
+	}
+	forbiddenTokens := []string{
+		"script-src",
+		"object-src",
+		"connect-src",
+		"frame-src",
+		"'unsafe-eval'",
+		"*",
+		"http:",
+		"https:",
+		"file:",
+	}
+
+	for _, themeName := range []string{"default", "modern", "classic"} {
+		t.Run("theme_"+themeName, func(t *testing.T) {
+			theme, err := render.LoadEmbeddedTheme(themeName)
+			if err != nil {
+				t.Fatalf("failed to load theme %q: %v", themeName, err)
+			}
+			renderer, err := render.NewHTMLRenderer(theme)
+			if err != nil {
+				t.Fatalf("failed to create renderer for %q: %v", themeName, err)
+			}
+
+			outBytes, err := renderer.Render(doc, pii)
+			if err != nil {
+				t.Fatalf("failed to render HTML for %q: %v", themeName, err)
+			}
+			out := string(outBytes)
+
+			if count := strings.Count(out, cspPrefix); count != 1 {
+				t.Fatalf("expected exactly 1 CSP meta tag, got %d", count)
+			}
+			start := strings.Index(out, cspPrefix)
+			rest := out[start+len(cspPrefix):]
+			end := strings.Index(rest, `">`)
+			if end < 0 {
+				t.Fatalf("unterminated CSP meta tag in rendered HTML")
+			}
+			cspContent := rest[:end]
+
+			for _, directive := range requiredDirectives {
+				if !strings.Contains(cspContent, directive) {
+					t.Errorf("CSP content %q missing required directive %q", cspContent, directive)
+				}
+			}
+			for _, forbidden := range forbiddenTokens {
+				if strings.Contains(cspContent, forbidden) {
+					t.Errorf("CSP content %q unexpectedly contains forbidden token %q", cspContent, forbidden)
+				}
 			}
 		})
 	}

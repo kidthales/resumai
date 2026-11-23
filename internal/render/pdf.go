@@ -896,19 +896,39 @@ func isTruthyEnv(key string) bool {
 	return v != "" && v != "0" && v != "false" && v != "no"
 }
 
-// shouldDisableChromiumSandbox reports whether Chromium renderer sandboxing should be disabled,
-// such as inside containers, CI runners, when running as root, or when explicitly opted out via
-// RESUMAI_CHROMIUM_NO_SANDBOX=1. Desktop hosts (including desktop Linux) keep the native sandbox enabled.
-func shouldDisableChromiumSandbox() bool {
-	_, err := os.Stat("/.dockerenv")
-	return shouldDisableChromiumSandboxFor(runtime.GOOS, os.Geteuid(), err == nil)
+var chromiumSandboxDisableEnvVars = []string{
+	"RESUMAI_CHROMIUM_NO_SANDBOX",
+	"CI",
+	"GITHUB_ACTIONS",
 }
 
-func shouldDisableChromiumSandboxFor(_ string, euid int, hasDockerEnv bool) bool {
-	if isTruthyEnv("RESUMAI_CHROMIUM_NO_SANDBOX") {
-		return true
+func hasDockerEnvFile() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
+}
+
+// shouldDisableChromiumSandboxWithWriter reports whether Chromium renderer sandboxing should be
+// disabled, such as inside containers, CI runners, when running as root, or when explicitly opted
+// out via RESUMAI_CHROMIUM_NO_SANDBOX=1. Desktop hosts (including desktop Linux) keep the native
+// sandbox enabled. When environment overrides disable the sandbox on non-Linux hosts, a diagnostic
+// warning is written to warn if non-nil.
+func shouldDisableChromiumSandboxWithWriter(goos string, euid int, hasDockerEnv bool, warn io.Writer) bool {
+	var envReasons []string
+	for _, key := range chromiumSandboxDisableEnvVars {
+		if isTruthyEnv(key) {
+			envReasons = append(envReasons, key)
+		}
 	}
-	if isTruthyEnv("CI") || isTruthyEnv("GITHUB_ACTIONS") {
+	if len(envReasons) > 0 {
+		normalizedGOOS := strings.ToLower(strings.TrimSpace(goos))
+		if normalizedGOOS != "" && normalizedGOOS != "linux" && warn != nil {
+			_, _ = fmt.Fprintf(
+				warn,
+				"resumai warning: disabling Chromium renderer sandbox on non-Linux host (%s) due to %s\n",
+				normalizedGOOS,
+				strings.Join(envReasons, ", "),
+			)
+		}
 		return true
 	}
 	if hasDockerEnv {
@@ -924,7 +944,11 @@ func shouldDisableChromiumSandboxFor(_ string, euid int, hasDockerEnv bool) bool
 // keeping the native renderer sandbox active on desktop hosts (Windows, macOS, and desktop Linux)
 // while passing necessary container/CI sandbox and shared-memory flags when sandboxing is disabled.
 func chromiumLaunchArgs(userDataDir string) []string {
-	return chromiumLaunchArgsFor(userDataDir, runtime.GOOS, shouldDisableChromiumSandbox())
+	return chromiumLaunchArgsWithWriter(userDataDir, runtime.GOOS, os.Geteuid(), hasDockerEnvFile(), os.Stderr)
+}
+
+func chromiumLaunchArgsWithWriter(userDataDir, goos string, euid int, hasDockerEnv bool, warn io.Writer) []string {
+	return chromiumLaunchArgsFor(userDataDir, goos, shouldDisableChromiumSandboxWithWriter(goos, euid, hasDockerEnv, warn))
 }
 
 func chromiumLaunchArgsFor(userDataDir, goos string, disableSandbox bool) []string {
@@ -1019,94 +1043,118 @@ func extractDevToolsPort(r io.Reader, timeout time.Duration) (int, error) {
 	}
 }
 
+type cdpTargetInfo struct {
+	ID                   string `json:"id"`
+	Type                 string `json:"type"`
+	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+}
+
+const maxCDPDiscoveryBodyBytes = 1 << 20
+
+func fetchCDPDiscoveryJSON(ctx context.Context, client *http.Client, method string, port int, reqPath, label string, dst any) error {
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d%s", port, reqPath)
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create %s request: %w", label, err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s returned HTTP %d", label, resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxCDPDiscoveryBodyBytes)).Decode(dst); err != nil {
+		return fmt.Errorf("failed to decode %s response: %w", label, err)
+	}
+	return nil
+}
+
+func fetchPageWebSocketURLOnce(ctx context.Context, client *http.Client, port int) (string, error) {
+	var targets []cdpTargetInfo
+	if err := fetchCDPDiscoveryJSON(ctx, client, http.MethodGet, port, "/json/list", "/json/list", &targets); err != nil {
+		return "", err
+	}
+
+	for _, t := range targets {
+		if t.Type == "page" && t.WebSocketDebuggerURL != "" {
+			return t.WebSocketDebuggerURL, nil
+		}
+	}
+
+	// If targets exist without a page target, try to create one via PUT /json/new.
+	var newTarget cdpTargetInfo
+	if err := fetchCDPDiscoveryJSON(ctx, client, http.MethodPut, port, "/json/new?about:blank", "/json/new", &newTarget); err != nil {
+		return "", err
+	}
+	if newTarget.WebSocketDebuggerURL == "" {
+		return "", errors.New("/json/new response missing webSocketDebuggerUrl")
+	}
+	return newTarget.WebSocketDebuggerURL, nil
+}
+
 // getPageWebSocketURL queries Chromium's HTTP discovery API to find an active page target,
 // retrying briefly with backoff to accommodate process startup on loaded hosts.
 func getPageWebSocketURL(ctx context.Context, port int) (string, error) {
-	endpoint := fmt.Sprintf("http://127.0.0.1:%d/json/list", port)
+	return getPageWebSocketURLWithRetry(ctx, port, 10*time.Second, 100*time.Millisecond)
+}
+
+func getPageWebSocketURLWithRetry(ctx context.Context, port int, maxWait, backoff time.Duration) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if backoff <= 0 {
+		backoff = 100 * time.Millisecond
+	}
+
 	client := &http.Client{Timeout: 3 * time.Second}
 
 	var lastErr error
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(maxWait)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
 
-	for time.Now().Before(deadline) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err == nil {
-			resp, err := client.Do(req)
-			if err == nil {
-				func() {
-					defer resp.Body.Close()
-					if resp.StatusCode == http.StatusOK {
-						var targets []struct {
-							ID                   string `json:"id"`
-							Type                 string `json:"type"`
-							WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-						}
-						if err := json.NewDecoder(resp.Body).Decode(&targets); err == nil {
-							for _, t := range targets {
-								if t.Type == "page" && t.WebSocketDebuggerURL != "" {
-									lastErr = nil
-									return
-								}
-							}
-						}
-					}
-				}()
-				// If we found a valid target, re-fetch or decode directly
-			} else {
-				lastErr = err
-			}
+	for {
+		wsURL, err := fetchPageWebSocketURLOnce(ctx, client, port)
+		if err == nil && wsURL != "" {
+			return wsURL, nil
+		}
+		if err != nil {
+			lastErr = err
 		}
 
-		// Direct attempt to read and return target
-		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err == nil {
-			resp2, err := client.Do(req2)
-			if err == nil {
-				defer resp2.Body.Close()
-				if resp2.StatusCode == http.StatusOK {
-					var targets []struct {
-						ID                   string `json:"id"`
-						Type                 string `json:"type"`
-						WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-					}
-					if err := json.NewDecoder(resp2.Body).Decode(&targets); err == nil {
-						for _, t := range targets {
-							if t.Type == "page" && t.WebSocketDebuggerURL != "" {
-								return t.WebSocketDebuggerURL, nil
-							}
-						}
-						// If targets exists but no page, try to create one via /json/new
-						newEndpoint := fmt.Sprintf("http://127.0.0.1:%d/json/new?about:blank", port)
-						putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, newEndpoint, nil)
-						if err == nil {
-							newResp, err := client.Do(putReq)
-							if err == nil {
-								defer newResp.Body.Close()
-								var newTarget struct {
-									WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-								}
-								if err := json.NewDecoder(newResp.Body).Decode(&newTarget); err == nil && newTarget.WebSocketDebuggerURL != "" {
-									return newTarget.WebSocketDebuggerURL, nil
-								}
-							}
-						}
-					}
-				}
-			} else {
-				lastErr = err
-			}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		if !time.Now().Before(deadline) {
+			break
 		}
 
+		wait := backoff
+		if remaining := time.Until(deadline); remaining < wait {
+			wait = remaining
+		}
+		if wait <= 0 {
+			break
+		}
+
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return "", ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if lastErr != nil {
 		return "", fmt.Errorf("retries exhausted connecting to /json/list: %w", lastErr)
 	}
@@ -1147,7 +1195,7 @@ type cdpError struct {
 }
 
 func (e *cdpError) Error() string {
-	return fmt.Sprintf("CDP error %d: %s", e.Code, e.Message)
+	return fmt.Sprintf("CDP error %d: %s", e.Code, RedactSecrets(e.Message))
 }
 
 func filePathToURI(path string) string {
@@ -1266,21 +1314,75 @@ func awaitDocumentAndFonts(ctx context.Context, ws *cdpWebSocket, loadCh <-chan 
 	return errors.New("document did not reach ready file:// state before font wait timeout")
 }
 
-func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) {
+// parseCDPLoopbackWebSocketURL validates that wsURL uses the ws:// scheme and targets
+// an explicit loopback host (127.0.0.1, ::1, or localhost only), returning the parsed URL
+// and normalized literal loopback host:port dial address (normalizing localhost to 127.0.0.1).
+func parseCDPLoopbackWebSocketURL(wsURL string) (*url.URL, string, error) {
+	if strings.TrimSpace(wsURL) == "" {
+		return nil, "", errors.New("empty CDP websocket URL")
+	}
+
 	u, err := url.Parse(wsURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid websocket URL %q: %w", wsURL, err)
+		var uerr *url.Error
+		if errors.As(err, &uerr) && uerr != nil {
+			innerMsg := ""
+			if uerr.Err != nil {
+				innerMsg = RedactSecrets(uerr.Err.Error())
+			}
+			return nil, "", fmt.Errorf("invalid websocket URL %q: %w", RedactSecrets(wsURL), &url.Error{
+				Op:  uerr.Op,
+				URL: RedactSecrets(uerr.URL),
+				Err: errors.New(innerMsg),
+			})
+		}
+		return nil, "", fmt.Errorf("invalid websocket URL %q: %s", RedactSecrets(wsURL), RedactSecrets(err.Error()))
 	}
 
-	host := u.Host
-	if !strings.Contains(host, ":") {
-		host = net.JoinHostPort(host, "80")
+	if u.Scheme != "ws" {
+		return nil, "", fmt.Errorf("refusing non-ws CDP websocket scheme %q", u.Scheme)
+	}
+	if u.User != nil {
+		return nil, "", errors.New("refusing CDP websocket URL with userinfo")
 	}
 
+	hostname := strings.ToLower(u.Hostname())
+	dialHost := hostname
+	switch hostname {
+	case "127.0.0.1", "::1":
+	case "localhost":
+		dialHost = "127.0.0.1"
+	default:
+		return nil, "", fmt.Errorf("refusing non-loopback CDP websocket host %q", u.Hostname())
+	}
+
+	port := u.Port()
+	if port == "" {
+		port = "80"
+	} else {
+		p, err := strconv.Atoi(port)
+		if err != nil || p < 1 || p > 65535 {
+			return nil, "", fmt.Errorf("invalid CDP websocket port %q", port)
+		}
+	}
+
+	return u, net.JoinHostPort(dialHost, port), nil
+}
+
+func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) {
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", host)
+	return dialCDPWebSocketWithDialer(ctx, wsURL, d.DialContext)
+}
+
+func dialCDPWebSocketWithDialer(ctx context.Context, wsURL string, dialContext func(context.Context, string, string) (net.Conn, error)) (*cdpWebSocket, error) {
+	u, dialAddr, err := parseCDPLoopbackWebSocketURL(wsURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial CDP host %q: %w", host, err)
+		return nil, err
+	}
+
+	conn, err := dialContext(ctx, "tcp", dialAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial CDP host %q: %w", dialAddr, err)
 	}
 
 	// Generate 16 random bytes for Sec-WebSocket-Key
@@ -1301,7 +1403,7 @@ func dialCDPWebSocket(ctx context.Context, wsURL string) (*cdpWebSocket, error) 
 		"Upgrade: websocket\r\n"+
 		"Connection: Upgrade\r\n"+
 		"Sec-WebSocket-Key: %s\r\n"+
-		"Sec-WebSocket-Version: 13\r\n\r\n", path, u.Host, secKey)
+		"Sec-WebSocket-Version: 13\r\n\r\n", path, dialAddr, secKey)
 
 	if _, err := conn.Write([]byte(req)); err != nil {
 		conn.Close()

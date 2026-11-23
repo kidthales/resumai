@@ -90,7 +90,7 @@ func (r *HTMLRenderer) renderDocument(sb *strings.Builder, doc *ResumeDocument) 
 	sb.WriteString("<head>\n")
 	sb.WriteString("  <meta charset=\"utf-8\">\n")
 	sb.WriteString("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n")
-	sb.WriteString("  <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none';\">\n")
+	sb.WriteString("  <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; base-uri 'none'; form-action 'none';\">\n")
 	fmt.Fprintf(sb, "  <title>%s - Resume</title>\n", html.EscapeString(doc.Header.FullName))
 
 	// Embedded CSS Stylesheet
