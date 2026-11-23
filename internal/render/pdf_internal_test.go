@@ -161,6 +161,157 @@ func TestPageGeometryPX(t *testing.T) {
 	})
 }
 
+func TestPageContentWidthPX(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      PageConfig
+		expected float64
+	}{
+		{
+			name:     "empty defaults to US letter with 0.5in margins",
+			cfg:      PageConfig{},
+			expected: 720.0,
+		},
+		{
+			name: "US letter custom margins",
+			cfg: PageConfig{
+				Size:        "letter",
+				MarginLeft:  "0.75in",
+				MarginRight: "1in",
+			},
+			expected: 648.0,
+		},
+		{
+			name: "A4 with 20mm margins",
+			cfg: PageConfig{
+				Size:        "A4",
+				MarginLeft:  "20mm",
+				MarginRight: "20mm",
+			},
+			expected: (210.0 - 40.0) * DefaultDPI / 25.4,
+		},
+		{
+			name: "excessive margins clamp to 1px minimum",
+			cfg: PageConfig{
+				Size:        "letter",
+				MarginLeft:  "5in",
+				MarginRight: "5in",
+			},
+			expected: 1.0,
+		},
+		{
+			name: "non-finite or negative margins fallback to defaults",
+			cfg: PageConfig{
+				Size:        "letter",
+				MarginLeft:  "NaNin",
+				MarginRight: "-Infin",
+			},
+			expected: 720.0,
+		},
+		{
+			name: "overflowing margin string falls back to default",
+			cfg: PageConfig{
+				Size:        "letter",
+				MarginLeft:  "1e308in",
+				MarginRight: "-1in",
+			},
+			expected: 720.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pageContentWidthPX(tt.cfg)
+			if math.IsNaN(got) || math.IsInf(got, 0) || math.Abs(got-tt.expected) > 0.01 {
+				t.Errorf("pageContentWidthPX(%+v) = %v; want %v", tt.cfg, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseDimensionToPX_RejectsNonFiniteAndNegative(t *testing.T) {
+	cases := []string{"NaNin", "Infin", "-Infin", "-1in", "1e308in", "1e307in"}
+	for _, c := range cases {
+		if got := parseDimensionToPX(c, 48.0); got != 48.0 {
+			t.Errorf("parseDimensionToPX(%q, 48.0) = %v; want 48.0", c, got)
+		}
+		if got := parseDimensionToInches(c, 0.5); got != 0.5 {
+			t.Errorf("parseDimensionToInches(%q, 0.5) = %v; want 0.5", c, got)
+		}
+	}
+}
+
+func TestTelemetryGuards_DegenerateVerticalMargins(t *testing.T) {
+	for _, margin := range []string{"5.5in", "6in"} {
+		cfg := PageConfig{
+			Size:         "letter",
+			MarginTop:    margin,
+			MarginBottom: margin,
+		}
+		telemetry := CalculateLayoutTelemetry(500.0, 0, 1, nil, cfg)
+		if telemetry.PageCount != 1 || telemetry.OverflowPX != 0 {
+			t.Errorf("margin=%s: got PageCount=%d OverflowPX=%v; want 1, 0", margin, telemetry.PageCount, telemetry.OverflowPX)
+		}
+		if math.IsNaN(telemetry.LastPageFillRatio) || math.IsInf(telemetry.LastPageFillRatio, 0) {
+			t.Errorf("margin=%s: non-finite LastPageFillRatio=%v", margin, telemetry.LastPageFillRatio)
+		}
+	}
+
+	script := buildTelemetryScript(1, PageConfig{Size: "letter", MarginTop: "6in", MarginBottom: "6in"})
+	if !strings.Contains(script, "Number.isFinite(rawUsableHeight) && rawUsableHeight >= 1.0") {
+		t.Errorf("buildTelemetryScript missing finite usableHeight >= 1.0 guard")
+	}
+}
+
+func TestPageViewportPX(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        PageConfig
+		wantWidth  int
+		wantHeight int
+	}{
+		{
+			name:       "US letter default",
+			cfg:        PageConfig{},
+			wantWidth:  720,
+			wantHeight: 960,
+		},
+		{
+			name: "A4 with 20mm margins rounds up to integer viewport",
+			cfg: PageConfig{
+				Size:         "a4",
+				MarginTop:    "20mm",
+				MarginBottom: "20mm",
+				MarginLeft:   "20mm",
+				MarginRight:  "20mm",
+			},
+			wantWidth:  int(math.Ceil((210.0 - 40.0) * DefaultDPI / 25.4)),
+			wantHeight: int(math.Ceil((297.0 - 40.0) * DefaultDPI / 25.4)),
+		},
+		{
+			name: "excessive vertical margins fallback to full page height",
+			cfg: PageConfig{
+				Size:         "letter",
+				MarginTop:    "6in",
+				MarginBottom: "6in",
+				MarginLeft:   "5in",
+				MarginRight:  "5in",
+			},
+			wantWidth:  1,
+			wantHeight: 1056,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotW, gotH := pageViewportPX(tt.cfg)
+			if gotW != tt.wantWidth || gotH != tt.wantHeight {
+				t.Errorf("pageViewportPX(%+v) = (%d, %d); want (%d, %d)", tt.cfg, gotW, gotH, tt.wantWidth, tt.wantHeight)
+			}
+		})
+	}
+}
+
 func TestChromiumLaunchArgs(t *testing.T) {
 	t.Run("headless base flags", func(t *testing.T) {
 		args := chromiumLaunchArgs("/tmp/resumai-test-profile")

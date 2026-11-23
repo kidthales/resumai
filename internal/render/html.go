@@ -200,11 +200,16 @@ func (r *HTMLRenderer) renderCSS(sb *strings.Builder) {
     }
     .resume-page {
       width: 100%%;
-      max-width: 8.5in;
+      max-width: %.2fpx;
       margin: 0 auto;
       background: %s;
     }
-`, t.Colors.Background, t.Colors.Primary, t.Typography.FontFamilyPrimary, t.Typography.FontSizeBase, t.Typography.LineHeight, t.Colors.Background)
+    @media print {
+      .resume-page {
+        max-width: none;
+      }
+    }
+`, t.Colors.Background, t.Colors.Primary, t.Typography.FontFamilyPrimary, t.Typography.FontSizeBase, t.Typography.LineHeight, pageContentWidthPX(t.Page), t.Colors.Background)
 
 	// Typography & Section Elements
 	headerAlign := "left"
