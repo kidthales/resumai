@@ -124,6 +124,20 @@ func validTestAudits() AuditBundle {
 	}
 }
 
+func validTestAuditsForApp(t *testing.T, app *JobApplication) AuditBundle {
+	t.Helper()
+	if app == nil || app.Draft == nil {
+		t.Fatalf("validTestAuditsForApp requires application with saved draft")
+	}
+	draftHash, err := app.Draft.ContentSHA256()
+	if err != nil {
+		t.Fatalf("Draft.ContentSHA256 failed: %v", err)
+	}
+	bundle := validTestAudits()
+	bundle.DraftSHA256 = draftHash
+	return bundle
+}
+
 func TestJobApplicationFSM_HappyPathToSubmittedAndImmutability(t *testing.T) {
 	resolver := newTestResolver()
 	app, err := NewTriagedApplication("app-1", validTestDossier())
@@ -141,7 +155,7 @@ func TestJobApplicationFSM_HappyPathToSubmittedAndImmutability(t *testing.T) {
 		t.Fatalf("expected StateDrafted, got %q", app.State)
 	}
 
-	if err := app.RecordAudits(validTestAudits()); err != nil {
+	if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
 		t.Fatalf("RecordAudits failed: %v", err)
 	}
 	if app.State != StateAudited {
@@ -190,7 +204,7 @@ func TestJobApplicationFSM_HappyPathToSubmittedAndImmutability(t *testing.T) {
 		{"ApplyTriage", func() error { return app.ApplyTriage(validTestDossier()) }},
 		{"PassRole", func() error { return app.PassRole("too late") }},
 		{"SaveDraft", func() error { return app.SaveDraft(validTestDraft(), resolver) }},
-		{"RecordAudits", func() error { return app.RecordAudits(validTestAudits()) }},
+		{"RecordAudits", func() error { return app.RecordAudits(validTestAuditsForApp(t, app)) }},
 		{"PromoteReady", func() error { return app.PromoteReady(resolver) }},
 		{"MarkExported", func() error { return app.MarkExported(pii, export) }},
 		{"MarkSubmitted", func() error { return app.MarkSubmitted(bundleHash, "brief.md") }},
@@ -307,19 +321,26 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 	t.Run("incomplete audits rejected", func(t *testing.T) {
 		app, _ := NewTriagedApplication("app-audit", validTestDossier())
 		_ = app.SaveDraft(validTestDraft(), resolver)
+		draftHash, err := app.Draft.ContentSHA256()
+		if err != nil {
+			t.Fatalf("Draft.ContentSHA256: %v", err)
+		}
 
 		badBundles := []AuditBundle{
-			{FactCheck: nil, AlignmentCheck: validTestAudits().AlignmentCheck},
-			{FactCheck: validTestAudits().FactCheck, AlignmentCheck: nil},
+			{DraftSHA256: draftHash, FactCheck: nil, AlignmentCheck: validTestAudits().AlignmentCheck},
+			{DraftSHA256: draftHash, FactCheck: validTestAudits().FactCheck, AlignmentCheck: nil},
 			{
+				DraftSHA256:    draftHash,
 				FactCheck:      &FactCheckReport{CriticAgent: "wrong-agent", Summary: "ok"},
 				AlignmentCheck: validTestAudits().AlignmentCheck,
 			},
 			{
+				DraftSHA256:    draftHash,
 				FactCheck:      &FactCheckReport{CriticAgent: CriticFactChecker, Summary: ""},
 				AlignmentCheck: validTestAudits().AlignmentCheck,
 			},
 			{
+				DraftSHA256: draftHash,
 				FactCheck: &FactCheckReport{
 					CriticAgent: CriticFactChecker,
 					Summary:     "has bad severity",
@@ -327,6 +348,16 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 						{Severity: "critical", Finding: "invalid enum"},
 					},
 				},
+				AlignmentCheck: validTestAudits().AlignmentCheck,
+			},
+			{
+				DraftSHA256:    "",
+				FactCheck:      validTestAudits().FactCheck,
+				AlignmentCheck: validTestAudits().AlignmentCheck,
+			},
+			{
+				DraftSHA256:    "   \t\n",
+				FactCheck:      validTestAudits().FactCheck,
 				AlignmentCheck: validTestAudits().AlignmentCheck,
 			},
 		}
@@ -342,7 +373,7 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 		app, _ := NewTriagedApplication("app-high", validTestDossier())
 		_ = app.SaveDraft(validTestDraft(), resolver)
 
-		audits := validTestAudits()
+		audits := validTestAuditsForApp(t, app)
 		audits.FactCheck.Discrepancies = []FactualDiscrepancy{
 			{BulletID: "b-1", FactID: "fact-verified", Severity: SeverityHigh, Finding: "Metric inflated from 42% to 90%"},
 		}
@@ -383,7 +414,7 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 				if err := app.SaveDraft(draft, resolver); err != nil {
 					t.Fatalf("SaveDraft should allow draft-stage metric placeholder, got %v", err)
 				}
-				if err := app.RecordAudits(validTestAudits()); err != nil {
+				if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
 					t.Fatalf("RecordAudits failed: %v", err)
 				}
 				if err := app.PromoteReady(resolver); !errors.Is(err, ErrUnverifiedFactOrPlaceholder) {
@@ -399,7 +430,7 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 			if err := app.SaveDraft(validTestDraft(fid), resolver); err != nil {
 				t.Fatalf("SaveDraft(%s) should succeed at Drafted stage, got %v", fid, err)
 			}
-			if err := app.RecordAudits(validTestAudits()); err != nil {
+			if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
 				t.Fatalf("RecordAudits failed: %v", err)
 			}
 			if err := app.PromoteReady(resolver); !errors.Is(err, ErrUnverifiedFactOrPlaceholder) {
@@ -411,12 +442,14 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 	t.Run("low/medium discrepancy does not block promotion when facts verified", func(t *testing.T) {
 		app, _ := NewTriagedApplication("app-low-med", validTestDossier())
 		_ = app.SaveDraft(validTestDraft("fact-verified"), resolver)
-		audits := validTestAudits()
+		audits := validTestAuditsForApp(t, app)
 		audits.FactCheck.Discrepancies = []FactualDiscrepancy{
 			{BulletID: "b-1", Severity: SeverityLow, Finding: "Minor phrasing tweak suggested"},
 			{BulletID: "b-1", Severity: SeverityMedium, Finding: "Clarify scope"},
 		}
-		_ = app.RecordAudits(audits)
+		if err := app.RecordAudits(audits); err != nil {
+			t.Fatalf("RecordAudits failed: %v", err)
+		}
 		if err := app.PromoteReady(resolver); err != nil {
 			t.Fatalf("expected promotion to succeed with only low/medium discrepancies, got %v", err)
 		}
@@ -450,7 +483,7 @@ func TestJobApplicationFSM_AuditAndPromoteGuards(t *testing.T) {
 				if err := app.SaveDraft(validTestDraft("fact-verified"), resolver); err != nil {
 					t.Fatalf("SaveDraft failed: %v", err)
 				}
-				audits := validTestAudits()
+				audits := validTestAuditsForApp(t, app)
 				tc.mutate(&audits)
 				if err := app.RecordAudits(audits); err != nil {
 					t.Fatalf("RecordAudits failed: %v", err)
@@ -476,7 +509,9 @@ func TestJobApplicationFSM_ExportAndTransitionGuards(t *testing.T) {
 	}
 
 	_ = app.SaveDraft(validTestDraft(), resolver)
-	_ = app.RecordAudits(validTestAudits())
+	if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
+		t.Fatalf("RecordAudits: %v", err)
+	}
 	_ = app.PromoteReady(resolver)
 
 	validExport := ExportRecord{
@@ -544,7 +579,7 @@ func TestJobApplicationFSM_RedraftFromReadyToRenderAndExported(t *testing.T) {
 	if err := app.SaveDraft(validTestDraft(), resolver); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
 	}
-	if err := app.RecordAudits(validTestAudits()); err != nil {
+	if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
 		t.Fatalf("RecordAudits: %v", err)
 	}
 	if err := app.PromoteReady(resolver); err != nil {
@@ -558,7 +593,7 @@ func TestJobApplicationFSM_RedraftFromReadyToRenderAndExported(t *testing.T) {
 	}
 
 	// Re-audit, promote, and export -> Exported -> SaveDraft clears Audits & Export.
-	if err := app.RecordAudits(validTestAudits()); err != nil {
+	if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
 		t.Fatalf("RecordAudits after redraft: %v", err)
 	}
 	if err := app.PromoteReady(resolver); err != nil {
@@ -586,28 +621,76 @@ func TestJobApplicationFSM_RedraftFromReadyToRenderAndExported(t *testing.T) {
 
 func TestJobApplicationFSM_AuditDraftHashBinding(t *testing.T) {
 	resolver := newTestResolver()
-	app, _ := NewTriagedApplication("app-hash-bind", validTestDossier())
-	if err := app.SaveDraft(validTestDraft("fact-verified"), resolver); err != nil {
-		t.Fatalf("SaveDraft: %v", err)
+	newDraftedApp := func(t *testing.T) (*JobApplication, string) {
+		t.Helper()
+		app, err := NewTriagedApplication("app-hash-bind", validTestDossier())
+		if err != nil {
+			t.Fatalf("NewTriagedApplication: %v", err)
+		}
+		if err := app.SaveDraft(validTestDraft("fact-verified"), resolver); err != nil {
+			t.Fatalf("SaveDraft: %v", err)
+		}
+		hash, err := app.Draft.ContentSHA256()
+		if err != nil {
+			t.Fatalf("ContentSHA256: %v", err)
+		}
+		return app, hash
 	}
 
-	// Passing a wrong draft_sha256 to RecordAudits must be rejected.
-	badAudit := validTestAudits()
-	badAudit.DraftSHA256 = strings.Repeat("0", 64)
-	if err := app.RecordAudits(badAudit); !errors.Is(err, ErrIncompleteAudit) {
-		t.Fatalf("expected ErrIncompleteAudit on mismatched draft_sha256, got %v", err)
+	_, wantHash := newDraftedApp(t)
+	cases := []struct {
+		name        string
+		draftSHA256 string
+		wantErr     error
+		wantState   ApplicationState
+	}{
+		{name: "empty draft_sha256 rejected", draftSHA256: "", wantErr: ErrIncompleteAudit, wantState: StateDrafted},
+		{name: "whitespace draft_sha256 rejected", draftSHA256: "  \t\n ", wantErr: ErrIncompleteAudit, wantState: StateDrafted},
+		{name: "mismatched draft_sha256 rejected", draftSHA256: strings.Repeat("0", 64), wantErr: ErrIncompleteAudit, wantState: StateDrafted},
+		{name: "malformed non-hex draft_sha256 rejected", draftSHA256: "not-a-sha256", wantErr: ErrIncompleteAudit, wantState: StateDrafted},
+		{name: "exact matching draft_sha256 accepted", draftSHA256: wantHash, wantErr: nil, wantState: StateAudited},
+		{name: "uppercase whitespace-padded draft_sha256 accepted and normalized", draftSHA256: "  " + strings.ToUpper(wantHash) + "\n", wantErr: nil, wantState: StateAudited},
 	}
 
-	// Recording without explicit draft_sha256 computes and stores current draft hash.
-	if err := app.RecordAudits(validTestAudits()); err != nil {
-		t.Fatalf("RecordAudits: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app, _ := newDraftedApp(t)
+			audit := validTestAudits()
+			audit.DraftSHA256 = tc.draftSHA256
+			err := app.RecordAudits(audit)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+				}
+				if app.State != tc.wantState || app.Audits != nil {
+					t.Fatalf("expected state=%q with nil Audits on rejection, got state=%q audits=%+v", tc.wantState, app.State, app.Audits)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RecordAudits unexpected error: %v", err)
+			}
+			if app.State != tc.wantState {
+				t.Fatalf("expected state=%q, got %q", tc.wantState, app.State)
+			}
+			if app.Audits == nil || app.Audits.DraftSHA256 != wantHash {
+				t.Fatalf("expected normalized Audits.DraftSHA256=%q, got %+v", wantHash, app.Audits)
+			}
+		})
 	}
-	wantHash, err := app.Draft.ContentSHA256()
-	if err != nil {
-		t.Fatalf("ContentSHA256: %v", err)
+
+	// Re-recording from StateAudited with empty draft_sha256 must fail and preserve prior audits.
+	app, _ := newDraftedApp(t)
+	if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
+		t.Fatalf("initial RecordAudits: %v", err)
 	}
-	if app.Audits.DraftSHA256 != wantHash {
-		t.Fatalf("expected Audits.DraftSHA256=%q, got %q", wantHash, app.Audits.DraftSHA256)
+	emptyAudit := validTestAudits()
+	emptyAudit.DraftSHA256 = ""
+	if err := app.RecordAudits(emptyAudit); !errors.Is(err, ErrIncompleteAudit) {
+		t.Fatalf("expected ErrIncompleteAudit when re-recording with empty draft_sha256, got %v", err)
+	}
+	if app.State != StateAudited || app.Audits == nil || app.Audits.DraftSHA256 != wantHash {
+		t.Fatalf("expected existing StateAudited and DraftSHA256=%q preserved, got state=%q audits=%+v", wantHash, app.State, app.Audits)
 	}
 
 	// Mutating the draft in-memory after RecordAudits without re-auditing must block PromoteReady.
@@ -617,8 +700,10 @@ func TestJobApplicationFSM_AuditDraftHashBinding(t *testing.T) {
 	}
 
 	// Clearing DraftSHA256 on Audits must also block PromoteReady.
-	_ = app.SaveDraft(validTestDraft("fact-verified"), resolver)
-	_ = app.RecordAudits(validTestAudits())
+	app, _ = newDraftedApp(t)
+	if err := app.RecordAudits(validTestAuditsForApp(t, app)); err != nil {
+		t.Fatalf("RecordAudits: %v", err)
+	}
 	app.Audits.DraftSHA256 = ""
 	if err := app.PromoteReady(resolver); !errors.Is(err, ErrIncompleteAudit) {
 		t.Fatalf("expected ErrIncompleteAudit on PromoteReady with empty DraftSHA256, got %v", err)
