@@ -1104,9 +1104,6 @@ func getPageWebSocketURL(ctx context.Context, port int) (string, error) {
 }
 
 func getPageWebSocketURLWithRetry(ctx context.Context, port int, maxWait, backoff time.Duration) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
 	if backoff <= 0 {
 		backoff = 100 * time.Millisecond
 	}
@@ -1114,12 +1111,15 @@ func getPageWebSocketURLWithRetry(ctx context.Context, port int, maxWait, backof
 	client := &http.Client{Timeout: 3 * time.Second}
 
 	var lastErr error
+	// Keep retry exhaustion bound independent from ctx.Deadline() so a context timeout
+	// always resolves via ctx.Done()/ctx.Err() instead of racing the retry loop timer.
 	deadline := time.Now().Add(maxWait)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+
 		wsURL, err := fetchPageWebSocketURLOnce(ctx, client, port)
 		if err == nil && wsURL != "" {
 			return wsURL, nil
