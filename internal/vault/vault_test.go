@@ -2,8 +2,10 @@ package vault_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kidthales/resumai/internal/domain"
@@ -525,7 +527,12 @@ func TestApplicationFSMFieldsPersistence(t *testing.T) {
 	if err := app.SaveDraft(draft, v); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
 	}
+	draftSHA, err := app.Draft.ContentSHA256()
+	if err != nil {
+		t.Fatalf("Draft.ContentSHA256: %v", err)
+	}
 	if err := app.RecordAudits(domain.AuditBundle{
+		DraftSHA256:    draftSHA,
 		FactCheck:      &domain.FactCheckReport{Summary: "All verified", Passed: true},
 		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "Aligned", Passed: true},
 	}); err != nil {
@@ -596,5 +603,139 @@ func TestApplicationFSMFieldsPersistence(t *testing.T) {
 	}
 	if err := v.DeleteApplication(ctx, "app-nonexistent"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound deleting missing application, got %v", err)
+	}
+}
+
+func TestStringSliceReadPathErrorPropagation(t *testing.T) {
+	v := newTestVault(t)
+	ctx := context.Background()
+
+	org := &domain.Organization{ID: "org-corrupt", Name: "Corrupt Corp"}
+	if err := v.SaveOrganization(ctx, org); err != nil {
+		t.Fatalf("save org: %v", err)
+	}
+	role := &domain.Role{ID: "role-corrupt", OrgID: org.ID, Title: "Engineer"}
+	if err := v.SaveRole(ctx, role); err != nil {
+		t.Fatalf("save role: %v", err)
+	}
+	fact := &domain.CareerFact{
+		ID:             "fact-corrupt",
+		RoleID:         role.ID,
+		Headline:       "Built thing",
+		EpistemicState: domain.EpistemicVerified,
+	}
+	if err := v.SaveCareerFact(ctx, fact); err != nil {
+		t.Fatalf("save fact: %v", err)
+	}
+	arch := &domain.Archetype{ID: "arch-corrupt", Name: "Systems"}
+	if err := v.SaveArchetype(ctx, arch); err != nil {
+		t.Fatalf("save archetype: %v", err)
+	}
+
+	assertWrappedSyntaxErr := func(t *testing.T, err error, wantCtx string) {
+		t.Helper()
+		if err == nil {
+			t.Fatalf("expected error containing %q, got nil", wantCtx)
+		}
+		if !strings.Contains(err.Error(), wantCtx) {
+			t.Errorf("expected error containing %q, got %q", wantCtx, err.Error())
+		}
+		if !strings.Contains(err.Error(), "unmarshal string slice") {
+			t.Errorf("expected error containing %q, got %q", "unmarshal string slice", err.Error())
+		}
+		var syntaxErr *json.SyntaxError
+		if !errors.As(err, &syntaxErr) {
+			t.Errorf("expected wrapped *json.SyntaxError, got %T (%v)", err, err)
+		}
+	}
+
+	execSQL := func(t *testing.T, query string, args ...any) {
+		t.Helper()
+		if _, err := v.DB().ExecContext(ctx, query, args...); err != nil {
+			t.Fatalf("exec %q: %v", query, err)
+		}
+	}
+
+	t.Run("empty string columns decode cleanly", func(t *testing.T) {
+		execSQL(t, `UPDATE roles SET tech_stack = '' WHERE id = ?;`, role.ID)
+		execSQL(t, `UPDATE career_facts SET tech_tags = '' WHERE id = ?;`, fact.ID)
+		execSQL(t, `UPDATE archetypes SET core_competencies = '', strategic_impact = '', target_roles = '' WHERE id = ?;`, arch.ID)
+		t.Cleanup(func() {
+			execSQL(t, `UPDATE roles SET tech_stack = '[]' WHERE id = ?;`, role.ID)
+			execSQL(t, `UPDATE career_facts SET tech_tags = '[]' WHERE id = ?;`, fact.ID)
+			execSQL(t, `UPDATE archetypes SET core_competencies = '[]', strategic_impact = '[]', target_roles = '[]' WHERE id = ?;`, arch.ID)
+		})
+
+		if got, err := v.GetRole(ctx, role.ID); err != nil || len(got.TechStack) != 0 {
+			t.Fatalf("GetRole empty string: got=%+v err=%v", got, err)
+		}
+		if got, err := v.ListRoles(ctx); err != nil || len(got) != 1 || len(got[0].TechStack) != 0 {
+			t.Fatalf("ListRoles empty string: got=%+v err=%v", got, err)
+		}
+		if got, err := v.ListRolesByOrg(ctx, org.ID); err != nil || len(got) != 1 || len(got[0].TechStack) != 0 {
+			t.Fatalf("ListRolesByOrg empty string: got=%+v err=%v", got, err)
+		}
+		if got, err := v.GetCareerFactContext(ctx, fact.ID); err != nil || len(got.TechTags) != 0 {
+			t.Fatalf("GetCareerFactContext empty string: got=%+v err=%v", got, err)
+		}
+		if got, err := v.ListCareerFacts(ctx); err != nil || len(got) != 1 || len(got[0].TechTags) != 0 {
+			t.Fatalf("ListCareerFacts empty string: got=%+v err=%v", got, err)
+		}
+		if got, err := v.ListCareerFactsByRole(ctx, role.ID); err != nil || len(got) != 1 || len(got[0].TechTags) != 0 {
+			t.Fatalf("ListCareerFactsByRole empty string: got=%+v err=%v", got, err)
+		}
+		if got, err := v.GetArchetype(ctx, arch.ID); err != nil || len(got.CoreCompetencies) != 0 || len(got.StrategicImpact) != 0 || len(got.TargetRoles) != 0 {
+			t.Fatalf("GetArchetype empty string: got=%+v err=%v", got, err)
+		}
+		if got, err := v.ListArchetypes(ctx); err != nil || len(got) != 1 || len(got[0].CoreCompetencies) != 0 {
+			t.Fatalf("ListArchetypes empty string: got=%+v err=%v", got, err)
+		}
+	})
+
+	t.Run("roles tech_stack corrupted JSON", func(t *testing.T) {
+		execSQL(t, `UPDATE roles SET tech_stack = '{corrupted' WHERE id = ?;`, role.ID)
+		t.Cleanup(func() {
+			execSQL(t, `UPDATE roles SET tech_stack = '[]' WHERE id = ?;`, role.ID)
+		})
+
+		_, err := v.GetRole(ctx, role.ID)
+		assertWrappedSyntaxErr(t, err, "get role tech_stack")
+
+		_, err = v.ListRoles(ctx)
+		assertWrappedSyntaxErr(t, err, "list roles tech_stack")
+
+		_, err = v.ListRolesByOrg(ctx, org.ID)
+		assertWrappedSyntaxErr(t, err, "list roles by org tech_stack")
+	})
+
+	t.Run("career_facts tech_tags corrupted JSON", func(t *testing.T) {
+		execSQL(t, `UPDATE career_facts SET tech_tags = '{corrupted' WHERE id = ?;`, fact.ID)
+		t.Cleanup(func() {
+			execSQL(t, `UPDATE career_facts SET tech_tags = '[]' WHERE id = ?;`, fact.ID)
+		})
+
+		_, err := v.GetCareerFactContext(ctx, fact.ID)
+		assertWrappedSyntaxErr(t, err, "get career fact tech_tags")
+
+		_, err = v.ListCareerFacts(ctx)
+		assertWrappedSyntaxErr(t, err, "query facts tech_tags")
+
+		_, err = v.ListCareerFactsByRole(ctx, role.ID)
+		assertWrappedSyntaxErr(t, err, "query facts tech_tags")
+	})
+
+	for _, col := range []string{"core_competencies", "strategic_impact", "target_roles"} {
+		t.Run("archetypes "+col+" corrupted JSON", func(t *testing.T) {
+			execSQL(t, `UPDATE archetypes SET `+col+` = '{corrupted' WHERE id = ?;`, arch.ID)
+			t.Cleanup(func() {
+				execSQL(t, `UPDATE archetypes SET `+col+` = '[]' WHERE id = ?;`, arch.ID)
+			})
+
+			_, err := v.GetArchetype(ctx, arch.ID)
+			assertWrappedSyntaxErr(t, err, "get archetype "+col)
+
+			_, err = v.ListArchetypes(ctx)
+			assertWrappedSyntaxErr(t, err, "list archetypes "+col)
+		})
 	}
 }

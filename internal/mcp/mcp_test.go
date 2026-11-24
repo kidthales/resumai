@@ -437,8 +437,13 @@ func TestApplicationLifecycleEndToEnd(t *testing.T) {
 	}
 
 	// Record audits
+	draftSHA, ok := bundle["draft_sha256"].(string)
+	if !ok || len(draftSHA) != 64 {
+		t.Fatalf("expected 64-char draft_sha256 in audit bundle, got %v", bundle["draft_sha256"])
+	}
 	res, _ = callToolJSON(t, srv, "resumai_record_audits", map[string]any{
 		"application_id": "app-1",
+		"draft_sha256":   draftSHA,
 		"fact_check": map[string]any{
 			"critic_agent": domain.CriticFactChecker,
 			"summary":      "All bullets verified.",
@@ -706,6 +711,428 @@ func TestSaveDraftStrictDecodingAndSchema(t *testing.T) {
 			res, _ := callToolJSON(t, srv, "resumai_save_draft", tc.args)
 			if !res.IsError {
 				t.Fatalf("expected error for %s, but succeeded: %s", tc.name, res.Content[0].Text)
+			}
+		})
+	}
+}
+
+func TestRecordAuditsStrictDecodingAndSchema(t *testing.T) {
+	v, srv := newTestVaultAndServer(t)
+
+	// Verify resumai_record_audits InputSchema exposes nested properties and required fields.
+	var recordAuditsTool *mcp.Tool
+	for _, tool := range srv.ListTools() {
+		if tool.Name == "resumai_record_audits" {
+			tCopy := tool
+			recordAuditsTool = &tCopy
+			break
+		}
+	}
+	if recordAuditsTool == nil {
+		t.Fatalf("resumai_record_audits tool not registered")
+	}
+
+	assertHasKeys := func(t *testing.T, label string, m map[string]any, keys ...string) {
+		t.Helper()
+		for _, k := range keys {
+			if _, ok := m[k]; !ok {
+				t.Errorf("%s missing key %q", label, k)
+			}
+		}
+	}
+	assertRequired := func(t *testing.T, label string, schema map[string]any, want ...string) {
+		t.Helper()
+		reqRaw, ok := schema["required"].([]string)
+		if !ok {
+			if reqAny, okAny := schema["required"].([]any); okAny {
+				reqRaw = make([]string, 0, len(reqAny))
+				for _, item := range reqAny {
+					if s, okStr := item.(string); okStr {
+						reqRaw = append(reqRaw, s)
+					}
+				}
+			} else {
+				t.Fatalf("%s missing required slice (%T)", label, schema["required"])
+			}
+		}
+		got := make(map[string]bool, len(reqRaw))
+		for _, r := range reqRaw {
+			got[r] = true
+		}
+		for _, w := range want {
+			if !got[w] {
+				t.Errorf("%s required missing %q (got %v)", label, w, reqRaw)
+			}
+		}
+	}
+
+	assertRequired(t, "resumai_record_audits", recordAuditsTool.InputSchema, "application_id", "draft_sha256", "fact_check", "alignment_check")
+	topProps, ok := recordAuditsTool.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected top-level properties map in InputSchema")
+	}
+	assertHasKeys(t, "resumai_record_audits.properties", topProps, "application_id", "draft_sha256", "fact_check", "alignment_check")
+
+	fcSchema, ok := topProps["fact_check"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected fact_check schema map")
+	}
+	assertRequired(t, "fact_check", fcSchema, "critic_agent", "summary", "passed")
+	fcProps, ok := fcSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected nested properties on fact_check schema")
+	}
+	assertHasKeys(t, "fact_check.properties", fcProps, "critic_agent", "summary", "discrepancies", "passed")
+
+	discSchema, ok := fcProps["discrepancies"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected discrepancies schema map")
+	}
+	if discSchema["type"] != "array" {
+		t.Errorf("expected discrepancies type=array, got %v", discSchema["type"])
+	}
+	discItems, ok := discSchema["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected discrepancies.items schema map")
+	}
+	assertRequired(t, "discrepancies.items", discItems, "severity", "finding")
+	discProps, ok := discItems["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected nested properties on discrepancies.items")
+	}
+	assertHasKeys(t, "discrepancies.items.properties", discProps, "bullet_id", "fact_id", "severity", "finding")
+	sevSchema, ok := discProps["severity"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected severity schema map")
+	}
+	if enumSlice, okEnum := sevSchema["enum"].([]string); !okEnum || len(enumSlice) != 3 {
+		t.Errorf("expected severity enum [low medium high], got %v", sevSchema["enum"])
+	}
+
+	acSchema, ok := topProps["alignment_check"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected alignment_check schema map")
+	}
+	assertRequired(t, "alignment_check", acSchema, "critic_agent", "summary", "passed")
+	acProps, ok := acSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected nested properties on alignment_check schema")
+	}
+	assertHasKeys(t, "alignment_check.properties", acProps, "critic_agent", "summary", "matched_signals", "missing_signals", "recommendations", "passed")
+
+	// Seed vault + triaged/drafted application.
+	callToolJSON(t, srv, "resumai_save_organization", map[string]any{"id": "org-1", "name": "Acme"})
+	callToolJSON(t, srv, "resumai_save_role", map[string]any{"id": "role-1", "org_id": "org-1", "title": "Staff Engineer"})
+	callToolJSON(t, srv, "resumai_save_fact", map[string]any{
+		"id": "fact-1", "role_id": "role-1", "headline": "Cut P99", "details": "Cut P99 by 42%.", "epistemic_state": "verified",
+	})
+	callToolJSON(t, srv, "resumai_save_archetype", map[string]any{"id": "arch-1", "name": "Systems"})
+	if res, _ := callToolJSON(t, srv, "resumai_save_triage", map[string]any{
+		"application_id": "app-strict-audit",
+		"role_title":     "Staff Engineer",
+		"company":        "Acme",
+		"raw_jd":         "Build pure-Go systems.",
+	}); res.IsError {
+		t.Fatalf("save_triage failed: %s", res.Content[0].Text)
+	}
+	if res, _ := callToolJSON(t, srv, "resumai_save_draft", map[string]any{
+		"application_id": "app-strict-audit",
+		"draft": map[string]any{
+			"archetype_id": "arch-1",
+			"experience": []map[string]any{
+				{
+					"role_title":   "Staff Engineer",
+					"organization": "Acme",
+					"highlights": []map[string]any{
+						{"id": "b-1", "text": "Cut P99 by 42%.", "fact_ids": []string{"fact-1"}},
+					},
+				},
+			},
+			"page_budget": 1,
+		},
+	}); res.IsError {
+		t.Fatalf("save_draft failed: %s", res.Content[0].Text)
+	}
+	res, bundle := callToolJSON(t, srv, "resumai_get_audit_bundle", map[string]any{"application_id": "app-strict-audit"})
+	if res.IsError {
+		t.Fatalf("get_audit_bundle failed: %s", res.Content[0].Text)
+	}
+	draftSHA, ok := bundle["draft_sha256"].(string)
+	if !ok || len(draftSHA) != 64 {
+		t.Fatalf("expected 64-char draft_sha256, got %v", bundle["draft_sha256"])
+	}
+
+	mustJSON := func(m map[string]any) string {
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+		return string(b)
+	}
+	validFactCheck := func() map[string]any {
+		return map[string]any{
+			"critic_agent": domain.CriticFactChecker,
+			"summary":      "All claims verified.",
+			"passed":       true,
+		}
+	}
+	validAlignmentCheck := func() map[string]any {
+		return map[string]any{
+			"critic_agent":    domain.CriticAlignmentChecker,
+			"summary":         "Strong alignment.",
+			"matched_signals": []string{"Go"},
+			"missing_signals": []string{},
+			"recommendations": []string{"Emphasize SQLite."},
+			"passed":          true,
+		}
+	}
+
+	secretToken := "ghp_" + strings.Repeat("a", 36)
+	cases := []struct {
+		name          string
+		rawArgs       string
+		wantError     bool
+		wantSubstr    string
+		forbidSubstr  string
+		wantState     domain.ApplicationState
+		wantAuditsSet bool
+	}{
+		{
+			name: "omitted_draft_sha256",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "draft_sha256",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "empty_draft_sha256",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"draft_sha256":    "",
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "draft_sha256",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "whitespace_draft_sha256",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"draft_sha256":    "  \t\n ",
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "draft_sha256",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "mismatched_draft_sha256",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"draft_sha256":    strings.Repeat("0", 64),
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "does not match",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "unknown_top_level_field",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"draft_sha256":    draftSHA,
+				"extra_field":     true,
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "unknown field",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "unknown_fact_check_field_issues",
+			rawArgs: mustJSON(map[string]any{
+				"application_id": "app-strict-audit",
+				"draft_sha256":   draftSHA,
+				"fact_check": map[string]any{
+					"critic_agent": domain.CriticFactChecker,
+					"summary":      "Mistyped key.",
+					"issues":       []any{},
+					"passed":       true,
+				},
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "unknown field",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "unknown_discrepancy_item_field",
+			rawArgs: mustJSON(map[string]any{
+				"application_id": "app-strict-audit",
+				"draft_sha256":   draftSHA,
+				"fact_check": map[string]any{
+					"critic_agent": domain.CriticFactChecker,
+					"summary":      "Mistyped discrepancy field.",
+					"discrepancies": []map[string]any{
+						{"severity": "low", "finding": "Minor", "reason": "typo"},
+					},
+					"passed": true,
+				},
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "unknown field",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "unknown_alignment_check_field_gaps",
+			rawArgs: mustJSON(map[string]any{
+				"application_id": "app-strict-audit",
+				"draft_sha256":   draftSHA,
+				"fact_check":     validFactCheck(),
+				"alignment_check": map[string]any{
+					"critic_agent": domain.CriticAlignmentChecker,
+					"summary":      "Mistyped alignment key.",
+					"gaps":         []string{"Go"},
+					"passed":       true,
+				},
+			}),
+			wantError:     true,
+			wantSubstr:    "unknown field",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "mistyped_fact_check_passed_string",
+			rawArgs: mustJSON(map[string]any{
+				"application_id": "app-strict-audit",
+				"draft_sha256":   draftSHA,
+				"fact_check": map[string]any{
+					"critic_agent": domain.CriticFactChecker,
+					"summary":      "Wrong bool type.",
+					"passed":       "yes",
+				},
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "invalid tool arguments",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "trailing_json_token",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"draft_sha256":    draftSHA,
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}) + `{"trailing":1}`,
+			wantError:     true,
+			wantSubstr:    "trailing JSON",
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "unknown_field_secret_redacted",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"draft_sha256":    draftSHA,
+				secretToken:       true,
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     true,
+			wantSubstr:    "[REDACTED]",
+			forbidSubstr:  secretToken,
+			wantState:     domain.StateDrafted,
+			wantAuditsSet: false,
+		},
+		{
+			name: "valid_strict_payload_with_discrepancy",
+			rawArgs: mustJSON(map[string]any{
+				"application_id": "app-strict-audit",
+				"draft_sha256":   draftSHA,
+				"fact_check": map[string]any{
+					"critic_agent": domain.CriticFactChecker,
+					"summary":      "Verified with minor phrasing note.",
+					"discrepancies": []map[string]any{
+						{"bullet_id": "b-1", "fact_id": "fact-1", "severity": "low", "finding": "Minor phrasing note"},
+					},
+					"passed": true,
+				},
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     false,
+			wantState:     domain.StateAudited,
+			wantAuditsSet: true,
+		},
+		{
+			name: "valid_uppercase_padded_draft_sha256_reaudit",
+			rawArgs: mustJSON(map[string]any{
+				"application_id":  "app-strict-audit",
+				"draft_sha256":    "  " + strings.ToUpper(draftSHA) + "\n",
+				"fact_check":      validFactCheck(),
+				"alignment_check": validAlignmentCheck(),
+			}),
+			wantError:     false,
+			wantState:     domain.StateAudited,
+			wantAuditsSet: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := srv.CallTool(context.Background(), "resumai_record_audits", json.RawMessage(tc.rawArgs))
+			if err != nil {
+				t.Fatalf("CallTool unexpected protocol error: %v", err)
+			}
+			text := ""
+			if len(res.Content) > 0 {
+				text = res.Content[0].Text
+			}
+			if tc.wantError {
+				if !res.IsError {
+					t.Fatalf("expected error for %s, but succeeded: %s", tc.name, text)
+				}
+				if tc.wantSubstr != "" && !strings.Contains(text, tc.wantSubstr) {
+					t.Errorf("expected error text containing %q, got %q", tc.wantSubstr, text)
+				}
+				if tc.forbidSubstr != "" && strings.Contains(text, tc.forbidSubstr) {
+					t.Errorf("error text leaked forbidden secret %q: %q", tc.forbidSubstr, text)
+				}
+			} else if res.IsError {
+				t.Fatalf("unexpected error for %s: %s", tc.name, text)
+			}
+
+			persisted, err := v.GetApplicationContext(context.Background(), "app-strict-audit")
+			if err != nil {
+				t.Fatalf("GetApplicationContext: %v", err)
+			}
+			if persisted.State != tc.wantState {
+				t.Errorf("persisted state = %q, want %q", persisted.State, tc.wantState)
+			}
+			if tc.wantAuditsSet {
+				if persisted.Audits == nil || persisted.Audits.DraftSHA256 != draftSHA {
+					t.Errorf("expected persisted Audits.DraftSHA256=%q, got %+v", draftSHA, persisted.Audits)
+				}
+			} else if persisted.Audits != nil {
+				t.Errorf("expected persisted Audits to remain nil on rejection, got %+v", persisted.Audits)
 			}
 		})
 	}

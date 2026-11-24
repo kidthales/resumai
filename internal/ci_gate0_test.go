@@ -1,0 +1,599 @@
+package internal_test
+
+import (
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func runGate0Workflows(t *testing.T, pwshPath, repoRoot, workflowsDir string, extraEnv ...string) (string, int, error) {
+	t.Helper()
+
+	scriptPath := filepath.Join(repoRoot, "scripts", "ci-local.ps1")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		ctx,
+		pwshPath,
+		"-NoProfile",
+		"-File", scriptPath,
+		"-Gate0Only",
+		"-WorkflowsPath", workflowsDir,
+	)
+	cmd.Dir = repoRoot
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
+
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return string(out), 0, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return string(out), exitErr.ExitCode(), err
+	}
+	return string(out), -1, err
+}
+
+func requirePwshAndWarmGate0(t *testing.T) (string, string) {
+	t.Helper()
+
+	pwshPath, err := exec.LookPath("pwsh")
+	if err != nil {
+		if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+			t.Fatalf("pwsh is required in CI environments for Gate 0 integration tests: %v", err)
+		}
+		t.Skip("skipping Gate 0 PowerShell integration tests: pwsh not found on PATH (unit tests in internal/gate0 still enforce all Gate 0 rules)")
+	}
+
+	goPath, goErr := exec.LookPath("go")
+	if goErr != nil {
+		t.Fatalf("go executable is required on PATH for Gate 0 integration tests: %v", goErr)
+	}
+
+	repoRoot := findRepoRoot(t)
+
+	// Warm the Go build cache once for ./internal/gate0/cmd before spawning parallel pwsh subtests
+	// so cold-cache builds do not contend inside the 30s per-subtest timeout.
+	warmCtx, warmCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer warmCancel()
+	warmBin := filepath.Join(t.TempDir(), "gate0-warmup")
+	warmCmd := exec.CommandContext(warmCtx, goPath, "-C", repoRoot, "build", "-mod=readonly", "-o", warmBin, "./internal/gate0/cmd")
+	warmCmd.Env = append(os.Environ(), "GOFLAGS=-mod=readonly", "GOWORK=off")
+	if warmOut, warmErr := warmCmd.CombinedOutput(); warmErr != nil {
+		t.Fatalf("warm up gate0 helper build: %v\noutput:\n%s", warmErr, string(warmOut))
+	}
+
+	return pwshPath, repoRoot
+}
+
+// TestGate0Workflows_CanonicalStepAndDefaultsGuards verifies that Gate 0 in
+// scripts/ci-local.ps1 passes clean single-source workflows and fails closed
+// with clear violation messages when canonical -CI steps or verify jobs
+// inject working-directory, env, shell, timeout-minutes, or defaults overrides.
+func TestGate0Workflows_CanonicalStepAndDefaultsGuards(t *testing.T) {
+	pwshPath, repoRoot := requirePwshAndWarmGate0(t)
+
+	cases := []struct {
+		name           string
+		files          map[string]string
+		wantFail       bool
+		wantSubstrs    []string
+		notWantSubstrs []string
+	}{
+		{
+			name: "positive_baseline_canonical_ci",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+on: [push]
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: Run CI Pipeline (Single Source of Truth)
+        shell: pwsh
+        continue-on-error: false
+        run: ./scripts/ci-local.ps1 -CI
+`,
+				"release.yaml": `---
+name: Release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yaml
+  release:
+    needs: [verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Attach release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" SHA256SUMS --clobber
+`,
+			},
+			wantFail:       false,
+			wantSubstrs:    []string{"All workflow run steps conform to ci-local.ps1 -CI"},
+			notWantSubstrs: []string{"Gate 0 violation:"},
+		},
+		{
+			name: "positive_non_verify_workflow_defaults_allowed",
+			files: map[string]string{
+				"release-only.yaml": `---
+name: Release Assets
+defaults:
+  run:
+    working-directory: ./dist
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate SHA256SUMS
+        run: sha256sum * > SHA256SUMS
+`,
+			},
+			wantFail:       false,
+			wantSubstrs:    []string{"All workflow run steps conform to ci-local.ps1 -CI"},
+			notWantSubstrs: []string{"Gate 0 violation:"},
+		},
+		{
+			name: "positive_non_canonical_with_working_dir_inline_comment_and_sibling_job",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: { working-directory: ./nested, env: ignored }
+      - name: Run CI Pipeline
+        shell: pwsh
+        run: ./scripts/ci-local.ps1 -CI # trailing inline comment
+  notify:
+    needs: [test-and-build]
+    runs-on: ubuntu-latest
+    env:
+      SLACK_URL: ok
+    steps:
+      - name: "Dispatch consolidated status card to #dev-ci-builds"
+        run: echo "ok"
+`,
+			},
+			wantFail:       false,
+			wantSubstrs:    []string{"All workflow run steps conform to ci-local.ps1 -CI"},
+			notWantSubstrs: []string{"Gate 0 violation:"},
+		},
+		{
+			name: "negative_step_working_directory_after_run",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Pipeline
+        shell: pwsh
+        run: ./scripts/ci-local.ps1 -CI
+        working-directory: ./subpkg
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'working-directory:' ('./subpkg') to preserve single-source contract.",
+				"Gate 0 workflow single-source verification failed (1 violation(s)).",
+			},
+		},
+		{
+			name: "negative_step_working_directory_before_run_pwsh_prefix",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - name: Run CI via pwsh
+        working-directory: "nested/dir"
+        run: pwsh ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: canonical CI step 'Run CI via pwsh' in job 'verify' must not define 'working-directory:' ('nested/dir') to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_step_env_block_override",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Pipeline
+        shell: pwsh
+        env:
+          GOFLAGS: "-mod=readonly"
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'env:' override to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_step_env_flow_override",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Pipeline
+        run: pwsh -File ./scripts/ci-local.ps1 -CI
+        env: { CGO_ENABLED: "0" }
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'env:' override to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_job_level_and_workflow_level_env_overrides",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+env:
+  WF_OVERRIDE: "1"
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    env:
+      JOB_OVERRIDE: "1"
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: verify job 'test-and-build' must not define job-level 'env:' override to preserve single-source contract.",
+				"ci.yaml: workflow must not define 'env:' override on verify job(s) (test-and-build) to preserve single-source contract.",
+				"Gate 0 workflow single-source verification failed (2 violation(s)).",
+			},
+		},
+		{
+			name: "negative_flow_step_quoted_keys_and_yaml_anchor_merge",
+			files: map[string]string{
+				"flow.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - { name: "Run CI", "run": "./scripts/ci-local.ps1 -CI", "working-directory": "./flow-quoted" }
+`,
+				"anchor.yaml": `---
+name: Anchor
+x-bad: &bad
+  env: { FOO: bar }
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI
+        <<: *bad
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"flow.yaml: canonical CI step 'Run CI' in job 'test-and-build' must not define 'working-directory:' ('./flow-quoted') to preserve single-source contract.",
+				"YAML anchors and aliases are prohibited",
+				"YAML merge keys ('<<') are prohibited",
+			},
+		},
+		{
+			name: "negative_job_defaults_working_directory_block",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ./subdir
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: verify job 'test-and-build' must not define 'defaults.run.working-directory' ('./subdir') to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_job_defaults_working_directory_flow_custom_verify_job",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  custom-ci:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: ./flow-sub } }
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: verify job 'custom-ci' must not define 'defaults.run.working-directory' ('./flow-sub') to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_workflow_defaults_working_directory_block",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+defaults:
+  run:
+    shell: pwsh
+    working-directory: ./repo-sub
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: workflow must not define 'defaults.run.working-directory' ('./repo-sub') on verify job(s) (test-and-build) to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_workflow_defaults_working_directory_flow_reusable_verify",
+			files: map[string]string{
+				"release.yaml": `---
+name: Release
+defaults: { run: { working-directory: ./wf-flow } }
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yaml
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"release.yaml: workflow must not define 'defaults.run.working-directory' ('./wf-flow') on verify job(s) (verify) to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_job_defaults_mixed_block_and_flow_run",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: './mixed-sub' }
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: verify job 'test-and-build' must not define 'defaults.run.working-directory' ('./mixed-sub') to preserve single-source contract.",
+			},
+		},
+		{
+			name: "negative_multiline_run_with_both_step_overrides",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Pipeline
+        run: |
+          ./scripts/ci-local.ps1 -CI
+        working-directory: ./multi-sub
+        env:
+          FOO: bar
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'working-directory:' ('./multi-sub') to preserve single-source contract.",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'env:' override to preserve single-source contract.",
+				"Gate 0 workflow single-source verification failed (2 violation(s)).",
+			},
+		},
+		{
+			name: "negative_step_and_job_if_continue_on_error_regressions",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    continue-on-error: true
+    steps:
+      - name: Run CI Pipeline
+        if: success()
+        continue-on-error: true
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'if:' conditional ('success()')",
+				"canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'continue-on-error: true'",
+				"verify job 'test-and-build' must not define job-level 'if:' conditional",
+				"verify job 'test-and-build' must not define job-level 'continue-on-error: true'",
+			},
+		},
+		{
+			name: "negative_step_shell_template_timeout_and_defaults_shell",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+defaults:
+  run:
+    shell: bash
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Pipeline
+        shell: "echo {0}"
+        timeout-minutes: 1
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'shell:' override ('echo {0}') (only 'pwsh' is permitted)",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'timeout-minutes:' ('1')",
+				"ci.yaml: workflow must not define 'defaults.run.shell' ('bash') on verify job(s) (test-and-build) (only 'pwsh' is permitted)",
+			},
+		},
+		{
+			name: "negative_custom_verify_job_if_continue_on_error_fail_fast_timeout",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  custom-verify:
+    runs-on: ubuntu-latest
+    if: false
+    continue-on-error: true
+    timeout-minutes: 1
+    strategy:
+      fail-fast: true
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: verify job 'custom-verify' must not define job-level 'if:' conditional ('false')",
+				"ci.yaml: verify job 'custom-verify' must not define job-level 'continue-on-error: true'",
+				"ci.yaml: verify job 'custom-verify' must not define job-level 'timeout-minutes:' ('1')",
+				"ci.yaml: verify job 'custom-verify' must not set 'strategy.fail-fast: true'",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			wfDir := t.TempDir()
+			for filename, content := range tc.files {
+				dst := filepath.Join(wfDir, filename)
+				if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
+					t.Fatalf("write workflow fixture %s: %v", filename, err)
+				}
+			}
+
+			out, exitCode, runErr := runGate0Workflows(t, pwshPath, repoRoot, wfDir)
+			if tc.wantFail {
+				if runErr == nil || exitCode == 0 {
+					t.Fatalf("expected non-zero exit code for %s, got code=%d err=%v\noutput:\n%s", tc.name, exitCode, runErr, out)
+				}
+				if exitCode < 0 {
+					t.Fatalf("expected process exit error for %s, got non-exit error: %v\noutput:\n%s", tc.name, runErr, out)
+				}
+			} else if runErr != nil {
+				t.Fatalf("expected exit code 0 for %s, got code=%d err=%v\noutput:\n%s", tc.name, exitCode, runErr, out)
+			}
+
+			for _, substr := range tc.wantSubstrs {
+				if !strings.Contains(out, substr) {
+					t.Errorf("expected output to contain %q\nfull output:\n%s", substr, out)
+				}
+			}
+			for _, forbid := range tc.notWantSubstrs {
+				if strings.Contains(out, forbid) {
+					t.Errorf("expected output NOT to contain %q\nfull output:\n%s", forbid, out)
+				}
+			}
+		})
+	}
+}
+
+func TestGate0Workflows_IgnoresAmbientGoFlagsAndGoWork(t *testing.T) {
+	pwshPath, repoRoot := requirePwshAndWarmGate0(t)
+
+	wfDir := t.TempDir()
+	dst := filepath.Join(wfDir, "ci.yaml")
+	if err := os.WriteFile(dst, []byte(`---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI
+        shell: pwsh
+        run: ./scripts/ci-local.ps1 -CI
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, exitCode, runErr := runGate0Workflows(
+		t, pwshPath, repoRoot, wfDir,
+		"GOFLAGS=-mod=vendor -unknown-invalid-flag",
+		"GOWORK="+filepath.Join(wfDir, "nonexistent.work"),
+	)
+	if runErr != nil || exitCode != 0 {
+		t.Fatalf("expected Gate 0 to pin GOFLAGS/GOWORK and exit 0, got code=%d err=%v\noutput:\n%s", exitCode, runErr, out)
+	}
+	if !strings.Contains(out, "All workflow run steps conform to ci-local.ps1 -CI") {
+		t.Fatalf("expected clean Gate 0 output, got:\n%s", out)
+	}
+}

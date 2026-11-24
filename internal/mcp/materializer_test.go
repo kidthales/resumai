@@ -213,8 +213,20 @@ func TestLocalMaterializer_EndToEndPacketAndLock(t *testing.T) {
 		t.Fatalf("save_draft failed: %s", res.Content[0].Text)
 	}
 
+	res, auditBundle := callToolJSON(t, srv, "resumai_get_audit_bundle", map[string]any{
+		"application_id": "app-acme",
+	})
+	if res.IsError {
+		t.Fatalf("get_audit_bundle failed: %s", res.Content[0].Text)
+	}
+	draftSHA, ok := auditBundle["draft_sha256"].(string)
+	if !ok || len(draftSHA) != 64 {
+		t.Fatalf("expected 64-char draft_sha256 in audit bundle, got %v", auditBundle["draft_sha256"])
+	}
+
 	res, _ = callToolJSON(t, srv, "resumai_record_audits", map[string]any{
 		"application_id": "app-acme",
+		"draft_sha256":   draftSHA,
 		"fact_check": map[string]any{
 			"critic_agent": domain.CriticFactChecker,
 			"summary":      "All claims verified.",
@@ -401,12 +413,7 @@ func TestLocalMaterializer_MissingPIIAndPageBudgetOverflow(t *testing.T) {
 	}, v); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
 	}
-	if err := app.RecordAudits(domain.AuditBundle{
-		FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
-		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
-	}); err != nil {
-		t.Fatalf("RecordAudits: %v", err)
-	}
+	mustRecordTestAudits(t, app)
 	if err := app.PromoteReady(v); err != nil {
 		t.Fatalf("PromoteReady: %v", err)
 	}
@@ -465,12 +472,7 @@ func TestLocalMaterializer_MissingPIIAndPageBudgetOverflow(t *testing.T) {
 	if err := app.SaveDraft(trimmedDraft, v); err != nil {
 		t.Fatalf("SaveDraft recovery from ReadyToRender failed: %v", err)
 	}
-	if err := app.RecordAudits(domain.AuditBundle{
-		FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
-		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
-	}); err != nil {
-		t.Fatalf("RecordAudits after recovery: %v", err)
-	}
+	mustRecordTestAudits(t, app)
 	if err := app.PromoteReady(v); err != nil {
 		t.Fatalf("PromoteReady after recovery: %v", err)
 	}
@@ -547,12 +549,7 @@ func TestLocalMaterializer_DirectoryJailAndPartialLockRecovery(t *testing.T) {
 		}, v); err != nil {
 			t.Fatalf("SaveDraft: %v", err)
 		}
-		if err := app.RecordAudits(domain.AuditBundle{
-			FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
-			AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
-		}); err != nil {
-			t.Fatalf("RecordAudits: %v", err)
-		}
+		mustRecordTestAudits(t, app)
 		if err := app.PromoteReady(v); err != nil {
 			t.Fatalf("PromoteReady: %v", err)
 		}
@@ -1083,12 +1080,7 @@ func TestLocalMaterializer_RenderTimeFactReverification(t *testing.T) {
 	}, v); err != nil {
 		t.Fatalf("SaveDraft: %v", err)
 	}
-	if err := app.RecordAudits(domain.AuditBundle{
-		FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
-		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
-	}); err != nil {
-		t.Fatalf("RecordAudits: %v", err)
-	}
+	mustRecordTestAudits(t, app)
 	if err := app.PromoteReady(v); err != nil {
 		t.Fatalf("PromoteReady: %v", err)
 	}
@@ -1254,12 +1246,17 @@ func TestLocalMaterializer_TightensPreExistingLoosePermissions(t *testing.T) {
 		assertOwnerOnlyUnix(t, filepath.Join(packetDir, fname))
 	}
 
-	// Simulate pre-existing loose permissions (0755 dir, 0644 audit.md) before FinalizeSubmission.
+	// Simulate pre-existing loose permissions (0755 dir, 0644 files including a pre-seeded interview_brief.md) before FinalizeSubmission.
 	if err := os.Chmod(packetDir, 0755); err != nil {
 		t.Fatalf("loosen packetDir before submit: %v", err)
 	}
-	if err := os.Chmod(filepath.Join(packetDir, "audit.md"), 0644); err != nil {
-		t.Fatalf("loosen audit.md before submit: %v", err)
+	if err := os.WriteFile(filepath.Join(packetDir, "interview_brief.md"), []byte("stale\n"), 0644); err != nil {
+		t.Fatalf("pre-seed interview_brief.md: %v", err)
+	}
+	for _, fname := range []string{"resume.html", "resume.docx", "resume.pdf", "audit.md", "interview_brief.md"} {
+		if err := os.Chmod(filepath.Join(packetDir, fname), 0644); err != nil {
+			t.Fatalf("loosen %s before submit: %v", fname, err)
+		}
 	}
 
 	if r, _ := callToolJSON(t, srv, "resumai_mark_submitted", map[string]any{"application_id": "app-perms"}); r.IsError {
@@ -1276,5 +1273,20 @@ func TestLocalMaterializer_TightensPreExistingLoosePermissions(t *testing.T) {
 			t.Errorf("expected %s to be locked read-only, got mode %v", fname, info.Mode().Perm())
 		}
 		assertOwnerOnlyUnix(t, fpath)
+	}
+}
+
+func mustRecordTestAudits(t *testing.T, app *domain.JobApplication) {
+	t.Helper()
+	draftSHA, err := app.Draft.ContentSHA256()
+	if err != nil {
+		t.Fatalf("Draft.ContentSHA256: %v", err)
+	}
+	if err := app.RecordAudits(domain.AuditBundle{
+		DraftSHA256:    draftSHA,
+		FactCheck:      &domain.FactCheckReport{Summary: "ok", Passed: true},
+		AlignmentCheck: &domain.AlignmentCheckReport{Summary: "ok", Passed: true},
+	}); err != nil {
+		t.Fatalf("RecordAudits: %v", err)
 	}
 }

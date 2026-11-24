@@ -399,11 +399,16 @@ func TestMCPToolsAirGap_AllToolsSuccessAndErrorPaths(t *testing.T) {
 		},
 	}, true)
 
-	_ = invoke(srv, "resumai_get_audit_bundle", map[string]any{"application_id": "app-airgap"}, false)
+	auditBundle := invoke(srv, "resumai_get_audit_bundle", map[string]any{"application_id": "app-airgap"}, false)
+	draftSHA, ok := auditBundle["draft_sha256"].(string)
+	if !ok || len(draftSHA) != 64 {
+		t.Fatalf("expected 64-char draft_sha256 in audit bundle, got %v", auditBundle["draft_sha256"])
+	}
 	_ = invoke(srv, "resumai_get_audit_bundle", map[string]any{"application_id": "app-pass-airgap"}, true)
 
 	_ = invoke(srv, "resumai_record_audits", map[string]any{
 		"application_id": "app-airgap",
+		"draft_sha256":   draftSHA,
 		"fact_check": map[string]any{
 			"critic_agent": domain.CriticFactChecker,
 			"summary":      "All claims verified.",
@@ -418,6 +423,7 @@ func TestMCPToolsAirGap_AllToolsSuccessAndErrorPaths(t *testing.T) {
 	}, false)
 	_ = invoke(srv, "resumai_record_audits", map[string]any{
 		"application_id": "app-airgap",
+		"draft_sha256":   draftSHA,
 		"fact_check": map[string]any{
 			"critic_agent": domain.CriticFactChecker,
 			"summary":      "Missing alignment check.",

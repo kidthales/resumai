@@ -82,306 +82,45 @@ function Test-Gate0Workflows {
         throw "Workflows directory not found: $TargetWorkflowsDir"
     }
 
-    # Exact job-id/step-name allowlist with exact required run text (or $null if command is unconstrained)
-    $ExactStepAllowlist = @{
-        "test-and-build/Install govulncheck"                         = "go install golang.org/x/vuln/cmd/govulncheck@v1.9.0"
-        "notify/Dispatch consolidated status card to #dev-ci-builds" = $null
-        "release/Build cross-platform stripped release binaries"     = $null
-        "release/Verify tagged commit is on main"                    = $null
-        "release/Generate SHA256SUMS"                                = $null
-        "release/Verify resumai version output"                      = $null
-        "release/Attach release assets"                              = $null
+    $goCmd = Get-Command "go" -ErrorAction SilentlyContinue
+    if (-not $goCmd) {
+        throw "Gate 0 failed: 'go' executable is required on PATH for workflow YAML verification."
     }
 
-    # Canonical single-source CI invocation strings accepted without allowlisting
-    $CanonicalCiRuns = @(
-        "./scripts/ci-local.ps1 -CI",
-        "pwsh ./scripts/ci-local.ps1 -CI",
-        "pwsh -File ./scripts/ci-local.ps1 -CI"
-    )
-
-    $wfFiles = @(Get-ChildItem -Path $TargetWorkflowsDir -File | Where-Object { $_.Extension -in @(".yml", ".yaml") })
-    if ($wfFiles.Count -eq 0) {
-        throw "Gate 0 failed: no workflow files (*.yml, *.yaml) found in $TargetWorkflowsDir"
-    }
-
-    $violations = @()
-
-    foreach ($wf in $wfFiles) {
-        $lines = @(Get-Content -Path $wf.FullName)
-        $inJobs = $false
-        $jobsIndent = -1
-        $currentJob = ""
-        $jobIndent = -1
-        $inSteps = $false
-        $stepsIndent = -1
-        $inStepItem = $false
-        $stepPropIndent = -1
-        $currentStepName = ""
-        $currentStepHasRun = $false
-        $currentStepRunLines = @()
-        $currentStepHasIf = $false
-        $currentStepIfVal = ""
-        $currentStepContinueOnError = $false
-        $inRunBlock = $false
-        $runBlockIndent = -1
-
-        $jobHasSteps = $false
-        $jobUsesReusableWorkflow = ""
-        $jobRunsCanonicalCi = $false
-        $jobHasIf = $false
-        $jobIfVal = ""
-        $jobContinueOnError = $false
-        $jobHasStrategy = $false
-        $jobStrategyFailFast = ""
-
-        for ($i = 0; $i -le $lines.Count; $i++) {
-            $rawLine = if ($i -lt $lines.Count) { $lines[$i] } else { "" }
-            $trimmed = $rawLine.Trim()
-
-            if ($i -lt $lines.Count -and ($trimmed -eq "" -or $trimmed.StartsWith("#"))) {
-                continue
-            }
-
-            if ($trimmed -match '^steps:\s*\[') {
-                $violations += "$($wf.Name): flow-style 'steps: [...]' is prohibited to ensure deterministic Gate 0 auditing."
-            }
-            if ($trimmed -match '^\s*(jobs|steps):\s*&' -or $trimmed -match '^\s*-\s*\*[a-zA-Z0-9_-]+') {
-                $violations += "$($wf.Name): YAML anchors and aliases are prohibited in workflow steps to ensure deterministic Gate 0 auditing."
-            }
-
-            $indent = $rawLine.Length - $rawLine.TrimStart().Length
-
-            if ($inRunBlock) {
-                if ($i -lt $lines.Count -and $indent -gt $runBlockIndent) {
-                    $currentStepRunLines += $trimmed
-                    continue
-                } else {
-                    $inRunBlock = $false
-                }
-            }
-
-            $shouldFlushStep = $false
-            if ($inStepItem) {
-                if ($i -eq $lines.Count) {
-                    $shouldFlushStep = $true
-                } elseif ($indent -le $jobIndent) {
-                    $shouldFlushStep = $true
-                } elseif ($indent -le $stepsIndent -and -not $trimmed.StartsWith("-")) {
-                    $shouldFlushStep = $true
-                } elseif ($trimmed.StartsWith("- ") -or $trimmed -eq "-") {
-                    if ($indent -le $stepPropIndent) {
-                        $shouldFlushStep = $true
-                    }
-                }
-            }
-
-            if ($shouldFlushStep) {
-                if ($currentStepHasRun) {
-                    $runText = ($currentStepRunLines -join "`n").Trim()
-                    $pairKey = "$currentJob/$currentStepName"
-                    $isCanonicalCi = $CanonicalCiRuns -contains $runText
-                    $isAllowlisted = $ExactStepAllowlist.ContainsKey($pairKey)
-
-                    if ($isCanonicalCi) {
-                        $jobRunsCanonicalCi = $true
-                        if ($currentStepHasIf) {
-                            $violations += "$($wf.Name): canonical CI step '$currentStepName' in job '$currentJob' must not define 'if:' conditional ('$currentStepIfVal') to preserve single-source contract."
-                        }
-                        if ($currentStepContinueOnError) {
-                            $violations += "$($wf.Name): canonical CI step '$currentStepName' in job '$currentJob' must not define 'continue-on-error: true' to preserve single-source contract."
-                        }
-                    }
-
-                    if ($isAllowlisted) {
-                        $expectedRun = $ExactStepAllowlist[$pairKey]
-                        if ($expectedRun -ne $null -and $runText -ne $expectedRun) {
-                            $violations += "$($wf.Name): job '$currentJob' step '$currentStepName' run script ('$runText') does not match expected allowlisted command ('$expectedRun')."
-                        }
-                    } elseif (-not $isCanonicalCi) {
-                        $violations += "$($wf.Name): job '$currentJob' step '$currentStepName' runs inline script ('$runText') instead of './scripts/ci-local.ps1 -CI' and pair '$pairKey' is not in the Gate 0 exact allowlist."
-                    }
-                }
-                $inStepItem = $false
-                $currentStepName = ""
-                $currentStepHasRun = $false
-                $currentStepRunLines = @()
-                $currentStepHasIf = $false
-                $currentStepIfVal = ""
-                $currentStepContinueOnError = $false
-            }
-
-            $isEndingJob = $false
-            if ($currentJob -ne "") {
-                if ($i -eq $lines.Count) {
-                    $isEndingJob = $true
-                } elseif ($indent -eq 0 -and $trimmed.EndsWith(":")) {
-                    $isEndingJob = $true
-                } elseif ($jobIndent -ne -1 -and $indent -eq $jobIndent -and -not $trimmed.StartsWith("-") -and $trimmed.EndsWith(":")) {
-                    $isEndingJob = $true
-                }
-            }
-
-            if ($isEndingJob) {
-                if ($currentJob -in @("test-and-build", "verify")) {
-                    if ($jobHasSteps -and -not $jobRunsCanonicalCi) {
-                        $violations += "$($wf.Name): verify job '$currentJob' defines steps but does not invoke './scripts/ci-local.ps1 -CI'."
-                    } elseif (-not $jobHasSteps -and $jobUsesReusableWorkflow -notin @("./.github/workflows/ci.yml", "./.github/workflows/ci.yaml")) {
-                        $violations += "$($wf.Name): verify job '$currentJob' must either invoke './scripts/ci-local.ps1 -CI' or call './.github/workflows/ci.yaml' (got uses: '$jobUsesReusableWorkflow')."
-                    }
-                    if ($jobHasIf) {
-                        $violations += "$($wf.Name): verify job '$currentJob' must not define job-level 'if:' conditional ('$jobIfVal') to preserve single-source contract."
-                    }
-                    if ($jobContinueOnError) {
-                        $violations += "$($wf.Name): verify job '$currentJob' must not define job-level 'continue-on-error: true' to preserve single-source contract."
-                    }
-                    if ($jobHasStrategy -and $jobStrategyFailFast -eq "true") {
-                        $violations += "$($wf.Name): verify job '$currentJob' must not set 'strategy.fail-fast: true' to prevent matrix cancellation."
-                    }
-                }
-            }
-
-            if ($i -eq $lines.Count) {
-                break
-            }
-
-            if ($indent -eq 0 -and $trimmed.EndsWith(":")) {
-                $sectionName = $trimmed.Substring(0, $trimmed.Length - 1).Trim()
-                if ($sectionName -eq "jobs") {
-                    $inJobs = $true
-                    $jobsIndent = 0
-                    $currentJob = ""
-                    $inSteps = $false
-                } else {
-                    $inJobs = $false
-                    $currentJob = ""
-                    $inSteps = $false
-                }
-                continue
-            }
-
-            if (-not $inJobs) {
-                continue
-            }
-
-            if (($jobIndent -eq -1 -or $indent -eq $jobIndent) -and $indent -gt $jobsIndent -and -not $trimmed.StartsWith("-") -and $trimmed.EndsWith(":")) {
-                $jobCandidate = $trimmed.Substring(0, $trimmed.Length - 1).Trim()
-                if ($jobIndent -eq -1) {
-                    $jobIndent = $indent
-                }
-                if ($indent -eq $jobIndent) {
-                    $currentJob = $jobCandidate
-                    $inSteps = $false
-                    $stepsIndent = -1
-                    $jobHasSteps = $false
-                    $jobUsesReusableWorkflow = ""
-                    $jobRunsCanonicalCi = $false
-                    $jobHasIf = $false
-                    $jobIfVal = ""
-                    $jobContinueOnError = $false
-                    $jobHasStrategy = $false
-                    $jobStrategyFailFast = ""
-                    continue
-                }
-            }
-
-            if (-not $currentJob) {
-                continue
-            }
-
-            if (-not $inSteps -and $indent -gt $jobIndent) {
-                if ($trimmed.StartsWith("uses:")) {
-                    $uVal = $trimmed.Substring(5).Trim()
-                    if (($uVal.StartsWith("'") -and $uVal.EndsWith("'")) -or ($uVal.StartsWith('"') -and $uVal.EndsWith('"'))) {
-                        $uVal = $uVal.Substring(1, $uVal.Length - 2)
-                    }
-                    $jobUsesReusableWorkflow = $uVal
-                    continue
-                }
-
-                $colonIdx = $trimmed.IndexOf(":")
-                if ($colonIdx -gt 0) {
-                    $propKey = $trimmed.Substring(0, $colonIdx).Trim()
-                    $propVal = $trimmed.Substring($colonIdx + 1).Trim()
-                    if (($propVal.StartsWith("'") -and $propVal.EndsWith("'")) -or ($propVal.StartsWith('"') -and $propVal.EndsWith('"'))) {
-                        $propVal = $propVal.Substring(1, $propVal.Length - 2)
-                    }
-
-                    if ($propKey -eq "if") {
-                        $jobHasIf = $true
-                        $jobIfVal = $propVal
-                    } elseif ($propKey -eq "continue-on-error") {
-                        if ($propVal -ne "false") {
-                            $jobContinueOnError = $true
-                        }
-                    } elseif ($propKey -eq "strategy") {
-                        $jobHasStrategy = $true
-                    } elseif ($propKey -eq "fail-fast") {
-                        $jobStrategyFailFast = $propVal
-                    }
-                }
-            }
-
-            if ($indent -gt $jobIndent -and $trimmed -eq "steps:") {
-                $inSteps = $true
-                $stepsIndent = $indent
-                $jobHasSteps = $true
-                continue
-            }
-
-            if ($inSteps -and $indent -le $stepsIndent -and -not $trimmed.StartsWith("-")) {
-                $inSteps = $false
-                continue
-            }
-
-            if ($inSteps) {
-                $propText = $trimmed
-                if ($trimmed.StartsWith("- ") -or $trimmed -eq "-") {
-                    $inStepItem = $true
-                    $currentStepName = ""
-                    $currentStepHasRun = $false
-                    $currentStepRunLines = @()
-                    $currentStepHasIf = $false
-                    $currentStepIfVal = ""
-                    $currentStepContinueOnError = $false
-                    $dashIdx = $rawLine.IndexOf("-")
-                    $propText = $trimmed.Substring(1).Trim()
-                    $stepPropIndent = $dashIdx + 2
-                }
-
-                if ($inStepItem -and $propText -ne "") {
-                    $colonIdx = $propText.IndexOf(":")
-                    if ($colonIdx -gt 0) {
-                        $propKey = $propText.Substring(0, $colonIdx).Trim()
-                        $propVal = $propText.Substring($colonIdx + 1).Trim()
-                        if (($propVal.StartsWith("'") -and $propVal.EndsWith("'")) -or ($propVal.StartsWith('"') -and $propVal.EndsWith('"'))) {
-                            $propVal = $propVal.Substring(1, $propVal.Length - 2)
-                        }
-
-                        if ($propKey -eq "name") {
-                            $currentStepName = $propVal
-                        } elseif ($propKey -eq "run") {
-                            $currentStepHasRun = $true
-                            if ($propVal -eq "|" -or $propVal -eq ">" -or $propVal -eq "|-" -or $propVal -eq ">-" -or $propVal -eq "") {
-                                $inRunBlock = $true
-                                $runBlockIndent = $indent
-                            } else {
-                                $currentStepRunLines += $propVal
-                            }
-                        } elseif ($propKey -eq "if") {
-                            $currentStepHasIf = $true
-                            $currentStepIfVal = $propVal
-                        } elseif ($propKey -eq "continue-on-error") {
-                            if ($propVal -ne "false") {
-                                $currentStepContinueOnError = $true
-                            }
-                        }
-                    }
-                }
-            }
+    $toolRepoRoot = Split-Path -Parent $ScriptDir
+    $hasPrevGoFlags = Test-Path Env:GOFLAGS
+    $prevGoFlags = if ($hasPrevGoFlags) { $env:GOFLAGS } else { $null }
+    $hasPrevGoWork = Test-Path Env:GOWORK
+    $prevGoWork = if ($hasPrevGoWork) { $env:GOWORK } else { $null }
+    try {
+        # Pin module and workspace flags so caller environment overrides cannot alter Gate 0 helper compilation.
+        $env:GOFLAGS = "-mod=readonly"
+        $env:GOWORK = "off"
+        $jsonLines = @(& $goCmd.Source -C $toolRepoRoot run ./internal/gate0/cmd -json -workflows $TargetWorkflowsDir)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        if ($hasPrevGoFlags) {
+            $env:GOFLAGS = $prevGoFlags
+        } else {
+            Remove-Item Env:GOFLAGS -ErrorAction SilentlyContinue
+        }
+        if ($hasPrevGoWork) {
+            $env:GOWORK = $prevGoWork
+        } else {
+            Remove-Item Env:GOWORK -ErrorAction SilentlyContinue
         }
     }
+    if ($exitCode -ne 0) {
+        throw "Gate 0 workflow verification helper failed with exit code $exitCode."
+    }
 
+    $jsonText = ($jsonLines -join "`n").Trim()
+    if (-not $jsonText) {
+        throw "Gate 0 workflow verification helper produced empty output."
+    }
+
+    $result = $jsonText | ConvertFrom-Json -ErrorAction Stop
+    $violations = @($result.violations)
     if ($violations.Count -gt 0) {
         foreach ($v in $violations) {
             [Console]::Error.WriteLine("Gate 0 violation: $v")

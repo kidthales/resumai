@@ -90,7 +90,7 @@ func (r *HTMLRenderer) renderDocument(sb *strings.Builder, doc *ResumeDocument) 
 	sb.WriteString("<head>\n")
 	sb.WriteString("  <meta charset=\"utf-8\">\n")
 	sb.WriteString("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n")
-	sb.WriteString("  <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none';\">\n")
+	sb.WriteString("  <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; base-uri 'none'; form-action 'none';\">\n")
 	fmt.Fprintf(sb, "  <title>%s - Resume</title>\n", html.EscapeString(doc.Header.FullName))
 
 	// Embedded CSS Stylesheet
@@ -200,11 +200,16 @@ func (r *HTMLRenderer) renderCSS(sb *strings.Builder) {
     }
     .resume-page {
       width: 100%%;
-      max-width: 8.5in;
+      max-width: %.2fpx;
       margin: 0 auto;
       background: %s;
     }
-`, t.Colors.Background, t.Colors.Primary, t.Typography.FontFamilyPrimary, t.Typography.FontSizeBase, t.Typography.LineHeight, t.Colors.Background)
+    @media print {
+      .resume-page {
+        max-width: none;
+      }
+    }
+`, t.Colors.Background, t.Colors.Primary, t.Typography.FontFamilyPrimary, t.Typography.FontSizeBase, t.Typography.LineHeight, pageContentWidthPX(t.Page), t.Colors.Background)
 
 	// Typography & Section Elements
 	headerAlign := "left"
