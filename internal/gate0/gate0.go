@@ -14,18 +14,33 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func strPtr(s string) *string { return &s }
+type allowlistedStepRule struct {
+	requireExactRun bool
+	expectedRun     string
+}
 
-// exactStepAllowlist maps "jobID/stepName" pairs to exact expected run commands,
-// or nil when the step command text is unconstrained.
-var exactStepAllowlist = map[string]*string{
-	"test-and-build/Install govulncheck":                         strPtr("go install golang.org/x/vuln/cmd/govulncheck@v1.9.0"),
-	"notify/Dispatch consolidated status card to #dev-ci-builds": nil,
-	"release/Build cross-platform stripped release binaries":     nil,
-	"release/Verify tagged commit is on main":                    nil,
-	"release/Generate SHA256SUMS":                                nil,
-	"release/Verify resumai version output":                      nil,
-	"release/Attach release assets":                              nil,
+// exactStepAllowlist maps "jobID/stepName" pairs to an allowlist rule specifying
+// either an exact expected run command or unconstrained command text.
+var exactStepAllowlist = map[string]allowlistedStepRule{
+	"test-and-build/Install govulncheck":                         {requireExactRun: true, expectedRun: "go install golang.org/x/vuln/cmd/govulncheck@v1.9.0"},
+	"notify/Dispatch consolidated status card to #dev-ci-builds": {},
+	"release/Build cross-platform stripped release binaries":     {},
+	"release/Verify tagged commit is on main":                    {},
+	"release/Generate SHA256SUMS":                                {},
+	"release/Verify resumai version output":                      {},
+	"release/Attach release assets":                              {},
+}
+
+var allowedCanonicalStepKeys = map[string]bool{
+	"id":                true,
+	"name":              true,
+	"run":               true,
+	"shell":             true,
+	"continue-on-error": true,
+	"if":                true,
+	"working-directory": true,
+	"env":               true,
+	"timeout-minutes":   true,
 }
 
 var canonicalCIRuns = map[string]bool{
@@ -195,8 +210,17 @@ func inspectWorkflowRoot(fileName string, root *yaml.Node) []string {
 		} else if jobsNode.Kind != yaml.MappingNode {
 			violations = append(violations, fmt.Sprintf("%s: top-level 'jobs' must be a YAML mapping.", fileName))
 		} else {
-			for i := 0; i < len(jobsNode.Content); i += 2 {
-				jobID := jobsNode.Content[i].Value
+			for i := 0; i+1 < len(jobsNode.Content); i += 2 {
+				keyNode := jobsNode.Content[i]
+				if keyNode == nil || keyNode.Kind != yaml.ScalarNode {
+					line := 0
+					if keyNode != nil {
+						line = keyNode.Line
+					}
+					violations = append(violations, fmt.Sprintf("%s: job key must be a scalar string (line %d).", fileName, line))
+					continue
+				}
+				jobID := keyNode.Value
 				jobNode := jobsNode.Content[i+1]
 				jobVerify, jobViolations := inspectJob(fileName, jobID, jobNode)
 				if jobVerify {
@@ -210,12 +234,7 @@ func inspectWorkflowRoot(fileName string, root *yaml.Node) []string {
 	if len(verifyJobNames) > 0 {
 		verifyList := strings.Join(verifyJobNames, ", ")
 		if wfDefaultsNode, ok := mappingLookup(root, "defaults"); ok {
-			hasWD, wdVal, errMsg := extractDefaultsWorkingDir(wfDefaultsNode)
-			if errMsg != "" {
-				violations = append(violations, fmt.Sprintf("%s: workflow %s on verify job(s) (%s).", fileName, errMsg, verifyList))
-			} else if hasWD {
-				violations = append(violations, fmt.Sprintf("%s: workflow must not define 'defaults.run.working-directory' ('%s') on verify job(s) (%s) to preserve single-source contract.", fileName, wdVal, verifyList))
-			}
+			violations = append(violations, inspectDefaults(fileName, "workflow", fmt.Sprintf(" on verify job(s) (%s)", verifyList), wfDefaultsNode)...)
 		}
 		if _, hasWfEnv := mappingLookup(root, "env"); hasWfEnv {
 			violations = append(violations, fmt.Sprintf("%s: workflow must not define 'env:' override on verify job(s) (%s) to preserve single-source contract.", fileName, verifyList))
@@ -260,16 +279,22 @@ func inspectJob(fileName, jobID string, jobNode *yaml.Node) (bool, []string) {
 	}
 
 	isNamedVerify := namedVerifyJobs[jobID]
-	isVerifyJob := isNamedVerify || jobRunsCanonicalCI || (!jobHasSteps && reusableVerifyWorkflows[jobUsesReusable])
+	isVerifyJob := isNamedVerify || jobRunsCanonicalCI || reusableVerifyWorkflows[jobUsesReusable]
+
+	if isNamedVerify {
+		if jobHasSteps && !jobRunsCanonicalCI {
+			violations = append(violations, fmt.Sprintf("%s: verify job '%s' defines steps but does not invoke './scripts/ci-local.ps1 -CI'.", fileName, jobID))
+		} else if !jobHasSteps && !reusableVerifyWorkflows[jobUsesReusable] {
+			violations = append(violations, fmt.Sprintf("%s: verify job '%s' must either invoke './scripts/ci-local.ps1 -CI' or call './.github/workflows/ci.yaml' (got uses: '%s').", fileName, jobID, jobUsesReusable))
+		}
+	}
 
 	if isVerifyJob {
+		if jobHasSteps && jobUsesReusable != "" {
+			violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not define both 'uses:' and 'steps:'.", fileName, jobID))
+		}
 		if jobDefaultsNode, ok := mappingLookup(jobNode, "defaults"); ok {
-			hasWD, wdVal, errMsg := extractDefaultsWorkingDir(jobDefaultsNode)
-			if errMsg != "" {
-				violations = append(violations, fmt.Sprintf("%s: verify job '%s' %s.", fileName, jobID, errMsg))
-			} else if hasWD {
-				violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not define 'defaults.run.working-directory' ('%s') to preserve single-source contract.", fileName, jobID, wdVal))
-			}
+			violations = append(violations, inspectDefaults(fileName, fmt.Sprintf("verify job '%s'", jobID), "", jobDefaultsNode)...)
 		}
 		if wdNode, hasDirectWD := mappingLookup(jobNode, "working-directory"); hasDirectWD {
 			wdVal := scalarOrPlaceholder(wdNode)
@@ -277,14 +302,6 @@ func inspectJob(fileName, jobID string, jobNode *yaml.Node) (bool, []string) {
 		}
 		if _, hasJobEnv := mappingLookup(jobNode, "env"); hasJobEnv {
 			violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not define job-level 'env:' override to preserve single-source contract.", fileName, jobID))
-		}
-	}
-
-	if isNamedVerify {
-		if jobHasSteps && !jobRunsCanonicalCI {
-			violations = append(violations, fmt.Sprintf("%s: verify job '%s' defines steps but does not invoke './scripts/ci-local.ps1 -CI'.", fileName, jobID))
-		} else if !jobHasSteps && !reusableVerifyWorkflows[jobUsesReusable] {
-			violations = append(violations, fmt.Sprintf("%s: verify job '%s' must either invoke './scripts/ci-local.ps1 -CI' or call './.github/workflows/ci.yaml' (got uses: '%s').", fileName, jobID, jobUsesReusable))
 		}
 		if ifNode, hasIf := mappingLookup(jobNode, "if"); hasIf {
 			ifVal := scalarOrPlaceholder(ifNode)
@@ -295,6 +312,10 @@ func inspectJob(fileName, jobID string, jobNode *yaml.Node) (bool, []string) {
 				violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not define job-level 'continue-on-error: true' to preserve single-source contract.", fileName, jobID))
 			}
 		}
+		if timeoutNode, hasTimeout := mappingLookup(jobNode, "timeout-minutes"); hasTimeout {
+			timeoutVal := scalarOrPlaceholder(timeoutNode)
+			violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not define job-level 'timeout-minutes:' ('%s') to preserve single-source contract.", fileName, jobID, timeoutVal))
+		}
 		if stratNode, hasStrat := mappingLookup(jobNode, "strategy"); hasStrat {
 			if !isNullScalar(stratNode) {
 				if stratNode.Kind != yaml.MappingNode {
@@ -302,8 +323,13 @@ func inspectJob(fileName, jobID string, jobNode *yaml.Node) (bool, []string) {
 				} else if ffNode, hasFF := mappingLookup(stratNode, "fail-fast"); hasFF {
 					if ffNode.Kind != yaml.ScalarNode {
 						violations = append(violations, fmt.Sprintf("%s: verify job '%s' 'strategy.fail-fast' must be a scalar boolean.", fileName, jobID))
-					} else if strings.EqualFold(strings.TrimSpace(ffNode.Value), "true") {
-						violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not set 'strategy.fail-fast: true' to prevent matrix cancellation.", fileName, jobID))
+					} else if isTruthyOrDynamicFlag(ffNode) {
+						val := strings.TrimSpace(ffNode.Value)
+						if strings.EqualFold(val, "true") {
+							violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not set 'strategy.fail-fast: true' to prevent matrix cancellation.", fileName, jobID))
+						} else {
+							violations = append(violations, fmt.Sprintf("%s: verify job '%s' must not set 'strategy.fail-fast' to dynamic or non-false value ('%s') to prevent matrix cancellation.", fileName, jobID, val))
+						}
 					}
 				}
 			}
@@ -340,7 +366,7 @@ func inspectStep(fileName, jobID string, stepNode *yaml.Node) (bool, []string) {
 	runText := normalizeRunText(runNode.Value)
 	pairKey := jobID + "/" + stepName
 	isCanonicalCI := canonicalCIRuns[runText]
-	expectedRun, isAllowlisted := exactStepAllowlist[pairKey]
+	rule, isAllowlisted := exactStepAllowlist[pairKey]
 
 	if isCanonicalCI {
 		if ifNode, hasIf := mappingLookup(stepNode, "if"); hasIf {
@@ -357,11 +383,30 @@ func inspectStep(fileName, jobID string, stepNode *yaml.Node) (bool, []string) {
 		if _, hasEnv := mappingLookup(stepNode, "env"); hasEnv {
 			violations = append(violations, fmt.Sprintf("%s: canonical CI step '%s' in job '%s' must not define 'env:' override to preserve single-source contract.", fileName, stepName, jobID))
 		}
+		if shellNode, hasShell := mappingLookup(stepNode, "shell"); hasShell {
+			shellVal, err := scalarString(shellNode)
+			if err != nil || strings.TrimSpace(shellVal) != "pwsh" {
+				violations = append(violations, fmt.Sprintf("%s: canonical CI step '%s' in job '%s' must not define 'shell:' override ('%s') (only 'pwsh' is permitted) to preserve single-source contract.", fileName, stepName, jobID, scalarOrPlaceholder(shellNode)))
+			}
+		}
+		if timeoutNode, hasTimeout := mappingLookup(stepNode, "timeout-minutes"); hasTimeout {
+			timeoutVal := scalarOrPlaceholder(timeoutNode)
+			violations = append(violations, fmt.Sprintf("%s: canonical CI step '%s' in job '%s' must not define 'timeout-minutes:' ('%s') to preserve single-source contract.", fileName, stepName, jobID, timeoutVal))
+		}
+		for i := 0; i+1 < len(stepNode.Content); i += 2 {
+			kNode := stepNode.Content[i]
+			if kNode == nil || kNode.Kind != yaml.ScalarNode {
+				continue
+			}
+			if !allowedCanonicalStepKeys[kNode.Value] {
+				violations = append(violations, fmt.Sprintf("%s: canonical CI step '%s' in job '%s' must not define execution-altering or unsupported key '%s:' to preserve single-source contract.", fileName, stepName, jobID, kNode.Value))
+			}
+		}
 	}
 
 	if isAllowlisted {
-		if expectedRun != nil && runText != *expectedRun {
-			violations = append(violations, fmt.Sprintf("%s: job '%s' step '%s' run script ('%s') does not match expected allowlisted command ('%s').", fileName, jobID, stepName, runText, *expectedRun))
+		if rule.requireExactRun && runText != rule.expectedRun {
+			violations = append(violations, fmt.Sprintf("%s: job '%s' step '%s' run script ('%s') does not match expected allowlisted command ('%s').", fileName, jobID, stepName, runText, rule.expectedRun))
 		}
 	} else if !isCanonicalCI {
 		violations = append(violations, fmt.Sprintf("%s: job '%s' step '%s' runs inline script ('%s') instead of './scripts/ci-local.ps1 -CI' and pair '%s' is not in the Gate 0 exact allowlist.", fileName, jobID, stepName, runText, pairKey))
@@ -370,28 +415,53 @@ func inspectStep(fileName, jobID string, stepNode *yaml.Node) (bool, []string) {
 	return isCanonicalCI, violations
 }
 
-func extractDefaultsWorkingDir(defaultsNode *yaml.Node) (bool, string, string) {
+func inspectDefaults(fileName, subject, scopeSuffix string, defaultsNode *yaml.Node) []string {
 	if defaultsNode == nil || isNullScalar(defaultsNode) {
-		return false, "", ""
+		return nil
 	}
 	if defaultsNode.Kind != yaml.MappingNode {
-		return false, "", "defines malformed 'defaults:' (expected YAML mapping)"
+		return []string{fmt.Sprintf("%s: %s defines malformed 'defaults:' (expected YAML mapping)%s.", fileName, subject, scopeSuffix)}
 	}
+
+	var violations []string
+	for i := 0; i+1 < len(defaultsNode.Content); i += 2 {
+		kNode := defaultsNode.Content[i]
+		if kNode == nil || kNode.Kind != yaml.ScalarNode {
+			continue
+		}
+		if kNode.Value != "run" {
+			violations = append(violations, fmt.Sprintf("%s: %s must not define unsupported 'defaults.%s'%s to preserve single-source contract.", fileName, subject, kNode.Value, scopeSuffix))
+		}
+	}
+
 	runNode, hasRun := mappingLookup(defaultsNode, "run")
 	if !hasRun || isNullScalar(runNode) {
-		return false, "", ""
+		return violations
 	}
 	if runNode.Kind != yaml.MappingNode {
-		return false, "", "defines malformed 'defaults.run:' (expected YAML mapping)"
+		return append(violations, fmt.Sprintf("%s: %s defines malformed 'defaults.run:' (expected YAML mapping)%s.", fileName, subject, scopeSuffix))
 	}
-	wdNode, hasWD := mappingLookup(runNode, "working-directory")
-	if !hasWD {
-		return false, "", ""
+
+	for i := 0; i+1 < len(runNode.Content); i += 2 {
+		kNode := runNode.Content[i]
+		vNode := runNode.Content[i+1]
+		if kNode == nil || kNode.Kind != yaml.ScalarNode {
+			continue
+		}
+		switch kNode.Value {
+		case "working-directory":
+			violations = append(violations, fmt.Sprintf("%s: %s must not define 'defaults.run.working-directory' ('%s')%s to preserve single-source contract.", fileName, subject, scalarOrPlaceholder(vNode), scopeSuffix))
+		case "shell":
+			shellVal, err := scalarString(vNode)
+			if err != nil || strings.TrimSpace(shellVal) != "pwsh" {
+				violations = append(violations, fmt.Sprintf("%s: %s must not define 'defaults.run.shell' ('%s')%s (only 'pwsh' is permitted) to preserve single-source contract.", fileName, subject, scalarOrPlaceholder(vNode), scopeSuffix))
+			}
+		default:
+			violations = append(violations, fmt.Sprintf("%s: %s must not define 'defaults.run.%s'%s to preserve single-source contract.", fileName, subject, kNode.Value, scopeSuffix))
+		}
 	}
-	if wdNode.Kind != yaml.ScalarNode {
-		return true, "<non-scalar>", ""
-	}
-	return true, strings.TrimSpace(wdNode.Value), ""
+
+	return violations
 }
 
 func mappingLookup(m *yaml.Node, key string) (*yaml.Node, bool) {
@@ -399,7 +469,8 @@ func mappingLookup(m *yaml.Node, key string) (*yaml.Node, bool) {
 		return nil, false
 	}
 	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
+		kNode := m.Content[i]
+		if kNode != nil && kNode.Kind == yaml.ScalarNode && kNode.Value == key {
 			return m.Content[i+1], true
 		}
 	}

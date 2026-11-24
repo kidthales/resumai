@@ -88,8 +88,28 @@ function Test-Gate0Workflows {
     }
 
     $toolRepoRoot = Split-Path -Parent $ScriptDir
-    $jsonLines = @(& $goCmd.Source -C $toolRepoRoot run ./internal/gate0/cmd -json -workflows $TargetWorkflowsDir)
-    $exitCode = $LASTEXITCODE
+    $hasPrevGoFlags = Test-Path Env:GOFLAGS
+    $prevGoFlags = if ($hasPrevGoFlags) { $env:GOFLAGS } else { $null }
+    $hasPrevGoWork = Test-Path Env:GOWORK
+    $prevGoWork = if ($hasPrevGoWork) { $env:GOWORK } else { $null }
+    try {
+        # Pin module and workspace flags so caller environment overrides cannot alter Gate 0 helper compilation.
+        $env:GOFLAGS = "-mod=readonly"
+        $env:GOWORK = "off"
+        $jsonLines = @(& $goCmd.Source -C $toolRepoRoot run ./internal/gate0/cmd -json -workflows $TargetWorkflowsDir)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        if ($hasPrevGoFlags) {
+            $env:GOFLAGS = $prevGoFlags
+        } else {
+            Remove-Item Env:GOFLAGS -ErrorAction SilentlyContinue
+        }
+        if ($hasPrevGoWork) {
+            $env:GOWORK = $prevGoWork
+        } else {
+            Remove-Item Env:GOWORK -ErrorAction SilentlyContinue
+        }
+    }
     if ($exitCode -ne 0) {
         throw "Gate 0 workflow verification helper failed with exit code $exitCode."
     }

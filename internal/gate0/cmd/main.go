@@ -17,10 +17,13 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// run executes Gate 0 workflow verification. In text mode it exits 1 when violations
+// exist; in -json mode it writes {"violations":[...]} to stdout and exits 0 even when
+// violations exist so callers must inspect the JSON payload (I/O and parse errors exit 1).
 func run(args []string) int {
 	fs := flag.NewFlagSet("gate0", flag.ContinueOnError)
 	workflowsDir := fs.String("workflows", "", "path to GitHub Actions workflows directory")
-	jsonMode := fs.Bool("json", false, "emit JSON result to stdout")
+	jsonMode := fs.Bool("json", false, "emit JSON result to stdout (exits 0 on violations; callers inspect violations array)")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}

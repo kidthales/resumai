@@ -361,6 +361,120 @@ jobs:
 				"workflow defines malformed 'defaults:'",
 			},
 		},
+		{
+			name:     "positive_defaults_run_shell_pwsh_allowed",
+			fileName: "ci.yaml",
+			yaml: `---
+name: CI
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Run CI
+        shell: pwsh
+        run: ./scripts/ci-local.ps1 -CI
+`,
+		},
+		{
+			name:     "negative_canonical_step_shell_timeout_and_unsupported_keys",
+			fileName: "ci.yaml",
+			yaml: `---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Echo
+        shell: "echo {0}"
+        timeout-minutes: 1
+        with:
+          ignored: true
+        run: ./scripts/ci-local.ps1 -CI
+      - name: Run CI Bash Wrapper
+        shell: bash -c "true" {0}
+        run: pwsh ./scripts/ci-local.ps1 -CI
+`,
+			wantSubstrs: []string{
+				"ci.yaml: canonical CI step 'Run CI Echo' in job 'test-and-build' must not define 'shell:' override ('echo {0}') (only 'pwsh' is permitted)",
+				"ci.yaml: canonical CI step 'Run CI Echo' in job 'test-and-build' must not define 'timeout-minutes:' ('1')",
+				"ci.yaml: canonical CI step 'Run CI Echo' in job 'test-and-build' must not define execution-altering or unsupported key 'with:'",
+				"ci.yaml: canonical CI step 'Run CI Bash Wrapper' in job 'test-and-build' must not define 'shell:' override ('bash -c \"true\" {0}') (only 'pwsh' is permitted)",
+			},
+		},
+		{
+			name:     "negative_defaults_run_shell_and_unsupported_keys",
+			fileName: "ci.yaml",
+			yaml: `---
+name: CI
+defaults:
+  run:
+    shell: "echo {0}"
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      custom: 1
+      run:
+        shell: bash
+        extra: val
+    steps:
+      - name: Run CI
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			wantSubstrs: []string{
+				"ci.yaml: workflow must not define 'defaults.run.shell' ('echo {0}') on verify job(s) (test-and-build) (only 'pwsh' is permitted)",
+				"ci.yaml: verify job 'test-and-build' must not define unsupported 'defaults.custom'",
+				"ci.yaml: verify job 'test-and-build' must not define 'defaults.run.shell' ('bash') (only 'pwsh' is permitted)",
+				"ci.yaml: verify job 'test-and-build' must not define 'defaults.run.extra'",
+			},
+		},
+		{
+			name:     "negative_custom_verify_job_if_continue_on_error_fail_fast_timeout",
+			fileName: "ci.yaml",
+			yaml: `---
+name: CI
+jobs:
+  custom-ci:
+    runs-on: ubuntu-latest
+    if: false
+    continue-on-error: true
+    timeout-minutes: 1
+    strategy:
+      fail-fast: true
+    steps:
+      - name: Run CI
+        run: ./scripts/ci-local.ps1 -CI
+  custom-caller:
+    uses: ./.github/workflows/ci.yaml
+    if: github.event_name == 'push'
+    continue-on-error: true
+    timeout-minutes: 2
+    strategy:
+      fail-fast: ${{ inputs.ff }}
+  hybrid-verify:
+    uses: ./.github/workflows/ci.yaml
+    steps:
+      - name: Run CI
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			wantSubstrs: []string{
+				"ci.yaml: verify job 'custom-ci' must not define job-level 'if:' conditional ('false')",
+				"ci.yaml: verify job 'custom-ci' must not define job-level 'continue-on-error: true'",
+				"ci.yaml: verify job 'custom-ci' must not define job-level 'timeout-minutes:' ('1')",
+				"ci.yaml: verify job 'custom-ci' must not set 'strategy.fail-fast: true'",
+				"ci.yaml: verify job 'custom-caller' must not define job-level 'if:' conditional",
+				"ci.yaml: verify job 'custom-caller' must not define job-level 'continue-on-error: true'",
+				"ci.yaml: verify job 'custom-caller' must not define job-level 'timeout-minutes:' ('2')",
+				"ci.yaml: verify job 'custom-caller' must not set 'strategy.fail-fast' to dynamic or non-false value ('${{ inputs.ff }}')",
+				"ci.yaml: verify job 'hybrid-verify' must not define both 'uses:' and 'steps:'",
+			},
+		},
 	}
 
 	for _, tc := range cases {

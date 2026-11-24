@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func runGate0Workflows(t *testing.T, pwshPath, repoRoot, workflowsDir string) (string, int, error) {
+func runGate0Workflows(t *testing.T, pwshPath, repoRoot, workflowsDir string, extraEnv ...string) (string, int, error) {
 	t.Helper()
 
 	scriptPath := filepath.Join(repoRoot, "scripts", "ci-local.ps1")
@@ -27,6 +27,9 @@ func runGate0Workflows(t *testing.T, pwshPath, repoRoot, workflowsDir string) (s
 		"-WorkflowsPath", workflowsDir,
 	)
 	cmd.Dir = repoRoot
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -39,11 +42,9 @@ func runGate0Workflows(t *testing.T, pwshPath, repoRoot, workflowsDir string) (s
 	return string(out), -1, err
 }
 
-// TestGate0Workflows_CanonicalStepAndDefaultsGuards verifies that Gate 0 in
-// scripts/ci-local.ps1 passes clean single-source workflows and fails closed
-// with clear violation messages when canonical -CI steps or verify jobs
-// inject working-directory, env, or defaults.run.working-directory overrides.
-func TestGate0Workflows_CanonicalStepAndDefaultsGuards(t *testing.T) {
+func requirePwshAndWarmGate0(t *testing.T) (string, string) {
+	t.Helper()
+
 	pwshPath, err := exec.LookPath("pwsh")
 	if err != nil {
 		if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
@@ -52,7 +53,33 @@ func TestGate0Workflows_CanonicalStepAndDefaultsGuards(t *testing.T) {
 		t.Skip("skipping Gate 0 PowerShell integration tests: pwsh not found on PATH (unit tests in internal/gate0 still enforce all Gate 0 rules)")
 	}
 
+	goPath, goErr := exec.LookPath("go")
+	if goErr != nil {
+		t.Fatalf("go executable is required on PATH for Gate 0 integration tests: %v", goErr)
+	}
+
 	repoRoot := findRepoRoot(t)
+
+	// Warm the Go build cache once for ./internal/gate0/cmd before spawning parallel pwsh subtests
+	// so cold-cache builds do not contend inside the 30s per-subtest timeout.
+	warmCtx, warmCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer warmCancel()
+	warmBin := filepath.Join(t.TempDir(), "gate0-warmup")
+	warmCmd := exec.CommandContext(warmCtx, goPath, "-C", repoRoot, "build", "-mod=readonly", "-o", warmBin, "./internal/gate0/cmd")
+	warmCmd.Env = append(os.Environ(), "GOFLAGS=-mod=readonly", "GOWORK=off")
+	if warmOut, warmErr := warmCmd.CombinedOutput(); warmErr != nil {
+		t.Fatalf("warm up gate0 helper build: %v\noutput:\n%s", warmErr, string(warmOut))
+	}
+
+	return pwshPath, repoRoot
+}
+
+// TestGate0Workflows_CanonicalStepAndDefaultsGuards verifies that Gate 0 in
+// scripts/ci-local.ps1 passes clean single-source workflows and fails closed
+// with clear violation messages when canonical -CI steps or verify jobs
+// inject working-directory, env, shell, timeout-minutes, or defaults overrides.
+func TestGate0Workflows_CanonicalStepAndDefaultsGuards(t *testing.T) {
+	pwshPath, repoRoot := requirePwshAndWarmGate0(t)
 
 	cases := []struct {
 		name           string
@@ -447,6 +474,59 @@ jobs:
 				"verify job 'test-and-build' must not define job-level 'continue-on-error: true'",
 			},
 		},
+		{
+			name: "negative_step_shell_template_timeout_and_defaults_shell",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+defaults:
+  run:
+    shell: bash
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI Pipeline
+        shell: "echo {0}"
+        timeout-minutes: 1
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'shell:' override ('echo {0}') (only 'pwsh' is permitted)",
+				"ci.yaml: canonical CI step 'Run CI Pipeline' in job 'test-and-build' must not define 'timeout-minutes:' ('1')",
+				"ci.yaml: workflow must not define 'defaults.run.shell' ('bash') on verify job(s) (test-and-build) (only 'pwsh' is permitted)",
+			},
+		},
+		{
+			name: "negative_custom_verify_job_if_continue_on_error_fail_fast_timeout",
+			files: map[string]string{
+				"ci.yaml": `---
+name: CI
+jobs:
+  custom-verify:
+    runs-on: ubuntu-latest
+    if: false
+    continue-on-error: true
+    timeout-minutes: 1
+    strategy:
+      fail-fast: true
+    steps:
+      - name: Run CI Pipeline
+        run: ./scripts/ci-local.ps1 -CI
+`,
+			},
+			wantFail: true,
+			wantSubstrs: []string{
+				"Gate 0 violation:",
+				"ci.yaml: verify job 'custom-verify' must not define job-level 'if:' conditional ('false')",
+				"ci.yaml: verify job 'custom-verify' must not define job-level 'continue-on-error: true'",
+				"ci.yaml: verify job 'custom-verify' must not define job-level 'timeout-minutes:' ('1')",
+				"ci.yaml: verify job 'custom-verify' must not set 'strategy.fail-fast: true'",
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -484,5 +564,36 @@ jobs:
 				}
 			}
 		})
+	}
+}
+
+func TestGate0Workflows_IgnoresAmbientGoFlagsAndGoWork(t *testing.T) {
+	pwshPath, repoRoot := requirePwshAndWarmGate0(t)
+
+	wfDir := t.TempDir()
+	dst := filepath.Join(wfDir, "ci.yaml")
+	if err := os.WriteFile(dst, []byte(`---
+name: CI
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run CI
+        shell: pwsh
+        run: ./scripts/ci-local.ps1 -CI
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, exitCode, runErr := runGate0Workflows(
+		t, pwshPath, repoRoot, wfDir,
+		"GOFLAGS=-mod=vendor -unknown-invalid-flag",
+		"GOWORK="+filepath.Join(wfDir, "nonexistent.work"),
+	)
+	if runErr != nil || exitCode != 0 {
+		t.Fatalf("expected Gate 0 to pin GOFLAGS/GOWORK and exit 0, got code=%d err=%v\noutput:\n%s", exitCode, runErr, out)
+	}
+	if !strings.Contains(out, "All workflow run steps conform to ci-local.ps1 -CI") {
+		t.Fatalf("expected clean Gate 0 output, got:\n%s", out)
 	}
 }
